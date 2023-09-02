@@ -1,44 +1,41 @@
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pydantic import BaseModel
 from sqlalchemy.ext.declarative import declarative_base
 from pathlib import Path
+from typing import Protocol, ClassVar, Union, Type
 
 
-VALIDATOR_PLACEHOLDER = BaseModel
-SQL_MODEL_PLACEHOLDER = declarative_base
+VALIDATOR_PLACEHOLDER = Union[Type[BaseModel], None]
+SQL_MODEL_PLACEHOLDER = Union[Type[declarative_base], None]
 STRING_PLACEHOLDER = str
 FOLDER_PATH_PLACEHOLDER = Path
 
 @dataclass
-class StateCampaignFinanceConfigs(ABC):
-    FOLDER: Path = FOLDER_PATH_PLACEHOLDER
+class StateCampaignFinanceConfigs(Protocol):
+    FOLDER: ClassVar[Path]
 
-    VALIDATOR: BaseModel = VALIDATOR_PLACEHOLDER
-    EXPENSE_FILE_PREFIX: str = STRING_PLACEHOLDER
-    CONTRIBUTION_FILE_PREFIX: str = STRING_PLACEHOLDER
-    FILERS_FILE_PREFIX: str = STRING_PLACEHOLDER
-    SQL_MODEL: declarative_base = SQL_MODEL_PLACEHOLDER
-    STATE_CAMPAIGN_FINANCE_AGENCY: str = STRING_PLACEHOLDER
-    ZIPFILE_URL: str = STRING_PLACEHOLDER
+    VALIDATOR: ClassVar[BaseModel] = VALIDATOR_PLACEHOLDER
 
-    VENDOR_NAME_COLUMN: str = field(init=False)
-    FILER_NAME_COLUMN: str = field(init=False)
+    EXPENSE_VALIDATOR: ClassVar[BaseModel]
+    EXPENSE_MODEL: ClassVar[declarative_base]
+    EXPENSE_FILE_PREFIX: ClassVar[str]
 
-    PAYMENT_RECEIVED_DATE_COLUMN: str = field(init=False)
-    EXPENDITURE_DATE_COLUMN: str = field(init=False)
-    CONTRIBUTION_DATE_COLUMN: str = field(init=False)
+    CONTRIBUTION_VALIDATOR: ClassVar[BaseModel]
+    CONTRIBUTION_MODEL: ClassVar[declarative_base]
+    CONTRIBUTION_FILE_PREFIX: ClassVar[str]
 
-    EXPENDITURE_AMOUNT_COLUMN: str = field(init=False)
+    FILERS_VALIDATOR: ClassVar[BaseModel]
+    FILERS_MODEL: ClassVar[declarative_base]
+    FILERS_FILE_PREFIX: ClassVar[str]
 
-    def __post_init__(self):
-        self.DATE_COLUMNS = [
-            self.PAYMENT_RECEIVED_DATE_COLUMN,
-            self.EXPENDITURE_DATE_COLUMN,
-            self.CONTRIBUTION_DATE_COLUMN
-        ]
+    STATE_CAMPAIGN_FINANCE_AGENCY: ClassVar[str]
+    ZIPFILE_URL: ClassVar[str]
 
-        self.UPPERCASE_COLUMNS = [
-            self.VENDOR_NAME_COLUMN,
-            self.FILER_NAME_COLUMN
-        ]
+    VENDOR_NAME_COLUMN: ClassVar[str] = field(init=False)
+    FILER_NAME_COLUMN: ClassVar[str] = field(init=False)
+
+    PAYMENT_RECEIVED_DATE_COLUMN: ClassVar[str] = field(init=False)
+    EXPENDITURE_DATE_COLUMN: ClassVar[str] = field(init=False)
+    CONTRIBUTION_DATE_COLUMN: ClassVar[str] = field(init=False)
+
+    EXPENDITURE_AMOUNT_COLUMN: ClassVar[str] = field(init=False)
