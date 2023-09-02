@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "campaignfinance"
+version = "0.1.0"
+description = "Campaign Finance Search Tool"
+authors = ["John R. Eakin <johnreakin@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pandas = "^2.0.3"
+psycopg2 = "^2.9.6"
+SQLAlchemy = "^2.0.19"
+pydantic = "^2.0.3"
+nameparser = "^1.1.2"
+probablepeople = "^0.5.4"
+python-dotenv = "^1.0.0"
+tqdm = "^4.65.0"
+requests = "^2.31.0"
+urllib3 = "^2.0.4"
+phonenumbers = "^8.13.19"
+pydantic-extra-types = "^2.1.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
