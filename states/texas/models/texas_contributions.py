@@ -2,17 +2,17 @@ from states.texas.database import Base
 from sqlalchemy import Column, ForeignKey, Integer, String, text, Float, Boolean, Date
 
 class TECContributionRecord(Base):
-    __tablename__ = "tec.contributions"
+    __tablename__ = "texas.contributions"
     recordType = Column(String, nullable=False)
     formTypeCd = Column(String, nullable=False)
     schedFormTypeCd = Column(String, nullable=False)
     reportInfoIdent = Column(Integer, nullable=False)
     receivedDt = Column(Date, nullable=True)
     infoOnlyFlag = Column(Boolean, nullable=True)
-    filerIdent = Column(Integer, nullable=False, primary_key=True, unique=False)
+    filerIdent = Column(Integer, nullable=False)
     filerTypeCd = Column(String, nullable=False)
     filerName = Column(String, nullable=False)
-    contributionInfoId = Column(Integer, nullable=False)
+    contributionInfoId = Column(Integer, nullable=False, primary_key=True)
     contributionDt = Column(Date, nullable=True)
     contributionAmount = Column(Float, nullable=False)
     contributionDescr = Column(String, nullable=False)

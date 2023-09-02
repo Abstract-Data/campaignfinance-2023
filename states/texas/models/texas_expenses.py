@@ -3,7 +3,7 @@ from sqlalchemy import Column, ForeignKey, Integer, String, text, Float, Boolean
 
 
 class TECExpenseRecord(Base):
-    __tablename__ = "tec.expenses"
+    __tablename__ = "texas.expenses"
 
     recordType = Column(String, nullable=False)
     formTypeCd = Column(String, nullable=False)
@@ -11,10 +11,10 @@ class TECExpenseRecord(Base):
     reportInfoIdent = Column(Integer, nullable=False)
     receivedDt = Column(Date, nullable=False)
     infoOnlyFlag = Column(Boolean, nullable=True)
-    filerIdent = Column(Integer, nullable=False, primary_key=True, unique=False)
+    filerIdent = Column(Integer, nullable=False)
     filerTypeCd = Column(String, nullable=False)
     filerName = Column(String, nullable=False)
-    expendInfoId = Column(Integer, nullable=False)
+    expendInfoId = Column(Integer, nullable=False, primary_key=True)
     expendDt = Column(Date, nullable=False)
     expendAmount = Column(Float, nullable=False)
     expendDescr = Column(String, nullable=False)
