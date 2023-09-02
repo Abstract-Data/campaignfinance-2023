@@ -11,19 +11,19 @@ class PostgresLoader:
     table: declarative_base = field(init=False)
     models: List[declarative_base] = field(init=False)
 
+    def build(self, engine: create_engine):
+        self._base.metadata.create_all(engine)
+        print(f"Created {self.table.__tablename__}")
+
     def create(self, values: List[dict], table: declarative_base):
+        self.table = table
         self.models = [
             table(**dict(x)) for x in tqdm(
                 values,
                 desc=f"Creating {table.__tablename__} models"
             )
         ]
-        self.table = table
         return self.table, self.models
-
-    def build(self, engine: create_engine):
-        self._base.metadata.create_all(engine)
-        print(f"Created {self.table.__tablename__}")
 
     def load(self, session: sessionmaker):
 
