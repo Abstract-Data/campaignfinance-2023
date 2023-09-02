@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Campaign Finance Ignore
+states/texas/texas.env
 # C extensions
 *.so
 
