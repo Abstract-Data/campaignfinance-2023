@@ -1,37 +1,40 @@
-from abc import ABC, abstractmethod
 from abcs.state_configs import StateCampaignFinanceConfigs
 import requests
 import ssl
 import sys
 from tqdm import tqdm
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import urllib.request
 from zipfile import ZipFile
 from pathlib import Path
-from typing import Self, ClassVar
+from typing import Self, ClassVar, Protocol
 import os
 
 
 @dataclass
-class FileDownloader(ABC):
-    _configs = ClassVar[StateCampaignFinanceConfigs]
-    folder: Path = StateCampaignFinanceConfigs.FOLDER
+class FileDownloader(Protocol):
+    _configs: ClassVar[StateCampaignFinanceConfigs]
+    _folder: Path
 
     @property
-    @abstractmethod
+    def folder(self) -> Path:
+        return self._folder
+
+    @folder.setter
+    def folder(self, value: Path) -> None:
+        self._folder = value
+
+    @property
     def _tmp(self) -> Path:
         return self.folder if self.folder else self._configs.FOLDER
 
-    @abstractmethod
     def check_if_folder_exists(self) -> Path:
         ...
 
-    @abstractmethod
     def download(self, read_from_temp: bool = True) -> Self:
         tmp = ...
         temp_filename = tmp / ...
 
-        @abstractmethod
         def download_file_with_requests() -> None:
             # download files
             with requests.get(self._configs.ZIPFILE_URL, stream=True) as resp:
@@ -51,7 +54,6 @@ class FileDownloader(ABC):
                     print("Download Complete")
                 return None
 
-        @abstractmethod
         def download_file_with_urllib3() -> None:
             ssl_context = ssl.create_default_context()
             ssl_context.options |= ssl.OP_CIPHER_SERVER_PREFERENCE
@@ -67,7 +69,6 @@ class FileDownloader(ABC):
             urllib.request.install_opener(opener)
             urllib.request.urlretrieve(self._configs.ZIPFILE_URL, temp_filename)
 
-        @abstractmethod
         def extract_zipfile() -> None:
             # extract zip file to temp folder
             with ZipFile(temp_filename, "r") as myzip:

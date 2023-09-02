@@ -10,7 +10,7 @@ from states.texas.validators.texas_settings import TECSettings
 
 class TECFiler(TECSettings):
     recordType: str
-    filerIdent: str
+    filerIdent: int
     filerTypeCd: str
     filerName: str
     unexpendContribFilerFlag: Optional[str]
@@ -153,6 +153,16 @@ class TECFiler(TECSettings):
 
     chairPrimaryPhoneNumber: Optional[PhoneNumber]
     chairPrimaryPhoneExt: Optional[str]
+    expense_id: int
+    contribution_id: int
+
+
+    @model_validator(mode="before")
+    @classmethod
+    def add_filer_id(cls, values):
+        values["expenses_id"] = values["filerIdent"]
+        values["contributions_id"] = values["filerIdent"]
+        return values
 
     @model_validator(mode="before")
     @classmethod

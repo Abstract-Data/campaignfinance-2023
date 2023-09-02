@@ -45,6 +45,15 @@ class TECExpenses(TECSettings):
     payeeStreetRegion: Optional[str]
     creditCardIssuer: Optional[str]
     repaymentDt: Optional[date]
+    filer_id: int
+    contributions_id: int
+
+    @model_validator(mode="before")
+    @classmethod
+    def add_filer_id(cls, values):
+        values["filer_id"] = values["filerIdent"]
+        values["contributions_id"] = values["filerIdent"]
+        return values
 
     @field_validator("expendDt", "repaymentDt", "receivedDt", mode="before")
     @classmethod

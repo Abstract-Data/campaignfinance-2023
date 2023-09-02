@@ -72,6 +72,15 @@ class TECContribution(TECSettings):
     contributorParent1LawFirmName: Optional[str]
     contributorParent2LawFirmName: Optional[str]
     filers_filderId: int
+    filer_id: int
+    expenses_id: int
+
+    @model_validator(mode="before")
+    @classmethod
+    def add_filer_id(cls, values):
+        values["filer_id"] = values["filerIdent"]
+        values["expenses_id"] = values["filerIdent"]
+        return values
 
     @field_validator("contributionDt", "receivedDt", mode="before")
     @classmethod

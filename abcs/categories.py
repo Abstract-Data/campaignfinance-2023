@@ -3,13 +3,12 @@ from typing import ClassVar, Dict, List
 from dataclasses import dataclass
 import csv
 from tqdm import tqdm
-from typing import  Generator
+from typing import Generator, Protocol
 import datetime
-from abc import ABC, abstractmethod
-from abcs import StateCampaignFinanceConfigs
+from abcs import StateCampaignFinanceConfigs, FileDownloader
 
 @dataclass
-class StateCategories(ABC):
+class StateCategories(Protocol):
     expenses: ClassVar[List] = None
     contributions: ClassVar[List] = None
     filers: ClassVar[List] = None
@@ -18,7 +17,7 @@ class StateCategories(ABC):
     def __repr__(self):
         return f"StateCategories()"
 
-    @abstractmethod
+    @classmethod
     def read_file(cls, file: Path) -> Generator[Dict, None, None]:
         with open(file, "r") as _file:
             _records = csv.DictReader(_file)
@@ -30,11 +29,10 @@ class StateCategories(ABC):
                 yield _record
 
         # yield {records[x].values() for x in records}
-
-    @abstractmethod
-    def _generate_list(cls, pfx) -> List:
+    @classmethod
+    def _generate_list(cls, pfx, fldr: FileDownloader.folder) -> List:
         _files = []
-        for file in StateCategories._config.FOLDER.glob("*.csv"):
+        for file in fldr.glob("*.csv"):
             if file.stem.startswith(pfx):
                 _files.append(file)
             else:
@@ -42,7 +40,7 @@ class StateCategories(ABC):
         # return {k: v for file in f for k, v in file.items()}
         return sorted(_files)
 
-    @abstractmethod
+    @classmethod
     def load(cls, record_kind: str = None):
         def extract_records(record_type):
             _records = []
@@ -54,23 +52,23 @@ class StateCategories(ABC):
         _expenses, _contributions, _filers = [
             cls._generate_list(x)
             for x in [
-                StateCategories._config.EXPENSE_FILE_PREFIX,
-                StateCategories._config.CONTRIBUTION_FILE_PREFIX,
-                StateCategories._config.FILERS_FILE_PREFIX,
+                cls._config.EXPENSE_FILE_PREFIX,
+                cls._config.CONTRIBUTION_FILE_PREFIX,
+                cls._config.FILERS_FILE_PREFIX,
             ]
         ]
 
         StateCategories.filers = extract_records(_filers)
 
         if record_kind == "expenses":
-            StateCategories.expenses = extract_records(_expenses)
-            return StateCategories.expenses
+            cls.expenses = extract_records(_expenses)
+            return cls.expenses
 
         elif record_kind == "contributions":
-            StateCategories.contributions = extract_records(_contributions)
-            return StateCategories.contributions
+            cls.contributions = extract_records(_contributions)
+            return cls.contributions
 
         else:
-            StateCategories.expenses = extract_records(_expenses)
-            StateCategories.contributions = extract_records(_contributions)
-            return StateCategories.expenses, StateCategories.contributions
+            cls.expenses = extract_records(_expenses)
+            cls.contributions = extract_records(_contributions)
+            return cls.expenses, cls.contributions

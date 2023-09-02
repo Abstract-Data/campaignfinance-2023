@@ -1,48 +1,64 @@
-from states.texas.validator import TECValidator
-from states.texas.model import TECRecord
+from states.texas.validators import TECExpenses, TECFiler, TECContribution
 from pathlib import Path
-from typing import ClassVar, Dict, List, Tuple
+from typing import ClassVar, Dict, List
 from dataclasses import field, dataclass
 import csv
 from tqdm import tqdm
-from pydantic import ValidationError
+from pydantic import ValidationError, BaseModel
+from states.texas.database import declarative_base
 from zipfile import ZipFile
 import requests
 import os
 import sys
 import ssl
 import urllib.request
-from typing import Iterator, Generator
+from typing import Generator
 import datetime
 from collections import Counter
 import pandas as pd
-from abcs import StateFileValidation, StateCampaignFinanceConfigs, FileDownloader, CampaignFinanceFileReader, StateCategories
+from abcs import StateFileValidation, StateCampaignFinanceConfigs, FileDownloader, StateCategories
 
 
 class TexasConfigs(StateCampaignFinanceConfigs):
-    FOLDER = Path.cwd() / "tmp"
-    VALIDATOR = TECValidator
-    SQL_MODEL = TECRecord
-    STATE_CAMPAIGN_FINANCE_AGENCY = "TEC"
-    EXPENSE_FILE_PREFIX = "expend"
-    CONTRIBUTION_FILE_PREFIX = "contribs"
-    FILERS_FILE_PREFIX = "filer"
-    ZIPFILE_URL = "https://ethics.state.tx.us/data/search/cf/TEC_CF_CSV.zip"
+    FOLDER: ClassVar[Path] = Path.cwd() / "tmp"
 
-    VENDOR_NAME_COLUMN = "payeeCompanyName"
-    FILER_NAME_COLUMN = "filerNameFormatted"
+    EXPENSE_VALIDATOR: ClassVar[BaseModel] = TECExpenses
+    EXPENSE_MODEL: ClassVar[declarative_base] = None
+    EXPENSE_FILE_PREFIX: ClassVar[str] = "expend"
 
-    PAYMENT_RECEIVED_DATE_COLUMN = "receivedDt"
-    EXPENDITURE_DATE_COLUMN = "expendDt"
-    CONTRIBUTION_DATE_COLUMN = "contributionDt"
+    CONTRIBUTION_VALIDATOR: ClassVar[BaseModel] = TECContribution
+    CONTRIBUTION_MODEL: ClassVar[declarative_base] = None
+    CONTRIBUTION_FILE_PREFIX: ClassVar[str] = "contribs"
 
-    EXPENDITURE_AMOUNT_COLUMN = "expendAmount"
+    FILERS_VALIDATOR: ClassVar[BaseModel] = TECFiler
+    FILERS_MODEL: ClassVar[declarative_base] = None
+    FILERS_FILE_PREFIX: ClassVar[str] = "filer"
+
+    STATE_CAMPAIGN_FINANCE_AGENCY: ClassVar[str] = "TEC"
+    ZIPFILE_URL: ClassVar[str] = "https://ethics.state.tx.us/data/search/cf/TEC_CF_CSV.zip"
+
+    VENDOR_NAME_COLUMN: ClassVar[str] = "payeeCompanyName"
+    FILER_NAME_COLUMN: ClassVar[str] = "filerNameFormatted"
+
+    PAYMENT_RECEIVED_DATE_COLUMN: ClassVar[str] = "receivedDt"
+    EXPENDITURE_DATE_COLUMN: ClassVar[str] = "expendDt"
+    CONTRIBUTION_DATE_COLUMN: ClassVar[str] = "contributionDt"
+
+    EXPENDITURE_AMOUNT_COLUMN: ClassVar[str] = "expendAmount"
 
 
 @dataclass
 class TECFileDownloader(FileDownloader):
-    _configs: StateCampaignFinanceConfigs = TexasConfigs
-    folder: Path = TexasConfigs.FOLDER
+    _configs: ClassVar[StateCampaignFinanceConfigs] = TexasConfigs
+    _folder: Path = TexasConfigs.FOLDER
+
+    @property
+    def folder(self) -> Path:
+        return self._folder
+
+    @folder.setter
+    def folder(self, value: Path) -> None:
+        self._folder = value
 
     @property
     def _tmp(self) -> Path:
@@ -60,13 +76,13 @@ class TECFileDownloader(FileDownloader):
             print("Exiting...")
             sys.exit()
 
-    def download(self, read_from_temp: bool = True) -> None:
+    def download(self, read_from_temp: bool = True, config: StateCampaignFinanceConfigs = TexasConfigs) -> None:
         tmp = self._tmp
         temp_filename = tmp / "TEC_CF_CSV.zip"
 
         def download_file_with_requests() -> None:
             # download files
-            with requests.get(TexasConfigs.ZIPFILE_URL, stream=True) as resp:
+            with requests.get(config.ZIPFILE_URL, stream=True) as resp:
                 # check header to get content length, in bytes
                 total_length = int(resp.headers.get("Content-Length"))
 
@@ -90,13 +106,13 @@ class TECFileDownloader(FileDownloader):
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
 
-            print(f"Downloading {TexasConfigs.STATE_CAMPAIGN_FINANCE_AGENCY} Files...")
+            print(f"Downloading {config.STATE_CAMPAIGN_FINANCE_AGENCY} Files...")
 
             opener = urllib.request.build_opener(
                 urllib.request.HTTPSHandler(context=ssl_context)
             )
             urllib.request.install_opener(opener)
-            urllib.request.urlretrieve(TexasConfigs.ZIPFILE_URL, temp_filename)
+            urllib.request.urlretrieve(config.ZIPFILE_URL, temp_filename)
 
         def extract_zipfile() -> None:
             # extract zip file to temp folder
@@ -129,7 +145,6 @@ class TECFileDownloader(FileDownloader):
                                 extract_zipfile()
                             else:
                                 self.folder = tmp  # set folder to temp folder
-                            return self
                         else:
                             print("Exiting...")
                             sys.exit()
@@ -176,9 +191,9 @@ class TECCategories(StateCategories):
         # yield {records[x].values() for x in records}
 
     @classmethod
-    def _generate_list(cls, pfx) -> List:
+    def _generate_list(cls, pfx, fldr: StateCampaignFinanceConfigs = TexasConfigs.FOLDER) -> List:
         _files = []
-        for file in TECFileDownloader.folder.glob("*.csv"):
+        for file in fldr.glob("*.csv"):
             if file.stem.startswith(pfx):
                 _files.append(file)
             else:
@@ -187,7 +202,7 @@ class TECCategories(StateCategories):
         return sorted(_files)
 
     @classmethod
-    def load(cls, record_kind: str = None):
+    def load(cls, record_kind: str = None, _config: StateCampaignFinanceConfigs = TexasConfigs):
         def extract_records(record_type):
             _records = []
             for file in record_type:
@@ -198,26 +213,26 @@ class TECCategories(StateCategories):
         _expenses, _contributions, _filers = [
             TECCategories._generate_list(x)
             for x in [
-                TexasConfigs.EXPENSE_FILE_PREFIX,
-                TexasConfigs.CONTRIBUTION_FILE_PREFIX,
-                TexasConfigs.FILERS_FILE_PREFIX,
+                _config.EXPENSE_FILE_PREFIX,
+                _config.CONTRIBUTION_FILE_PREFIX,
+                _config.FILERS_FILE_PREFIX,
             ]
         ]
 
-        TECCategories.filers = extract_records(_filers)
+        cls.filers = extract_records(_filers)
 
         if record_kind == "expenses":
-            TECCategories.expenses = extract_records(_expenses)
-            return TECCategories.expenses
+            cls.expenses = extract_records(_expenses)
+            return cls.expenses
 
         elif record_kind == "contributions":
-            TECCategories.contributions = extract_records(_contributions)
-            return TECCategories.contributions
+            cls.contributions = extract_records(_contributions)
+            return cls.contributions
 
         else:
-            TECCategories.expenses = extract_records(_expenses)
-            TECCategories.contributions = extract_records(_contributions)
-            return TECCategories.expenses, TECCategories.contributions
+            cls.expenses = extract_records(_expenses)
+            cls.contributions = extract_records(_contributions)
+            return cls.expenses, cls.contributions
 
 
 @dataclass
@@ -229,7 +244,7 @@ class TECValidator(StateFileValidation):
     def validate(
         self,
         records,
-        validator: StateCampaignFinanceConfigs.VALIDATOR = TexasConfigs.VALIDATOR,
+        validator: StateCampaignFinanceConfigs.VALIDATOR,
     ):
         self.passed, self.failed = [], []
         for record in tqdm(records, desc=f"Validating records"):
@@ -255,7 +270,7 @@ class TECValidator(StateFileValidation):
             orient='index',
             columns=['count']
         ).rename_axis('error').reset_index()
-        error_df.loc[len(error_df)-1, 'Total'] = error_df['count'].sum()
+        error_df.loc['Total'] = error_df['count'].sum()
         self.errors = error_df
         return self.errors
 
