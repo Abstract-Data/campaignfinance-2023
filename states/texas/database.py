@@ -21,7 +21,7 @@ LOCAL_POSTGRES_PWD = os.environ[
     'LOCAL_POSTGRES_PWD'
 ]
 
-LOCAL_DATABASE_URL = f"postgresql://{LOCAL_POSTGRES_USR}:{LOCAL_POSTGRES_PWD}@localhost:5432/vep"
+LOCAL_DATABASE_URL = f"postgresql://{LOCAL_POSTGRES_USR}:{LOCAL_POSTGRES_PWD}@localhost:5432/campaignfinance"
 
 
 engine = create_engine(

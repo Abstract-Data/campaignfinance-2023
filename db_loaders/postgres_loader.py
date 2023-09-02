@@ -13,7 +13,7 @@ class PostgresLoader:
 
     def build(self, engine: create_engine):
         self._base.metadata.create_all(engine)
-        print(f"Created {self.table.__tablename__}")
+        print("Created Postgres tables")
 
     def create(self, values: List[dict], table: declarative_base):
         self.table = table

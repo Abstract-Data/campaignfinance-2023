@@ -3,9 +3,9 @@ from sqlalchemy import Column, ForeignKey, Integer, String, text, Float, Boolean
 
 
 class TECFilerRecord(Base):
-    __tablename__ = "tec.filers"
+    __tablename__ = "texas.filers"
     recordType = Column(String, nullable=False)
-    filerIdent = Column(Integer, nullable=False, primary_key=True, unique=False)
+    filerIdent = Column(Integer, nullable=False, primary_key=True)
     filerTypeCd = Column(String, nullable=False)
     filerName = Column(String, nullable=False)
     unexpendContribFilerFlag = Column(String, nullable=True)
