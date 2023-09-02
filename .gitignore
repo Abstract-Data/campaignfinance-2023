@@ -4,7 +4,7 @@ __pycache__/
 *$py.class
 
 # Campaign Finance Ignore
-states/texas/texas.env
+states/texas/*.env
 # C extensions
 *.so
 
