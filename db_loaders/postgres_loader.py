@@ -8,8 +8,8 @@ from tqdm import tqdm
 @dataclass
 class PostgresLoader:
     _base: declarative_base
-    table: declarative_base = None
-    models: List[declarative_base] = None
+    table: declarative_base = field(init=False)
+    models: List[declarative_base] = field(init=False)
 
     def create(self, values: List[dict], table: declarative_base):
         self.models = [
