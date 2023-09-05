@@ -1,5 +1,5 @@
 from abcs.state_configs import StateCampaignFinanceConfigs
-from typing import List, Tuple, Protocol
+from typing import List, Tuple, Protocol, Iterator
 from dataclasses import field, dataclass
 from tqdm import tqdm
 from pydantic import ValidationError
