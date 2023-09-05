@@ -2,7 +2,7 @@ from sqlalchemy import create_engine, MetaData, select
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from dotenv import load_dotenv
 import os
 from pathlib import Path
@@ -21,7 +21,7 @@ LOCAL_POSTGRES_PWD = os.environ[
     'LOCAL_POSTGRES_PWD'
 ]
 
-LOCAL_DATABASE_URL = f"postgresql://{LOCAL_POSTGRES_USR}:{LOCAL_POSTGRES_PWD}@localhost:5432/vep"
+LOCAL_DATABASE_URL = f"postgresql://{LOCAL_POSTGRES_USR}:{LOCAL_POSTGRES_PWD}@localhost:5432/campaignfinance"
 
 
 engine = create_engine(
@@ -36,4 +36,5 @@ SessionLocal: sessionmaker = sessionmaker(
     bind=engine
 )
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
