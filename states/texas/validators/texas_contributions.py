@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Optional, Annotated
+from typing import Optional, Annotated, List
 from pydantic import Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 from states.texas.validators.texas_settings import TECSettings
@@ -9,13 +9,13 @@ class TECContribution(TECSettings):
     recordType: str
     formTypeCd: str
     schedFormTypeCd: str
-    reportInfoIdent: int = Field(max_length=11)
+    reportInfoIdent: int
     receivedDt: date
     infoOnlyFlag: bool
     filerIdent: int
     filerTypeCd: str
     filerName: str
-    contributionInfoId: int = Field(max_length=11)
+    contributionInfoId: int
     contributionDt: date
     contributionAmount: float
     contributionDescr: str
@@ -59,9 +59,8 @@ class TECContribution(TECSettings):
     contributorJobTitle: Optional[str]
     contributorPacFein: Optional[
         Annotated[
-            int,
+            str,
             Field(
-                max_length=12,
                 description="Indicates if contributor is an out-of-state PAC",
             ),
         ]
@@ -71,15 +70,14 @@ class TECContribution(TECSettings):
     contributorSpouseLawFirmName: Optional[str]
     contributorParent1LawFirmName: Optional[str]
     contributorParent2LawFirmName: Optional[str]
-    filers_filderId: int
-    filer_id: int
-    expenses_id: int
+    # filer_id: Optional[int]
+    # filers: Optional[List]
 
     @model_validator(mode="before")
     @classmethod
     def add_filer_id(cls, values):
         values["filer_id"] = values["filerIdent"]
-        values["expenses_id"] = values["filerIdent"]
+        # values["expenses_id"] = values["filerIdent"]
         return values
 
     @field_validator("contributionDt", "receivedDt", mode="before")

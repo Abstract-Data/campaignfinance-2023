@@ -1,11 +1,12 @@
 from datetime import date
-from typing import Optional, Annotated
+from typing import Optional, Annotated, List, Any
 import probablepeople as pp
 from nameparser import HumanName
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from pydantic_extra_types.phone_numbers import PhoneNumber
 from pydantic_core import PydanticCustomError
 from states.texas.validators.texas_settings import TECSettings
+import phonenumbers
 
 
 class TECFiler(TECSettings):
@@ -23,7 +24,7 @@ class TECFiler(TECSettings):
     ctaSeekOfficeDescr: Optional[str]
     ctaSeekOfficeCountyCd: Optional[str]
     ctaSeekOfficeCountyDescr: Optional[str]
-    filerPersentTypeCd: str
+    filerPersentTypeCd: Optional[str]
     filerNameOrganization: Optional[str]
     filerNameLast: Optional[str]
     filerNameSuffixCd: Optional[str]
@@ -67,7 +68,7 @@ class TECFiler(TECSettings):
     contestSeekOfficeDescr: Optional[str]
     contestSeekOfficeCountyCd: Optional[str]
     contestSeekOfficeCountyDescr: Optional[str]
-    treasPersentTypeCd: str
+    treasPersentTypeCd: Optional[str]
     treasNameOrganization: Optional[str]
     treasNameLast: Optional[str]
     treasNameSuffixCd: Optional[str]
@@ -153,77 +154,84 @@ class TECFiler(TECSettings):
 
     chairPrimaryPhoneNumber: Optional[PhoneNumber]
     chairPrimaryPhoneExt: Optional[str]
-    expense_id: int
-    contribution_id: int
+    # expenses: Optional[List] = None
+    # contributions: Optional[List] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _clear_empty_values(cls, values):
+        for key, value in values.items():
+            if value == "":
+                values[key] = None
+        return values
 
     @model_validator(mode="before")
     @classmethod
     def add_filer_id(cls, values):
-        values["expenses_id"] = values["filerIdent"]
-        values["contributions_id"] = values["filerIdent"]
+        values["expense_id"] = values["filerIdent"]
+        values["contribution_id"] = values["filerIdent"]
         return values
 
-    @model_validator(mode="before")
-    @classmethod
-    def filer_type_checker(cls, values):
-        # TODO: Fix Persent ID not exisiting to pass
-        # TODO: Parse Names for Name Columns (take from Expenses class)
-        persent_type_cols = [
-            "filerPersentTypeCd",
-            "treasPersentTypeCd",
-            "assttreasPersentTypeCd",
-            "chairPersentTypeCd",
-        ]
-        persent_fname_cols = [
-            "filerNameFirst",
-            "treasNameFirst",
-            "assttreasNameFirst",
-            "chairNameFirst",
-        ]
-        persent_lname_cols = [
-            "filerNameLast",
-            "treasNameLast",
-            "assttreasNameLast",
-            "chairNameLast",
-        ]
-        persent_org_cols = [
-            "filerNameOrganization",
-            "treasNameOrganization",
-            "assttreasNameOrganization",
-            "chairNameOrganization",
-        ]
-        cols_zip = list(
-            zip(
-                persent_type_cols,
-                persent_fname_cols,
-                persent_lname_cols,
-                persent_org_cols,
-            )
-        )
-        for column in cols_zip:
-            if values[column[0]]:
-                if values[column[0]] == "INDIVIDUAL":
-                    if not values[column[1]]:
-                        raise PydanticCustomError(
-                            'filer_type_check',
-                            f"{column[1]} is required for INDIVIDUAL {column[0]}",
-                        )
-                if not values[column[2]]:
-                    raise PydanticCustomError(
-                        'filer_type_check',
-                        f"{column[2]} is required for INDIVIDUAL {column[0]}",
-                    )
-                elif values[column[0]] and values[column[0]] == "ENTITY":
-                    if not values[column[4]]:
-                        raise PydanticCustomError(
-                            'filer_type_check',
-                            f"{column[4]} is required for ENTITY {column[0]}",
-                        )
-                else:
-                    # raise ValueError(f"{column[0]} must be INDIVIDUAL or ENTITY")
-                    pass
-        return values
+    # @model_validator(mode="before")
+    # @classmethod
+    # def filer_type_checker(cls, values):
+    #     # TODO: Fix Persent ID not exisiting to pass
+    #     # TODO: Parse Names for Name Columns (take from Expenses class)
+    #     persent_type_cols = [
+    #         "filerPersentTypeCd",
+    #         "treasPersentTypeCd",
+    #         "assttreasPersentTypeCd",
+    #         "chairPersentTypeCd",
+    #     ]
+    #     persent_fname_cols = [
+    #         "filerNameFirst",
+    #         "treasNameFirst",
+    #         "assttreasNameFirst",
+    #         "chairNameFirst",
+    #     ]
+    #     persent_lname_cols = [
+    #         "filerNameLast",
+    #         "treasNameLast",
+    #         "assttreasNameLast",
+    #         "chairNameLast",
+    #     ]
+    #     persent_org_cols = [
+    #         "filerNameOrganization",
+    #         "treasNameOrganization",
+    #         "assttreasNameOrganization",
+    #         "chairNameOrganization",
+    #     ]
+    #     cols_zip = list(
+    #         zip(
+    #             persent_type_cols,
+    #             persent_fname_cols,
+    #             persent_lname_cols,
+    #             persent_org_cols,
+    #         )
+    #     )
+    #     for column in cols_zip:
+    #         if values[column[0]]:
+    #             if values[column[0]] == "INDIVIDUAL":
+    #                 if not values[column[1]]:
+    #                     raise PydanticCustomError(
+    #                         'filer_type_check',
+    #                         f"{column[1]} is required for INDIVIDUAL {column[0]}",
+    #                     )
+    #             if not values[column[2]]:
+    #                 raise PydanticCustomError(
+    #                     'filer_type_check',
+    #                     f"{column[2]} is required for INDIVIDUAL {column[0]}",
+    #                 )
+    #             elif values[column[0]] and values[column[0]] == "ENTITY":
+    #                 if not values[column[4]]:
+    #                     raise PydanticCustomError(
+    #                         'filer_type_check',
+    #                         f"{column[4]} is required for ENTITY {column[0]}",
+    #                     )
+    #             else:
+    #                 # raise ValueError(f"{column[0]} must be INDIVIDUAL or ENTITY")
+    #                 pass
+    #     return values
 
     @field_validator(
         "filerEffStartDt",
@@ -240,52 +248,77 @@ class TECFiler(TECSettings):
                     int(str(value[:4])), int(str(value[4:6])), int(str(value[6:8]))
                 )
 
-    @model_validator(mode="before")
+    # @model_validator(mode="before")
+    # @classmethod
+    # def _check_state_code(cls, values):
+    #     street_country_cols = [
+    #         "filerStreetCountryCd",
+    #         "treasStreetCountryCd",
+    #         "assttreasStreetCountryCd",
+    #         "chairStreetCountryCd",
+    #         "chairMailingCountryCd",
+    #     ]
+    #     street_postal_cols = [
+    #         "filerStreetPostalCode",
+    #         "treasStreetPostalCode",
+    #         "assttreasStreetPostalCode",
+    #         "chairStreetPostalCode",
+    #         "chairMailingPostalCode",
+    #     ]
+    #     street_region_cols = [
+    #         "filerStreetRegion",
+    #         "treasStreetRegion",
+    #         "assttreasStreetRegion",
+    #         "chairStreetRegion",
+    #         "chairMailingRegion",
+    #     ]
+    #     code_zip = list(
+    #         zip(street_country_cols, street_postal_cols, street_region_cols)
+    #     )
+    #     for col in code_zip:
+    #         if values[col[0]] and values[col[0]] == "USA":
+    #             if not values[col[1]]:
+    #                 raise PydanticCustomError(
+    #                     'state_code_check',
+    #                     f"{col[1]} is required for USA {col[0]}",
+    #                     {
+    #                         'value': values[col[1]]
+    #                     }
+    #                 )
+    #         elif values[col[0]] and values[col[0]] != "UMI":
+    #             if not values[col[2]]:
+    #                 raise PydanticCustomError(
+    #                     'state_code_check',
+    #                     f"{col[0]} is required for non-USA country",
+    #                     {
+    #                         'values': values[col[2]]
+    #                     }
+    #                 )
+    #         else:
+    #             pass
+    #     return values
+
+    @field_validator(
+        "filerPrimaryPhoneNumber",
+        "treasPrimaryPhoneNumber",
+        "assttreasPrimaryPhoneNumber",
+        "chairPrimaryPhoneNumber",
+        mode="before")
     @classmethod
-    def _check_state_code(cls, values):
-        street_country_cols = [
-            "filerStreetCountryCd",
-            "treasStreetCountryCd",
-            "assttreasStreetCountryCd",
-            "chairStreetCountryCd",
-            "chairMailingCountryCd",
-        ]
-        street_postal_cols = [
-            "filerStreetPostalCode",
-            "treasStreetPostalCode",
-            "assttreasStreetPostalCode",
-            "chairStreetPostalCode",
-            "chairMailingPostalCode",
-        ]
-        street_region_cols = [
-            "filerStreetRegion",
-            "treasStreetRegion",
-            "assttreasStreetRegion",
-            "chairStreetRegion",
-            "chairMailingRegion",
-        ]
-        code_zip = list(
-            zip(street_country_cols, street_postal_cols, street_region_cols)
-        )
-        for col in code_zip:
-            if values[col[0]] and values[col[0]] == "USA":
-                if not values[col[1]]:
-                    raise PydanticCustomError(
-                        'state_code_check',
-                        f"{col[1]} is required for USA {col[0]}",
-                        {
-                            'value': values[col[1]]
-                        }
-                    )
-            elif values[col[0]] and values[col[0]] != "UMI":
-                if not values[col[2]]:
-                    raise PydanticCustomError(
-                        'state_code_check',
-                        f"{col[0]} is required for non-USA country",
-                        {
-                            'values': values[col[2]]
-                        }
-                    )
-            else:
-                pass
-        return values
+    def _check_phone_number(cls, v):
+        if v:
+            try:
+                _phone = phonenumbers.parse(v, "US")
+                phone = phonenumbers.format_number(_phone, phonenumbers.PhoneNumberFormat.E164)
+                return phone
+            except phonenumbers.NumberParseException:
+                raise PydanticCustomError(
+                    'phone_number_check',
+                    f"{v} is not a valid phone number",
+                    {
+                        'value': v
+                    }
+                )
+
+
+

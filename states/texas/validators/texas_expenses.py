@@ -1,12 +1,12 @@
 from datetime import date
-from typing import Optional
+from typing import Optional, List
 from nameparser import HumanName
 from pydantic import field_validator, model_validator
 from pydantic_core import PydanticCustomError
 from states.texas.validators.texas_settings import TECSettings
 
 
-class TECExpenses(TECSettings):
+class TECExpense(TECSettings):
     recordType: str
     formTypeCd: str
     schedFormTypeCd: str
@@ -45,14 +45,14 @@ class TECExpenses(TECSettings):
     payeeStreetRegion: Optional[str]
     creditCardIssuer: Optional[str]
     repaymentDt: Optional[date]
-    filer_id: int
-    contributions_id: int
+    # filer_id: Optional[int]
+    # filers: Optional[List]
 
     @model_validator(mode="before")
     @classmethod
     def add_filer_id(cls, values):
         values["filer_id"] = values["filerIdent"]
-        values["contributions_id"] = values["filerIdent"]
+        # values["contribution_id"] = values["filerIdent"]
         return values
 
     @field_validator("expendDt", "repaymentDt", "receivedDt", mode="before")
@@ -117,29 +117,30 @@ class TECExpenses(TECSettings):
             values["payeeNameShort"] = person.nickname
             return values
 
-        if values["payeeNameFirst"] and not values["payeeNameLast"]:
-            name = HumanName(values["payeeNameFirst"])
-            if name.last:
-                complete_name_cols(name)
-            else:
-                raise PydanticCustomError(
-                    'person_name_check',
-                    "payeeNameLast is required if payeeNameFirst is provided",
-                    {'value': values["payeeNameLast"]}
-                )
+        if values["payeePersentTypeCd"] == "INDIVIDUAL":
+            if values["payeeNameFirst"] and not values["payeeNameLast"]:
+                name = HumanName(values["payeeNameFirst"])
+                if name.last:
+                    complete_name_cols(name)
+                else:
+                    raise PydanticCustomError(
+                        'person_name_check',
+                        "payeeNameLast is required if payeeNameFirst is provided",
+                        {'value': values["payeeNameLast"]}
+                    )
 
-        elif values["payeeNameLast"] and not values["payeeNameFirst"]:
-            name = HumanName(values["payeeNameLast"])
-            if name.first:
-                complete_name_cols(name)
+            elif values["payeeNameLast"] and not values["payeeNameFirst"]:
+                name = HumanName(values["payeeNameLast"])
+                if name.first:
+                    complete_name_cols(name)
+                else:
+                    raise PydanticCustomError(
+                        'person_name_check',
+                        "payeeNameFirst is required if payeeNameLast is provided",
+                        {'value': values["payeeNameFirst"]}
+                    )
             else:
-                raise PydanticCustomError(
-                    'person_name_check',
-                    "payeeNameFirst is required if payeeNameLast is provided",
-                    {'value': values["payeeNameFirst"]}
-                )
-        else:
-            pass
+                pass
         return values
 
     @model_validator(mode="before")

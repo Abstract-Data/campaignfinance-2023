@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import urllib.request
 from zipfile import ZipFile
 from pathlib import Path
-from typing import Self, ClassVar, Protocol
+from typing import Self, ClassVar, Protocol, Type
 import os
 
 

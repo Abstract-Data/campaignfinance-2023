@@ -3,15 +3,19 @@ from typing import ClassVar, Dict, List
 from dataclasses import dataclass
 import csv
 from tqdm import tqdm
-from typing import Generator, Protocol
+from typing import Generator, Protocol, Iterator, Tuple
 import datetime
 from abcs import StateCampaignFinanceConfigs, FileDownloader
+from logger import Logger
+
+logger = Logger(__name__)
+
 
 @dataclass
 class StateCategories(Protocol):
-    expenses: ClassVar[List] = None
-    contributions: ClassVar[List] = None
-    filers: ClassVar[List] = None
+    expenses: ClassVar[Iterator[List]] = None
+    contributions: ClassVar[Iterator[List]] = None
+    filers: ClassVar[Iterator[List]] = None
     _config: ClassVar[StateCampaignFinanceConfigs]
 
     def __repr__(self):
@@ -21,11 +25,7 @@ class StateCategories(Protocol):
     def read_file(cls, file: Path) -> Generator[Dict, None, None]:
         with open(file, "r") as _file:
             _records = csv.DictReader(_file)
-            records = {}
             for _record in tqdm(enumerate(_records), desc=f"Reading {file.name}"):
-                _record[1]["file_origin"] = file.name + str(
-                    datetime.date.today()
-                ).replace("-", "")
                 yield _record
 
         # yield {records[x].values() for x in records}
@@ -42,12 +42,12 @@ class StateCategories(Protocol):
 
     @classmethod
     def load(cls, record_kind: str = None):
-        def extract_records(record_type):
+        def extract_records(record_type) -> Iterator[List] | Tuple[Iterator[List], Iterator[List]]:
             _records = []
             for file in record_type:
                 file_records = cls.read_file(file)
                 _records.extend(x[1] for x in file_records)
-            return _records
+            return iter(_records)
 
         _expenses, _contributions, _filers = [
             cls._generate_list(x)
