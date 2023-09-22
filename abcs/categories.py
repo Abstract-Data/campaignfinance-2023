@@ -41,7 +41,7 @@ class StateCategories(Protocol):
         return sorted(_files)
 
     @classmethod
-    def load(cls, record_kind: str = None):
+    def generate(cls, record_kind: str = None):
         def extract_records(record_type) -> Iterator[List] | Tuple[Iterator[List], Iterator[List]]:
             _records = []
             for file in record_type:

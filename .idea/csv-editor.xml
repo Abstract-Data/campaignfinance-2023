@@ -31,6 +31,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/tmp/contribs_55.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/tmp/contribs_57.csv">
           <value>
             <Attribute>
@@ -45,6 +52,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/tmp/cover_ss.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/tmp/cover_t.csv">
           <value>
             <Attribute>
@@ -53,6 +67,20 @@
           </value>
         </entry>
         <entry key="/tmp/credits.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/tmp/debts.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/tmp/expn_catg.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />
@@ -87,7 +115,28 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/tmp/pldg_ss.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/tmp/pldg_t.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/tmp/pledges.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/tmp/spacs.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />

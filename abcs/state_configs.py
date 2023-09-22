@@ -25,15 +25,15 @@ class StateCampaignFinanceConfigs(Protocol):
 
     EXPENSE_VALIDATOR: ClassVar[BaseModel] = VALIDATOR_PLACEHOLDER
     EXPENSE_MODEL: ClassVar[Type[DeclarativeBase]] = SQL_MODEL_PLACEHOLDER
-    EXPENSE_FILE_PREFIX: ClassVar[str]
+    EXPENSE_FILE_PREFIX: ClassVar[str] = None
 
     CONTRIBUTION_VALIDATOR: ClassVar[BaseModel] = VALIDATOR_PLACEHOLDER
     CONTRIBUTION_MODEL: ClassVar[Type[DeclarativeBase]] = SQL_MODEL_PLACEHOLDER
-    CONTRIBUTION_FILE_PREFIX: ClassVar[str]
+    CONTRIBUTION_FILE_PREFIX: ClassVar[str] = None
 
     FILERS_VALIDATOR: ClassVar[BaseModel] = VALIDATOR_PLACEHOLDER
     FILERS_MODEL: ClassVar[Type[DeclarativeBase]] = SQL_MODEL_PLACEHOLDER
-    FILERS_FILE_PREFIX: ClassVar[str]
+    FILERS_FILE_PREFIX: ClassVar[str] = None
 
     STATE_CAMPAIGN_FINANCE_AGENCY: ClassVar[str]
     ZIPFILE_URL: ClassVar[str]
