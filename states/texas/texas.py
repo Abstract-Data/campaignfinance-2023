@@ -13,7 +13,7 @@ import os
 import sys
 import ssl
 import urllib.request
-from typing import Generator, Iterator, Type
+from typing import Generator, Iterator, Type, Any
 import datetime
 from collections import Counter
 import pandas as pd
@@ -23,6 +23,7 @@ from abcs import (
     FileDownloader,
     StateCategories,
 )
+from funcs import FileReader
 from db_loaders.postgres_loader import PostgresLoader
 from states.texas.database import Base, engine, SessionLocal
 from logger import Logger
@@ -231,20 +232,19 @@ class TECCategories(StateCategories):
         TECCategories.__logger = Logger(self.__class__.__name__)
 
     @classmethod
-    def read_file(cls, file: Path) -> Generator[Dict, None, None]:
-        with open(file, "r") as _file:
-            _records = csv.DictReader(_file)
-            for _record in tqdm(enumerate(_records), desc=f"Reading {file.name}"):
-                _record[1]["file_origin"] = file.name + str(
-                    datetime.date.today()
-                ).replace("-", "")
-                yield _record
+    def read_file(cls, file: Path) -> Generator[Dict[str, Generator], None, None]:
+        yield from FileReader.read_file(file)
 
         # yield {records[x].values() for x in records}
 
     @classmethod
     def _generate_list(
-        cls, pfx, fldr: StateCampaignFinanceConfigs.FOLDER = TexasConfigs.FOLDER
+            cls,
+            pfx: [
+                StateCampaignFinanceConfigs.EXPENSE_FILE_PREFIX,
+                StateCampaignFinanceConfigs.CONTRIBUTION_FILE_PREFIX,
+                StateCampaignFinanceConfigs.FILERS_FILE_PREFIX],
+            fldr: StateCampaignFinanceConfigs.FOLDER = TexasConfigs.FOLDER
     ) -> List:
         _files = []
         for file in fldr.glob("*.csv"):
@@ -258,18 +258,15 @@ class TECCategories(StateCategories):
         return sorted(_files)
 
     @classmethod
-    def load(
+    def generate(
         cls,
         record_kind: str = None,
         _config: StateCampaignFinanceConfigs = TexasConfigs,
     ):
-        def extract_records(record_type) -> Iterator[List]:
+        def extract_records(record_type: List) -> Generator[List, None, None]:
             # cls.__logger.debug(f"Initialized extract_records method")
-            _records = []
             for file in record_type:
-                file_records = cls.read_file(file)
-                _records.extend(x[1] for x in file_records)
-            return iter(_records)
+                yield cls.read_file(file)
 
         _expenses, _contributions, _filers = [
             TECCategories._generate_list(x)
@@ -283,27 +280,34 @@ class TECCategories(StateCategories):
             f"Generated lists of files for expenses, contributions, and filers..."
         )
 
+        # if record_kind == "filers":
+        #     cls.filers = extract_records(_filers)
+        #     return cls.filers
+        #
+        # if record_kind == "expenses":
+        #     cls.expenses = extract_records(_expenses)
+        #     return cls.expenses
+        #
+        # elif record_kind == "contributions":
+        #     cls.contributions = extract_records(_contributions)
+        #     return cls.contributions
+        #
+        # else:
+        cls.expenses = extract_records(_expenses)
+        cls.contributions = extract_records(_contributions)
         cls.filers = extract_records(_filers)
 
-        if record_kind == "expenses":
-            cls.expenses = extract_records(_expenses)
-            return cls.expenses
+        return cls
 
-        elif record_kind == "contributions":
-            cls.contributions = extract_records(_contributions)
-            return cls.contributions
-
-        else:
-            cls.expenses = extract_records(_expenses)
-            cls.contributions = extract_records(_contributions)
-
-            return cls.expenses, cls.contributions
+    @classmethod
+    def read(cls, records):
+        return {k: v for record in tqdm(records, desc=f"Loading {records.__class__.__name__}") for k, v in record}
 
 
 @dataclass
 class TECValidator(StateFileValidation):
-    passed: List = field(init=False)
-    failed: List = field(init=False)
+    passed: Iterator[List] = field(init=False)
+    failed: Iterator[Dict[str, ValidationError]] = field(init=False)
     errors: pd.DataFrame = field(init=False)
     __logger: Logger = field(init=False)
 
@@ -312,36 +316,39 @@ class TECValidator(StateFileValidation):
 
     def validate(
         self,
-        records,
+        records: Iterator[List],
         validator: StateCampaignFinanceConfigs.VALIDATOR,
         load_to_db: bool = False,
     ):
         self.__logger.debug(f"Called validate()")
         _passed, _failed = [], []
         _pass_count, _fail_count = 0, 0
-        for record in tqdm(records, desc=f"Validating records"):
-            try:
-                r = validator(**dict(record))
-                _passed.append(r)
-            except ValidationError as e:
-                record["error"] = str(e)
-                _failed.append({"error": e, "record": record})
+        for each_file in tqdm(iter(records), desc=f"Validating file"):
+            for each_record in each_file:
+                try:
+                    r = validator(**each_record[1])
+                    _passed.append(r)
+                    _pass_count += 1
+                except ValidationError as e:
+                    each_record[1]["error"] = e.errors()
+                    _failed.append({"error": e, "record": each_record[1]})
+                    _fail_count += 1
 
-            if len(_passed) == 16000:
-                if load_to_db:
-                    _db = PostgresLoader(TexasConfigs.DB_BASE)
-                    _db.add_to_db(_passed, validator, TexasConfigs)
-                # elif db_insert_method.lower() == "insert":
-                #     _db.insert_to_db(_passed, validator, TexasConfigs)
-                sys.stdout.write(
-                    f"\rPassed: {len(_passed)} | Failed: {len(_failed)}"
-                )
-                sys.stdout.flush()
+                if len(_passed) == 16000:
+                    if load_to_db:
+                        _db = PostgresLoader(TexasConfigs.DB_BASE)
+                        _db.add_to_db(_passed, validator, TexasConfigs)
+                    # elif db_insert_method.lower() == "insert":
+                    #     _db.insert_to_db(_passed, validator, TexasConfigs)
+                        _passed = []
+                    sys.stdout.write(
+                        f"\rPassed: {_pass_count:,} | Failed: {_fail_count:,}"
+                    )
+                    sys.stdout.flush()
         self.__logger.debug(
-            f"Returning {len(_passed):,} passed and {len(_failed):,} failed records..."
+            f"Returning {_pass_count:,} passed and {_fail_count:,} failed records..."
         )
-        self.passed, self.failed = _passed, _failed
-        self.error_report()
+        self.passed, self.failed = iter(_passed), iter(_failed)
         return self.passed, self.failed
 
     def error_report(self):

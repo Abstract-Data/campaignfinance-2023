@@ -33,23 +33,27 @@ class PostgresLoader:
         self.models = iter(_models)
         return self.table, self.models
 
-    def load(self, session: sessionmaker):
+    def load(self, session: sessionmaker, records: List = None, table: Type[DeclarativeBase] = None):
 
-        def upload_records(records):
+        _records = records if records else self.models
+        _table = table if table else self.table
+        def upload_records(recs):
             _errors = []
             with session() as upload:
                 try:
-                    upload.add_all(records)
+                    upload.add_all(recs)
                     upload.commit()
                 except Exception as e:
                     upload.rollback()
                     self.__logger.error(f"Error: {e}")
                     _errors.append(e)
             return _errors
+
         errors = []
         _queue = []
-        for model in tqdm(self.models, desc=f"Loading to {self.table.__tablename__}"):
-            _queue.append(model)
+        for rec in tqdm(_records, desc=f"Loading to {_table.__tablename__}"):
+            rec_model = _table(**dict(rec))
+            _queue.append(rec_model)
             if len(_queue) == 16000:
                 _errors = upload_records(_queue)
                 _queue = []
@@ -58,7 +62,7 @@ class PostgresLoader:
         errors.append(_errors)
         return errors
 
-    def _get_model(self, _validator: BaseModel, _config: StateCampaignFinanceConfigs):
+    def _get_model(self, _validator: Type[BaseModel], _config: StateCampaignFinanceConfigs):
         if _validator.__name__ == "TECExpense":
             _model = _config.EXPENSE_MODEL
         elif _validator.__name__ == "TECContribution":
@@ -85,5 +89,7 @@ class PostgresLoader:
         _loader.create(values=_list, table=_model)
         _loader.load(session=_config.DB_SESSION)
         self.__logger.debug(f"Loaded {len(_list):,} records to database...")
+
+
 
 

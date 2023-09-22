@@ -43,7 +43,7 @@ class TECContributionRecord(Base):
     contributorEmployer: Mapped[str] = mapped_column(nullable=True)
     contributorOccupation: Mapped[str] = mapped_column(nullable=True)
     contributorJobTitle: Mapped[str] = mapped_column(nullable=True)
-    contributorPacFein: Mapped[int] = mapped_column(nullable=True)
+    contributorPacFein: Mapped[str] = mapped_column(nullable=True)
     contributorOosPacFlag = Column(Boolean, nullable=True)
     contributorLawFirmName: Mapped[str] = mapped_column(nullable=True)
     contributorSpouseLawFirmName: Mapped[str] = mapped_column(nullable=True)

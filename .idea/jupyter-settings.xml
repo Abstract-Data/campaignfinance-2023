@@ -8,6 +8,7 @@
             <JupyterConnectionParameters>
               <option name="managed" value="true" />
               <option name="sdkHomePath" value="$USER_HOME$/.pyenv/versions/counterpoint/bin/python" />
+              <option name="sdkName" value="Python 3.10 (counterpoint)" />
             </JupyterConnectionParameters>
           </value>
         </entry>

@@ -38,12 +38,19 @@ def sort_uniques(records: list, field: str = "filerIdent"):
 # expense_loader.create(values=unique_expenses, table=TECExpenseRecord)
 # expense_loader.load(session=SessionLocal)
 
-folder.load("contributions")
+folder.generate()
+
+# records = [x for x in folder.contributions]
+# each_record = [y for x in records for y in x]
 contributions = TECValidator()
 contributions.validate(records=folder.contributions, validator=TECContribution)
-contributions_loader = PostgresLoader(Base)
-contributions_loader.create(values=contributions.passed, table=TECContributionRecord)
-contributions_loader.load(session=SessionLocal)
+# contributions.validate(records=folder.contributions, validator=TECContribution)
+# contributions_loader = PostgresLoader(Base)
+# contributions_loader.load(records=contributions.passed, session=SessionLocal, table=TECContributionRecord)
+# contributions_loader.load(session=SessionLocal)
+
+# with SessionLocal() as session:
+#     macias = session.query("MACIAS_YEAR").all()
 
 # expenses.validate(records=folder.expenses, validator=TECExpense)
 # unique_expenses = {x.expendInfoId: x for x in expenses.passed}

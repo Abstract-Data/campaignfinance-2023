@@ -75,6 +75,14 @@ class TECContribution(TECSettings):
 
     @model_validator(mode="before")
     @classmethod
+    def _clear_empty_values(cls, values):
+        for key, value in values.items():
+            if value == "":
+                values[key] = None
+        return values
+
+    @model_validator(mode="before")
+    @classmethod
     def add_filer_id(cls, values):
         values["filer_id"] = values["filerIdent"]
         # values["expenses_id"] = values["filerIdent"]
