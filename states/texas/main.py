@@ -6,14 +6,18 @@ from states.texas.models import TECExpenseRecord, TECFilerRecord, TECContributio
 
 download = TECFileDownloader()
 folder = TECCategories()
-expenses = TECValidator()
+folder.generate()
 
-download.read()
+contributions_validate = folder.validate(folder.contributions)
 
-filers = TECValidator()
 
-psql = PostgresLoader(Base)
-psql.build(engine=engine)
+#
+# download.read()
+#
+# filers = TECValidator()
+#
+# psql = PostgresLoader(Base)
+# psql.build(engine=engine)
 
 # folder.load("expenses")
 # filers.validate(records=folder.filers, validator=TECFiler)
@@ -38,12 +42,12 @@ def sort_uniques(records: list, field: str = "filerIdent"):
 # expense_loader.create(values=unique_expenses, table=TECExpenseRecord)
 # expense_loader.load(session=SessionLocal)
 
-folder.generate()
-
-# records = [x for x in folder.contributions]
-# each_record = [y for x in records for y in x]
-contributions = TECValidator()
-contributions.validate(records=folder.contributions, validator=TECContribution)
+# folder.generate()
+#
+# # records = [x for x in folder.contributions]
+# # each_record = [y for x in records for y in x]
+# contributions = TECValidator()
+# contributions.validate(records=folder.contributions, validator=TECContribution)
 # contributions.validate(records=folder.contributions, validator=TECContribution)
 # contributions_loader = PostgresLoader(Base)
 # contributions_loader.load(records=contributions.passed, session=SessionLocal, table=TECContributionRecord)

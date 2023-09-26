@@ -18,7 +18,7 @@ class TECContribution(TECSettings):
     contributionInfoId: int
     contributionDt: date
     contributionAmount: float
-    contributionDescr: str
+    contributionDescr: Optional[str]
     itemizeFlag: Optional[bool]
     travelFlag: Optional[bool]
     contributorPersentTypeCd: str = Field(

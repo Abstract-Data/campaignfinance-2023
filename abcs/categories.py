@@ -13,9 +13,9 @@ logger = Logger(__name__)
 
 @dataclass
 class StateCategories(Protocol):
-    expenses: ClassVar[Iterator[List]] = None
-    contributions: ClassVar[Iterator[List]] = None
-    filers: ClassVar[Iterator[List]] = None
+    expenses: ClassVar[List] = None
+    contributions: ClassVar[List] = None
+    filers: ClassVar[List] = None
     _config: ClassVar[StateCampaignFinanceConfigs]
 
     def __repr__(self):
