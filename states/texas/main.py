@@ -6,10 +6,9 @@ from states.texas.models import TECExpenseRecord, TECFilerRecord, TECContributio
 
 download = TECFileDownloader()
 folder = TECCategories()
-folder.generate()
 
-contributions_validate = folder.validate(folder.contributions)
-
+exp_passed, exp_failed, exp_report = folder.validate_category(folder.expenses, to_db=True)
+cont_passed, cont_failed, cont_report = folder.validate_category(folder.contributions, to_db=True)
 
 #
 # download.read()

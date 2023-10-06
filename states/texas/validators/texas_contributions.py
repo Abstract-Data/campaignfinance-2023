@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional, Annotated, List
 from pydantic import Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
@@ -70,6 +70,7 @@ class TECContribution(TECSettings):
     contributorSpouseLawFirmName: Optional[str]
     contributorParent1LawFirmName: Optional[str]
     contributorParent2LawFirmName: Optional[str]
+    file_origin: str
     # filer_id: Optional[int]
     # filers: Optional[List]
 
