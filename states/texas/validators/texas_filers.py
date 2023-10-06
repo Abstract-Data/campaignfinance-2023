@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional, Annotated, List, Any
 import probablepeople as pp
 from nameparser import HumanName
@@ -154,6 +154,7 @@ class TECFiler(TECSettings):
 
     chairPrimaryPhoneNumber: Optional[PhoneNumber]
     chairPrimaryPhoneExt: Optional[str]
+    file_origin: str
     # expenses: Optional[List] = None
     # contributions: Optional[List] = None
 

@@ -1,4 +1,5 @@
-from typing import Protocol, List, Iterable, Type
+import itertools
+from typing import Protocol, List, Iterable, Type, Generator
 from pydantic import BaseModel
 from dataclasses import dataclass, field
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
@@ -12,6 +13,7 @@ from sqlalchemy.dialects.postgresql import insert
 @dataclass
 class PostgresLoader:
     _base: Type[DeclarativeBase]
+    _built: bool = False
     table: Type[DeclarativeBase] = field(init=False)
     models: Iterable[DeclarativeBase] = field(init=False)
     __logger: Logger = field(init=False)
@@ -26,22 +28,22 @@ class PostgresLoader:
     def create(self, values: List[dict], table: Type[DeclarativeBase]):
         self.table = table
 
-        _models = []
-        for v in tqdm(values, desc=f"Creating {table.__tablename__} models"):
-            _v = dict(v)
-            _models.append(table(**_v))
-        self.models = iter(_models)
-        return self.table, self.models
+        def model_generator() -> Generator[DeclarativeBase, dict, None]:
+            for v in iter(values):
+                yield table(**v)
 
-    def load(self, session: sessionmaker, records: List = None, table: Type[DeclarativeBase] = None):
+        self.__logger.info("Generating models...")
+        return model_generator()
 
-        _records = records if records else self.models
-        _table = table if table else self.table
-        def upload_records(recs):
+    def load(self, session: sessionmaker, records: List[dict] = None, **kwargs):
+        _table = kwargs.get('table') if kwargs.get('table') else self.table
+
+        def upload_records(recs: List[dict], table=_table):
+            # No limit on the number of records to upload as postgres can handle parsing
             _errors = []
             with session() as upload:
                 try:
-                    upload.add_all(recs)
+                    upload.add_all([x for x in self.create(recs, table)])
                     upload.commit()
                 except Exception as e:
                     upload.rollback()
@@ -49,20 +51,12 @@ class PostgresLoader:
                     _errors.append(e)
             return _errors
 
-        errors = []
-        _queue = []
-        for rec in tqdm(_records, desc=f"Loading to {_table.__tablename__}"):
-            rec_model = _table(**dict(rec))
-            _queue.append(rec_model)
-            if len(_queue) == 16000:
-                _errors = upload_records(_queue)
-                _queue = []
-                errors.append(_errors)
-        _errors = upload_records(_queue)
-        errors.append(_errors)
+        errors = upload_records(records)
         return errors
 
-    def _get_model(self, _validator: Type[BaseModel], _config: StateCampaignFinanceConfigs):
+    def _get_model(
+        self, _validator: Type[BaseModel], _config: StateCampaignFinanceConfigs
+    ):
         if _validator.__name__ == "TECExpense":
             _model = _config.EXPENSE_MODEL
         elif _validator.__name__ == "TECContribution":
@@ -81,7 +75,9 @@ class PostgresLoader:
     #         upload.execute(_add)
     #         upload.commit()
 
-    def add_to_db(self, _list: list,  _validator: BaseModel, _config: StateCampaignFinanceConfigs):
+    def add_to_db(
+        self, _list: list, _validator: BaseModel, _config: StateCampaignFinanceConfigs
+    ):
         self.__logger.debug(f"Called _load_to_db() for {_validator}...")
         _model = self._get_model(_validator, _config)
         _loader = PostgresLoader(_config.DB_BASE)
@@ -89,7 +85,3 @@ class PostgresLoader:
         _loader.create(values=_list, table=_model)
         _loader.load(session=_config.DB_SESSION)
         self.__logger.debug(f"Loaded {len(_list):,} records to database...")
-
-
-
-

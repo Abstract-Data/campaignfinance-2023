@@ -156,6 +156,7 @@ class TECFilerRecord(Base):
 
     chairPrimaryPhoneNumber: Mapped[str] = mapped_column(nullable=True)
     chairPrimaryPhoneExt: Mapped[str] = mapped_column(nullable=True)
+    file_origin: Mapped[str] = mapped_column(nullable=False)
 
     # expenses: Mapped[List["TECExpenseRecord"]] = relationship(back_populates="filers")
     # contributions: Mapped[List["TECContributionRecord"]] = relationship(back_populates="filers")
@@ -202,6 +203,7 @@ class TECExpenseRecord(Base):
     payeeStreetRegion: Mapped[str] = mapped_column(nullable=True)
     creditCardIssuer: Mapped[str] = mapped_column(nullable=True)
     repaymentDt: Mapped[date] = mapped_column(nullable=True)
+    file_origin: Mapped[str] = mapped_column(nullable=False)
     # filer_id: Mapped[int] = mapped_column(
     #     ForeignKey("texas.filers.filerIdent"), nullable=False, unique=False
     # )
@@ -227,7 +229,7 @@ class TECContributionRecord(Base):
     contributionInfoId = Column(Integer, nullable=False, primary_key=True)
     contributionDt: Mapped[date] = mapped_column(nullable=False)
     contributionAmount: Mapped[float] = mapped_column(nullable=False)
-    contributionDescr: Mapped[str] = mapped_column(nullable=False)
+    contributionDescr: Mapped[str] = mapped_column(nullable=True)
     itemizeFlag: Mapped[bool] = mapped_column(nullable=True)
     travelFlag: Mapped[bool] = mapped_column(nullable=True)
     contributorPersentTypeCd: Mapped[str] = mapped_column(nullable=False)
@@ -247,12 +249,13 @@ class TECContributionRecord(Base):
     contributorEmployer: Mapped[str] = mapped_column(nullable=True)
     contributorOccupation: Mapped[str] = mapped_column(nullable=True)
     contributorJobTitle: Mapped[str] = mapped_column(nullable=True)
-    contributorPacFein: Mapped[int] = mapped_column(nullable=True)
+    contributorPacFein: Mapped[str] = mapped_column(nullable=True)
     contributorOosPacFlag = Column(Boolean, nullable=True)
     contributorLawFirmName: Mapped[str] = mapped_column(nullable=True)
     contributorSpouseLawFirmName: Mapped[str] = mapped_column(nullable=True)
     contributorParent1LawFirmName: Mapped[str] = mapped_column(nullable=True)
     contributorParent2LawFirmName: Mapped[str] = mapped_column(nullable=True)
+    file_origin: Mapped[str] = mapped_column(nullable=False)
     # filer_id: Mapped[int] = mapped_column(
     #     ForeignKey("texas.filers.filerIdent"), nullable=False, unique=False
     # )

@@ -11,30 +11,23 @@ from pathlib import Path
 - Must use psycopg2-binary for postgresql
 - Must use snowflake.sqlalchemy for snowflake
 """
-path = Path.cwd() / 'states' / 'texas' / 'texas.env'
+path = Path.cwd() / "states" / "texas" / "texas.env"
 print(path)
 load_dotenv(path)
 
-LOCAL_POSTGRES_USR = os.environ['LOCAL_POSTGRES_USR']
+LOCAL_POSTGRES_USR = os.environ["LOCAL_POSTGRES_USR"]
 
-LOCAL_POSTGRES_PWD = os.environ[
-    'LOCAL_POSTGRES_PWD'
-]
+LOCAL_POSTGRES_PWD = os.environ["LOCAL_POSTGRES_PWD"]
 
 LOCAL_DATABASE_URL = f"postgresql://{LOCAL_POSTGRES_USR}:{LOCAL_POSTGRES_PWD}@localhost:5432/campaignfinance"
 
 
-engine = create_engine(
-    LOCAL_DATABASE_URL,
-    pool_size=200,
-    echo=True
-)
+engine = create_engine(LOCAL_DATABASE_URL, pool_size=200, echo=True)
 
 SessionLocal: sessionmaker = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
+    autocommit=False, autoflush=False, bind=engine
 )
+
 
 class Base(DeclarativeBase):
     pass

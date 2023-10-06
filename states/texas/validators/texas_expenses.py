@@ -1,7 +1,7 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional, List
 from nameparser import HumanName
-from pydantic import field_validator, model_validator
+from pydantic import field_validator, model_validator, Field
 from pydantic_core import PydanticCustomError
 from states.texas.validators.texas_settings import TECSettings
 
@@ -45,6 +45,7 @@ class TECExpense(TECSettings):
     payeeStreetRegion: Optional[str]
     creditCardIssuer: Optional[str]
     repaymentDt: Optional[date]
+    file_origin: str
     # filer_id: Optional[int]
     # filers: Optional[List]
 

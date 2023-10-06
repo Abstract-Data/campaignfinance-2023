@@ -14,7 +14,7 @@ class FileReader:
         with open(file, "r") as _file:
             _records = csv.DictReader(_file)
             for _record in enumerate(_records):
-                _record[1]["file_origin"] = file.name + str(
+                _record[1]["file_origin"] = file.stem + str(
                     datetime.date.today()
                 ).replace("-", "")
                 yield _record

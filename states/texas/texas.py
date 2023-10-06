@@ -1,35 +1,52 @@
-from states.texas.validators import TECExpense, TECFiler, TECContribution
 from pathlib import Path
 from typing import ClassVar, Dict, List
 from dataclasses import field, dataclass
-import csv
 from tqdm import tqdm
-from pydantic import ValidationError, BaseModel, ConfigDict
-from states.texas.database import DeclarativeBase, sessionmaker, SessionLocal, Base, create_engine
-from states.texas.models import TECContributionRecord, TECFilerRecord, TECExpenseRecord
 from zipfile import ZipFile
 import requests
 import os
 import sys
 import ssl
 import urllib.request
-from typing import Generator, Iterator, Type, Any, Union, Iterable
-import datetime
-from collections import Counter
+from typing import Generator, Type
+from collections import namedtuple
 import pandas as pd
+from pydantic import ValidationError
+from funcs import FileReader
+from logger import Logger
 from abcs import (
     StateFileValidation,
     StateCampaignFinanceConfigs,
     FileDownloader,
     StateCategories,
 )
-from funcs import FileReader
 from db_loaders.postgres_loader import PostgresLoader
-from states.texas.database import Base, engine, SessionLocal
-from logger import Logger
+from states.texas.database import (
+    DeclarativeBase,
+    sessionmaker,
+    create_engine,
+    Base,
+    engine,
+    SessionLocal
+)
+from states.texas.validators import (
+    TECExpense,
+    TECFiler,
+    TECContribution
+)
+from states.texas.models import (
+    TECContributionRecord,
+    TECFilerRecord,
+    TECExpenseRecord
+)
 
 logger = Logger(__name__)
 logger.info(f"Logger initialized in {__name__}")
+
+FileValidationResults = namedtuple(
+    'FileValidationResults', ['passed', 'failed', 'passed_count', 'failed_count'])
+def generate_file_list(folder: Path):
+    return sorted([file for file in folder.glob("*.csv")])
 
 
 class TexasConfigs(StateCampaignFinanceConfigs):
@@ -44,19 +61,19 @@ class TexasConfigs(StateCampaignFinanceConfigs):
     EXPENSE_VALIDATOR: ClassVar[
         Type[StateCampaignFinanceConfigs.EXPENSE_VALIDATOR]
     ] = TECExpense
-    EXPENSE_MODEL: ClassVar[Type[DeclarativeBase]]  = TECExpenseRecord
+    EXPENSE_MODEL: ClassVar[Type[DeclarativeBase]] = TECExpenseRecord
     EXPENSE_FILE_PREFIX: ClassVar[str] = "expend"
 
     CONTRIBUTION_VALIDATOR: ClassVar[
         Type[StateCampaignFinanceConfigs.CONTRIBUTION_VALIDATOR]
     ] = TECContribution
-    CONTRIBUTION_MODEL: ClassVar[Type[DeclarativeBase]]  = TECContributionRecord
+    CONTRIBUTION_MODEL: ClassVar[Type[DeclarativeBase]] = TECContributionRecord
     CONTRIBUTION_FILE_PREFIX: ClassVar[str] = "contribs"
 
     FILERS_VALIDATOR: ClassVar[
         Type[StateCampaignFinanceConfigs.FILERS_VALIDATOR]
     ] = TECFiler
-    FILERS_MODEL: ClassVar[Type[DeclarativeBase]]  = TECFilerRecord
+    FILERS_MODEL: ClassVar[Type[DeclarativeBase]] = TECFilerRecord
     FILERS_FILE_PREFIX: ClassVar[str] = "filer"
 
     STATE_CAMPAIGN_FINANCE_AGENCY: ClassVar[str] = "TEC"
@@ -72,7 +89,6 @@ class TexasConfigs(StateCampaignFinanceConfigs):
     CONTRIBUTION_DATE_COLUMN: ClassVar[str] = "contributionDt"
 
     EXPENDITURE_AMOUNT_COLUMN: ClassVar[str] = "expendAmount"
-
 
 
 @dataclass
@@ -218,65 +234,104 @@ class TECFileDownloader(FileDownloader):
         self.check_if_folder_exists()
 
 
-
 @dataclass
 class TECValidator(StateFileValidation):
-    passed: Iterable[List[BaseModel]] = field(init=False)
-    failed: List[Dict[str, ValidationError]] = field(init=False)
-    errors: pd.DataFrame = field(init=False)
     __logger: Logger = field(init=False)
 
     def __post_init__(self):
-        self.__logger = Logger(self.__class__.__name__)
+        TECValidator.__logger = Logger(self.__class__.__name__)
 
-    def validate(
-            self,
-            records: Dict,
-            validator: StateCampaignFinanceConfigs.VALIDATOR,
-            load_to_db: bool = False,
-    ):
-        self.__logger.debug(f"Called validate()")
-        _passed, _failed = [], []
-        _pass_count, _fail_count = 0, 0
-        for each in tqdm(records.values(), desc=f"Validating {validator.__name__} records"):
+    @classmethod
+    def validate_file(cls, records) -> FileValidationResults:
+        _passed_file, _failed_file = [], []
+        _passed_count_file, _failed_count_file = 0, 0
+        for _each_record in tqdm(records.records.values(), desc=f"VALIDATING: {records.file.name} records"):
             try:
-                r = validator(**each)
-                _passed.append(r)
+                if _each_record['file_origin'].startswith("filer"):
+                    _record = TexasConfigs.FILERS_VALIDATOR(**_each_record)
+                elif _each_record['file_origin'].startswith("expend"):
+                    _record = TexasConfigs.EXPENSE_VALIDATOR(**_each_record)
+                elif _each_record['file_origin'].startswith("contrib"):
+                    _record = TexasConfigs.CONTRIBUTION_VALIDATOR(**_each_record)
+                else:
+                    raise ValueError(f"Invalid file name: {_each_record['file_origin']}")
+                _passed_file.append(dict(_record))
+                _passed_count_file += 1
             except ValidationError as e:
-                each["error"] = e.errors()
-                _failed.append({"error": e, "record": each})
-        self.passed, self.failed = iter(_passed), _failed
-        return self.passed, self.failed
+                _each_record["error"] = e.errors()
+                _failed_file.append({"error": e, "record": _each_record})
+                _failed_count_file += 1
+        return FileValidationResults(_passed_file, _failed_file, _passed_count_file, _failed_count_file)
 
-    def error_report(self):
-        _errors = [
-            {
-                "type": f["error"].errors()[0]["type"],
-                "msg": f["error"].errors()[0]["msg"],
+    @classmethod
+    def validate_category(cls, category, to_db: bool = False):
+        _validation_report = []
+        passed, failed = [], []
+        _passed_count_total, _failed_count_total = 0, 0
+        for file in category:
+            file.load_records()
+            _results = cls.validate_file(records=file)
+
+            passed.append(iter(_results.passed))
+            failed.append(_results.failed)
+            _passed_count_total += _results.passed_count
+            _failed_count_total += _results.failed_count
+            _file_report = {
+                'filename': file.file.name,
+                'passed': _results.passed_count,
+                'failed': _results.failed_count,
+                'total': _results.passed_count + _results.failed_count,
+                'file_pass_pct': round(_results.passed_count/(_results.passed_count + _results.failed_count), 4),
+                'file_fail_pct': round(_results.failed_count/(_results.passed_count + _results.failed_count), 4),
+                'total_pass_pct': round(_passed_count_total/(_passed_count_total + _failed_count_total), 4),
+                'total_fail_pct': round(_failed_count_total/(_passed_count_total + _failed_count_total), 4)
             }
-            for f in self.failed
-        ]
-        error_df = (
-            pd.DataFrame.from_dict(
-                Counter([str(e) for e in _errors]), orient="index", columns=["count"]
-            )
-            .rename_axis("error")
-            .reset_index()
-        )
-        error_df.loc["Total"] = error_df["count"].sum()
-        self.errors = error_df
-        self.__logger.debug(f"Returning error report...")
-        return self.errors
+            _validation_report.append(_file_report)
+
+            cls.__logger.info(f"""  \
+            
+            === VALIDATION REPORT FOR {_file_report['filename'].upper()} ===
+            Passed: {_file_report['passed']} \
+[File: {_file_report['file_pass_pct']:.2%}, Total: {_file_report['total_pass_pct']:.2%}]
+            Failed: {_file_report['failed']} \
+[File: {_file_report['file_fail_pct']:.2%}, Total: {_file_report['total_fail_pct']:.2%}]""")
+
+            if to_db:
+                cls.to_database(file=_results.passed)
+
+        validation_report = pd.DataFrame.from_records(_validation_report)
+        validation_report.loc['total'] = validation_report.sum()
+        print("=== VALIDATION REPORT ===")
+        print(validation_report.to_markdown())
+        return passed, failed, validation_report
+
+    @classmethod
+    def to_database(cls, file: List[Dict[str, str]]) -> None:
+
+        _db = PostgresLoader(Base)
+        _db.build(engine=engine)
+
+        if file[0]['file_origin'].startswith(TexasConfigs.FILERS_FILE_PREFIX.upper()):
+            _model = TexasConfigs.FILERS_MODEL
+        elif file[0]['file_origin'].startswith(TexasConfigs.EXPENSE_FILE_PREFIX.upper()):
+            _model = TexasConfigs.EXPENSE_MODEL
+        elif file[0]['file_origin'].startswith(TexasConfigs.CONTRIBUTION_FILE_PREFIX.upper()):
+            _model = TexasConfigs.CONTRIBUTION_MODEL
+        else:
+            raise ValueError(f"Invalid file name: {file[0]['file_origin']}")
+
+        # cls.db.create(values=_records, table=_model)
+        _db.load(records=file, session=SessionLocal, table=_model)
+        logger.info(f"Loaded {file[0]['file_origin']} to database...")
 
 
 @dataclass
 class TECFile:
     file: Path
-    validator: StateCampaignFinanceConfigs.VALIDATOR = field(default_factory=TECValidator)
-    records: Generator[Dict, None, None] or Iterator[Dict] = None
-
-    # def __iter__(self):
-    #     return TECFile(self.file)
+    validation: StateCampaignFinanceConfigs.VALIDATOR = field(
+        default_factory=TECValidator
+    )
+    records: Generator[Dict, None, None] | Dict = None
 
     def __repr__(self):
         return f"TECFile({self.file.name})"
@@ -285,28 +340,19 @@ class TECFile:
         self.records = FileReader.read_file(self.file)
         return self.records
 
-    def load_records(self):
+    def load_records(self) -> Dict:
         if not self.records:
             self.read()
-        self.records = dict(x for x in tqdm(self.records, desc=f"Loading {self.file.name} records"))
-        return self.records
-
-    def validate(self, validator_model: BaseModel):
-        if not self.records:
-            self.load_records()
-        return self.validator.validate(
-            records=self.records,
-            validator=validator_model
+        self.records = dict(x for x in tqdm(self.records, desc=f"LOADING: {self.file.name} records")
         )
-
-
+        return self.records
 
 
 @dataclass
 class TECCategories(StateCategories):
-    expenses: ClassVar[Dict[str, TECFile]] = None
-    contributions: ClassVar[Dict[str, TECFile]] = None
-    filers: ClassVar[Dict[str, TECFile]] = None
+    expenses: ClassVar[Generator[TECFile, None, None]] = None
+    contributions: ClassVar[Generator[TECFile, None, None]] = None
+    filers: ClassVar[Generator[TECFile, None, None]] = None
     __logger: Logger = field(init=False)
 
     def __repr__(self):
@@ -314,194 +360,22 @@ class TECCategories(StateCategories):
 
     def __post_init__(self):
         TECCategories.__logger = Logger(self.__class__.__name__)
-
-        # yield {records[x].values() for x in records}
-
-    @classmethod
-    def _generate_list(
-            cls,
-            pfx: [
-                StateCampaignFinanceConfigs.EXPENSE_FILE_PREFIX,
-                StateCampaignFinanceConfigs.CONTRIBUTION_FILE_PREFIX,
-                StateCampaignFinanceConfigs.FILERS_FILE_PREFIX],
-            fldr: StateCampaignFinanceConfigs.FOLDER = TexasConfigs.FOLDER
-    ) -> List:
-        _files = []
-        for file in fldr.glob("*.csv"):
-            cls.__logger.debug(f"Checking if {file.name} starts with {pfx}...")
-            if file.stem.startswith(pfx):
-                _files.append(file)
-            else:
-                pass
-        cls.__logger.debug(f"Appended {pfx} files to a sorted list...")
-        # return {k: v for file in f for k, v in file.items()}
-        return sorted(_files)
+        TECCategories.expenses = self.create_tec_files(prefix=TexasConfigs.EXPENSE_FILE_PREFIX)
+        TECCategories.contributions = self.create_tec_files(prefix=TexasConfigs.CONTRIBUTION_FILE_PREFIX)
+        TECCategories.filers = self.create_tec_files(prefix=TexasConfigs.FILERS_FILE_PREFIX)
 
     @classmethod
-    def generate(
-        cls,
-        record_kind: str = None,
-        _config: StateCampaignFinanceConfigs = TexasConfigs,
-    ):
-        _expenses, _contributions, _filers = [
-            TECCategories._generate_list(x)
-            for x in [
-                _config.EXPENSE_FILE_PREFIX,
-                _config.CONTRIBUTION_FILE_PREFIX,
-                _config.FILERS_FILE_PREFIX,
-            ]
-        ]
-        cls.__logger.debug(
-            f"Generated lists of files for expenses, contributions, and filers..."
-        )
-
-        # if record_kind == "filers":
-        #     cls.filers = extract_records(_filers)
-        #     return cls.filers
-        #
-        # if record_kind == "expenses":
-        #     cls.expenses = extract_records(_expenses)
-        #     return cls.expenses
-        #
-        # elif record_kind == "contributions":
-        #     cls.contributions = extract_records(_contributions)
-        #     return cls.contributions
-        #
-        # else:
-        cls.expenses = {x.name: TECFile(x) for x in _expenses}
-        cls.contributions = {x.name: TECFile(x) for x in _contributions}
-        cls.filers = {x.name: TECFile(x) for x in _filers}
-
-        return cls
+    def create_tec_files(cls, prefix: str, folder: StateCampaignFinanceConfigs.FOLDER = TexasConfigs.FOLDER):
+        return (TECFile(x) for x in generate_file_list(folder) if x.name.startswith(prefix))
 
     @classmethod
-    def read(cls, category: Dict[str, TECFile]):
-        return {k: v.read() for k, v in category.items()}
+    def read(cls, category: Generator[TECFile, None, None]):
+        yield (file.read() for file in category)
 
     @classmethod
-    def load(cls, category: Dict[str, TECFile]):
-        return {k: v.load_records() for k, v in category.items()}
+    def load(cls, read):
+        return [x.load_records() for x in read]
 
     @classmethod
-    def validate(cls, category: Dict[str, TECFile]):
-        _keys = list(category.keys())
-        if _keys[0].startswith("filer"):
-            return {k: v.validate(TexasConfigs.FILERS_VALIDATOR) for k, v in category.items()}
-        elif _keys[0].startswith("expend"):
-            return {k: v.validate(TexasConfigs.EXPENSE_VALIDATOR) for k, v in category.items()}
-        elif _keys[0].startswith("contrib"):
-            return {k: v.validate(TexasConfigs.CONTRIBUTION_VALIDATOR) for k, v in category.items()}
-# @dataclass
-# class TECFileReader(finance.CampaignFinanceFileReader):
-#     """
-#     TECFileReader
-#     =============
-#     This class is used to read TEC campaign finance files.
-#     It is used to read the files from the TEC website and
-#     validate the data in the files.
-#     """
-#     file_list: TECFileCategories.expenses or TECFileCategories.contributions
-#     records: Dict = field(init=False)
-#     # FILE_VALIDATOR: ClassVar[Type[TECValidator]] = TexasConfigs.VALIDATOR
-#
-#     def __repr__(self):
-#         return f"{self.file_list}"
-#
-#     def __post_init__(self):
-#         self.path: Path = field(default_factory=Path)
-#
-#     def read_files(self, category: str):
-#         _file_dicts = {}
-#         for x in tqdm(self.file_list, desc=f'Reading {category.lower()} files'):
-#             with open(x, 'r') as file:
-#                 for k, v in enumerate(csv.DictReader(file)):
-#                     _file_dicts.update({k: v})
-#
-#         self.records = _file_dicts
-#         return self.records
-#
-# def validate(self):
-#     RecordValidation = namedtuple('RecordValidation', ['passed', 'failed'])
-#     valid_records, errors = [], []
-#     for record in self.records:
-#         for v in tqdm(record, desc=f'Validating {self.file.name} records'):
-#             try:
-#                 valid_records.append(TECFileReader.FILE_VALIDATOR(**v).dict())
-#                 # valid_records.append(valid)
-#             except ValidationError as e:
-#                 errors.append(e.json())
-#                 # errors.append(error)
-#     yield RecordValidation(valid_records, errors)
-
-
-# @dataclass
-# class TECFolderReader:
-#     """
-#     TECFolderReader
-#     ===============
-#     This class is used to pull Campaign finance files from the TEC website.
-#     It is used to download the files from the TEC website and
-#     validate the data in the files.
-#     """
-#     folder: TECFileCategories = field(default_factory=TECFileCategories)
-#
-#     @property
-#     def expenses(self):
-#         return TECFileReader(self.folder.expenses).read_files('expense')
-#
-#     @property
-#     def contributions(self):
-#         return TECFileReader(self.folder.contributions).read_files('contribution')
-
-
-# @dataclass
-# class TECValidator:
-#     """
-#     TECReportLoader
-#     ===============
-#     This class is used to load the TEC campaign finance data into a pandas DataFrame.
-#     """
-#     records: TECFolderReader.expenses or TECFolderReader.contributions
-#     passed: List = field(init=False)
-#     failed: List = field(init=False)
-#     to_sql: List = field(init=False)
-#     df: pd.DataFrame = field(init=False)
-#
-#     def validate(self):
-#         self.passed, self.failed = [], []
-#         for record in tqdm(self.records.values(), desc=f'Validating records'):
-#             try:
-#                 r = TexasConfigs.FILE_VALIDATOR(**record)
-#                 self.passed.append(r)
-#             except ValidationError as e:
-#                 self.failed.append(e.json())
-#
-#         return self.passed, self.failed
-
-# def to_dataframe(self, list_of_records: list) -> pd.DataFrame:
-#     _data = pd.DataFrame(list_of_records)
-#     _data['payeeNameOrganization'] = _data['payeeNameOrganization'].str.strip().str.upper()
-#     _data['filerName'] = _data['filerName'].str.strip().str.upper()
-#     _data['receivedDt'] = pd.to_datetime(_data['receivedDt'])
-#     _data['expendDt'] = pd.to_datetime(_data['expendDt'])
-#     _data['contributionDt'] = pd.to_datetime(_data['contributionDt'])
-#     self.df = _data
-#     return self.df
-
-# def load_records(self):
-#     self.records = [record for file in TECReportLoader.load(self.file.records) for record in file]
-#     return self.records
-
-# def load_validated_records(self):
-#     _records = TECReportLoader.load(self.file.validated)
-#     self.passed = [record for file in _records for record in file.passed]
-#     self.failed = [record for file in _records for record in file.failed]
-#     print(f'Passed: {len(list(self.passed)):,}')
-#     print(f'Failed: {len(list(self.failed)):,}')
-#     return self
-
-# def create_record_models(self):
-#     if not self.passed:
-#         self.load_validated_records()
-#
-#     self.to_sql = [TexasConfigs.SQL_MODEL(**record) for record in self.passed]
+    def validate_category(cls, category: Generator[TECFile, None, None], to_db: bool = False):
+        return TECValidator.validate_category(category=category, to_db=to_db)
