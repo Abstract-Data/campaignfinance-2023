@@ -52,7 +52,7 @@ def generate_file_list(folder: Path):
 class TexasConfigs(StateCampaignFinanceConfigs):
     STATE: ClassVar[str] = "Texas"
     STATE_ABBREVIATION: ClassVar[str] = "TX"
-    FOLDER: ClassVar[StateCampaignFinanceConfigs.FOLDER] = Path.cwd() / "tmp"
+    FOLDER: ClassVar[StateCampaignFinanceConfigs.FOLDER] = Path.cwd().parent / "tmp"
 
     DB_BASE: ClassVar[Type[DeclarativeBase]] = Base
     DB_ENGINE: ClassVar[create_engine] = engine
