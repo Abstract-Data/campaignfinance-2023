@@ -4,7 +4,7 @@
     <option name="enabledOnReformat" value="true" />
     <option name="executionMode" value="BINARY" />
     <option name="pathToExecutable" value="/opt/homebrew/bin/black" />
-    <option name="sdkUUID" value="0d8da232-095b-4bbb-a544-5d434e831015" />
+    <option name="sdkName" value="Poetry (campaignfinance) (2)" />
   </component>
   <component name="ProjectRootManager" version="2" project-jdk-name="Poetry (campaignfinance) (2)" project-jdk-type="Python SDK" />
   <component name="PyPackaging">
