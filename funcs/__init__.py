@@ -1,1 +1,0 @@
-from funcs.file_loaders import FileReader
