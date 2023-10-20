@@ -1,4 +1,4 @@
-name: data
+name: tx_campaignfinance
 on:
   schedule:
     - cron: 0 0 * * *
@@ -16,8 +16,8 @@ jobs:
           deno-version: v1.10.x
       - name: Check out repo
         uses: actions/checkout@v2
-      - name: Fetch data
+      - name: Fetch tx_campaignfinance
         uses: githubocto/flat@v3
         with:
           http_url: https://ethics.state.tx.us/data/search/cf/TEC_CF_CSV.zip
-          downloaded_filename: ./tmp/texas.zip
+          downloaded_filename: /tmp/texas.zip
