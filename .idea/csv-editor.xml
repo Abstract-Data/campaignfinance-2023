@@ -24,27 +24,6 @@
             </Attribute>
           </value>
         </entry>
-        <entry key="/tmp/cont_t.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/tmp/contribs_55.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/tmp/contribs_57.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
         <entry key="/tmp/contribs_63.csv">
           <value>
             <Attribute>
@@ -52,49 +31,7 @@
             </Attribute>
           </value>
         </entry>
-        <entry key="/tmp/cover_ss.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/tmp/cover_t.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/tmp/credits.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/tmp/debts.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/tmp/expn_catg.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/tmp/expn_t.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/tmp/filers.csv">
+        <entry key="/tmp/cover.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />
@@ -102,13 +39,6 @@
           </value>
         </entry>
         <entry key="/tmp/finals.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/tmp/loans.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />
@@ -129,21 +59,7 @@
             </Attribute>
           </value>
         </entry>
-        <entry key="/tmp/pledges.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
         <entry key="/tmp/spacs.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/tmp/travel.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />

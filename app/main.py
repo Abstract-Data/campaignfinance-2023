@@ -1,16 +1,45 @@
 #! /usr/bin/env python3
-from states.texas.texas import TECFileDownloader, TECCategories, TECValidator
+from states.texas.texas import TECFileDownloader, TECCategories, TECFileValidator
 from states.texas.validators import TECExpense, TECContribution, TECFiler
 from db_loaders.postgres_loader import PostgresLoader
 from states.texas.database import Base, engine, SessionLocal
 from states.texas.models import TECExpenseRecord, TECFilerRecord, TECContributionRecord
+from states.texas.texas_search import TECQueryBuilder
+import pandas as pd
+from tqdm import tqdm
+
+# Pandas Display Options
+pd.options.display.max_columns = None
+pd.options.display.max_rows = None
 
 download = TECFileDownloader()
 folder = TECCategories()
 
-# exp_passed, exp_failed, exp_report = folder.validate_category(folder.expenses, to_db=True)
-# cont_passed, cont_failed, cont_report = folder.validate_category(folder.contributions, to_db=True)
-filer_passed, filer_failed, filer_report = folder.validate_category(folder.expenses)
+# tinderholt = TECQueryBuilder().campaign('TINDERHOLT').expense().search()
+# tinderholt.by_year()
+# df = tinderholt.to_dataframe()
+# filer_passed, filer_failed = folder.validate_category(folder.filers)
+# records = folder.load(folder.expenses)
+exp_passed, exp_failed = folder.validate_category(folder.expenses)
+folder.update_database(folder.expenses)
+
+# passed, failed = folder.validate_category(folder.expenses, to_db=True, update=True)
+
+# tony_tinderholt = TECSearchQuery()
+
+# luke_macias = TECSearchQuery()
+# luke_macias_results = luke_macias.by_year()
+# luke_macias.export_file(luke_macias_results.reset_index(), 'expense', 'luke macias')
+#
+# macias_strategy = TECSearchQuery()
+# macias_strategy_results = macias_strategy.by_year().reset_index()
+# macias_strategy.export_file(macias_strategy_results.reset_index(), 'expense', 'macias_strategy')
+# search = TECSearchQuery()
+# results = search.search()
+
+# viewer = TECResults(results)
+# viewer.print_results()
+# by_year = viewer.by_year(**search.data._fields)
 
 
 
