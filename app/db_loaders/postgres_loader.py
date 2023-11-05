@@ -1,5 +1,5 @@
 import itertools
-from typing import Protocol, List, Iterable, Type, Generator
+from typing import Protocol, List, Iterable, Type, Generator, Iterator
 from pydantic import BaseModel
 from dataclasses import dataclass, field
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
@@ -76,13 +76,24 @@ class PostgresLoader:
     #         upload.execute(_add)
     #         upload.commit()
 
-    def add_to_db(
-        self, _list: list, _validator: BaseModel, _config: StateCampaignFinanceConfigs
-    ):
-        self.__logger.debug(f"Called _load_to_db() for {_validator}...")
-        _model = self._get_model(_validator, _config)
-        _loader = PostgresLoader(_config.DB_BASE)
-        _loader.build(engine=_config.DB_ENGINE)
-        _loader.create(values=_list, table=_model)
-        _loader.load(session=_config.DB_SESSION)
-        self.__logger.debug(f"Loaded {len(_list):,} records to database...")
+    def update_records(self, session: sessionmaker, records: List[BaseModel] | List[DeclarativeBase], **kwargs):
+        _table = kwargs.get('table') if kwargs.get('table') else self.table
+        _errors = []
+        with session() as upload:
+            try:
+                upload.execute(insert(_table).values(records).on_conflict_do_nothing())
+                upload.commit()
+            except Exception as e:
+                upload.rollback()
+                self.__logger.error(f"Error: {e}")
+                _errors.append(e)
+        return _errors
+    # Write an update function that will update any existing records or insert new ones
+    # def update_db(self, _list: list, _validator: BaseModel, _config: StateCampaignFinanceConfigs):
+    #     self.__logger.debug(f"Called _update_db() for {_validator}...")
+    #     _model = self._get_model(_validator, _config)
+    #     _loader = PostgresLoader(_config.DB_BASE)
+    #     _loader.build(engine=_config.DB_ENGINE)
+    #     _loader.create(values=_list, table=_model)
+    #     _loader.load(session=_config.DB_SESSION)
+    #     self.__logger.debug(f"Loaded {len(_list):,} records to database...")

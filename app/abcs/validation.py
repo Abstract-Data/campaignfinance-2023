@@ -17,6 +17,8 @@ class StateFileValidation(Protocol):
             self,
             records,
             validator: StateCampaignFinanceConfigs.VALIDATOR,
+            to_db: bool = False,
+            update: bool = False,
     ) -> Tuple[Iterator[BaseModel], Iterator[Dict[str, ValidationError]]]:
         return self.passed, self.failed
 
