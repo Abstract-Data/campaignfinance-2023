@@ -1,8 +1,8 @@
 import itertools
-from typing import Protocol, List, Iterable, Type, Generator, Iterator
+from typing import Protocol, List, Iterable, Type, Generator, Iterator, Dict
 from pydantic import BaseModel
 from dataclasses import dataclass, field
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, sessionmaker, declarative_base
 from sqlalchemy import create_engine
 from tqdm import tqdm
 from abcs import StateCampaignFinanceConfigs
@@ -18,55 +18,44 @@ class PostgresLoader:
     models: Iterable[DeclarativeBase] = field(init=False)
     __logger: Logger = field(init=False)
 
-    def __post_init__(self):
+
+    @property
+    def logger(self):
         self.__logger = Logger(PostgresLoader.__class__.__name__)
+        return self.__logger
 
     def build(self, engine: create_engine):
         self._base.metadata.create_all(engine)
-        print("Created Postgres tables")
+        self.logger.debug(f"Created tables for {self._base.metadata.tables.keys()}")
         return self
 
-    def create(self, values: List[dict], table: Type[DeclarativeBase]):
-        self.table = table
-
-        def model_generator() -> Generator[DeclarativeBase, dict, None]:
-            for v in iter(values):
-                yield table(**v)
-
-        self.__logger.info("Generating models...")
-        return model_generator()
-
-    def load(self, session: sessionmaker, records: List[dict] = None, **kwargs):
+    def load(self, session: sessionmaker, records: Generator[DeclarativeBase, None, None] = None, **kwargs):
         _table = kwargs.get('table') if kwargs.get('table') else self.table
 
-        def upload_records(recs: List[dict], table=_table):
+        def upload_records(
+                recs: Generator[DeclarativeBase, None, None],
+                table=_table):
             # No limit on the number of records to upload as postgres can handle parsing
             _errors = []
             with session() as upload:
-                try:
-                    upload.add_all([x for x in self.create(recs, table)])
-                    upload.commit()
-                except Exception as e:
-                    upload.rollback()
-                    self.__logger.error(f"Error: {e}")
-                    _errors.append(e)
+                self.logger.debug(f"Loading records to {_table}...")
+                # Load records in chunks of 100,000 at a time from the generator
+                while True:
+                    _chunks = list(itertools.islice(recs, 1000000))
+                    if not _chunks:
+                        break
+
+                    try:
+                        upload.add_all(_chunks)
+                        upload.commit()
+                    except Exception as e:
+                        upload.rollback()
+                        self.logger.error(f"Error: {e}")
+                        _errors.append(e)
             return _errors
 
         errors = upload_records(records)
         return errors
-
-    def _get_model(
-        self, _validator: Type[BaseModel], _config: StateCampaignFinanceConfigs
-    ):
-        if _validator.__name__ == "TECExpense":
-            _model = _config.EXPENSE_MODEL
-        elif _validator.__name__ == "TECContribution":
-            _model = _config.CONTRIBUTION_MODEL
-        elif _validator.__name__ == "TECFiler":
-            _model = _config.FILERS_MODEL
-        else:
-            raise ValueError(f"Invalid type: {_validator.__name__}")
-        return _model
 
     # def insert_to_db(self, _list: list, _validator: BaseModel, _config: StateCampaignFinanceConfigs):
     #     _model = self._get_model(_validator, _config)
@@ -76,18 +65,41 @@ class PostgresLoader:
     #         upload.execute(_add)
     #         upload.commit()
 
-    def update_records(self, session: sessionmaker, records: List[BaseModel] | List[DeclarativeBase], **kwargs):
-        _table = kwargs.get('table') if kwargs.get('table') else self.table
+    def update(self,
+               session: sessionmaker,
+               records: Generator[Dict, None, None],
+               table: declarative_base = None,
+               primary_key: str = None):
+        _primary_key = primary_key if primary_key else 'filerIdent'
+        _table = table if table else self.table
         _errors = []
+
+        _existing_records, _insert_records = [], []
         with session() as upload:
-            try:
-                upload.execute(insert(_table).values(records).on_conflict_do_nothing())
-                upload.commit()
-            except Exception as e:
-                upload.rollback()
-                self.__logger.error(f"Error: {e}")
-                _errors.append(e)
+            _existing = upload.query(_table).all()
+            for record in records:
+                if record[_primary_key] in _existing:
+                    _existing_records.append(record)
+                else:
+                    _insert_records.append(record)
+            upload.bulk_update_mappings(_table, _existing_records)
+            upload.bulk_insert_mappings(_table, _insert_records)
+            upload.commit()
         return _errors
+        # _table = kwargs.get('table') or self.table
+        # _errors = []
+        #
+        # with session() as upload:
+        #     records_to_update = [insert(_table).values(**x.__dict__).on_conflict_do_nothing() for x in records]
+        #     try:
+        #         upload.add_all(records_to_update)
+        #         upload.commit()
+        #     except Exception as e:
+        #         upload.rollback()
+        #         self.__logger.error(f"Error: {e}")
+        #         _errors.append(e)
+
+        # return _errors
     # Write an update function that will update any existing records or insert new ones
     # def update_db(self, _list: list, _validator: BaseModel, _config: StateCampaignFinanceConfigs):
     #     self.__logger.debug(f"Called _update_db() for {_validator}...")

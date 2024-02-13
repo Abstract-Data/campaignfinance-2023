@@ -15,7 +15,8 @@ FOLDER_PATH_PLACEHOLDER = Path
 class StateCampaignFinanceConfigs(Protocol):
     STATE: ClassVar[str]
     STATE_ABBREVIATION: ClassVar[str]
-    FOLDER: ClassVar[Path] = None
+    TEMP_FOLDER: ClassVar[Path] = None
+    TEMP_FILENAME: ClassVar[Path] = None
 
     VALIDATOR: ClassVar[BaseModel] = VALIDATOR_PLACEHOLDER
 
@@ -34,6 +35,8 @@ class StateCampaignFinanceConfigs(Protocol):
     FILERS_VALIDATOR: ClassVar[BaseModel] = VALIDATOR_PLACEHOLDER
     FILERS_MODEL: ClassVar[Type[DeclarativeBase]] = SQL_MODEL_PLACEHOLDER
     FILERS_FILE_PREFIX: ClassVar[str] = None
+
+    REPORTS_FILE_PREFIX: ClassVar[str] = None
 
     STATE_CAMPAIGN_FINANCE_AGENCY: ClassVar[str]
     ZIPFILE_URL: ClassVar[str]

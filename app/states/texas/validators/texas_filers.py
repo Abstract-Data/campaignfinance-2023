@@ -5,7 +5,7 @@ from nameparser import HumanName
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from pydantic_extra_types.phone_numbers import PhoneNumber
 from pydantic_core import PydanticCustomError
-from states.texas.validators.texas_settings import TECSettings
+from .texas_settings import TECSettings
 import phonenumbers
 
 
@@ -154,6 +154,7 @@ class TECFiler(TECSettings):
 
     chairPrimaryPhoneNumber: Optional[PhoneNumber]
     chairPrimaryPhoneExt: Optional[str]
+    org_names: str
     file_origin: str
     # expenses: Optional[List] = None
     # contributions: Optional[List] = None
