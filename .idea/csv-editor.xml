@@ -24,6 +24,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/tmp/contribs_55.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/tmp/contribs_63.csv">
           <value>
             <Attribute>
@@ -32,6 +39,20 @@
           </value>
         </entry>
         <entry key="/tmp/cover.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/tmp/cover_ss.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/tmp/filers.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />

@@ -6,6 +6,12 @@ from pydantic_core import PydanticCustomError
 from states.texas.validators.texas_settings import TECSettings
 
 
+class TECExpenseCategory(TECSettings):
+    recordType: str = Field(..., description="Record type code - always EXCAT")
+    expendCategoryCodeValue: str = Field(..., description="Expenditure category code")
+    expendCategoryCodeLabel: str = Field(..., description="Expenditure category description")
+
+
 class TECExpense(TECSettings):
     recordType: str
     formTypeCd: str
