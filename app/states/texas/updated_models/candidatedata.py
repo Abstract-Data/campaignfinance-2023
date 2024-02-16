@@ -13,7 +13,7 @@ class CandidateData(Base):
     reportInfoIdent = Column(Integer)
     receivedDt = Column(Date)
     infoOnlyFlag = Column(String(1))
-    filerIdent = Column(String(100), ForeignKey('filers.filerIdent'))
+    filerIdent = Column(String(100), ForeignKey('filers.filerIdent', use_alter=True), nullable=False)
     filerTypeCd = Column(String(30))
     filerName = Column(String(200))
     expendInfoId = Column(Integer)

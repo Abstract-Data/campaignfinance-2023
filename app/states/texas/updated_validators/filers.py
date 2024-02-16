@@ -5,7 +5,7 @@ from typing import Optional, Annotated
 from ..validators.texas_settings import TECSettings
 from ..database import SessionLocal
 from sqlalchemy.orm import Session
-from ..updated_models.filers import FilerModel
+# from ..updated_models.filers import FilerModel
 from funcs.validator_functions import clear_blank_strings, validate_phone_number, validate_date
 import usaddress
 import hashlib

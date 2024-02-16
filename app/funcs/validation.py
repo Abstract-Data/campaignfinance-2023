@@ -24,13 +24,14 @@ class StateFileValidation:
 
     def validate_records(self, _records: Generator[Dict, None, None], _validator: Type[BaseModel]) -> PassedFailedRecords:
         self.logger.info(f"Started validation")
-        for y in tqdm(_records, desc="Validating records", unit=" records"):
+        for y in _records:
             try:
                 _record = _validator(**y)
                 yield 'passed', dict(_record)
             except ValidationError as e:
                 y['error'] = str(e.errors())
                 yield 'failed', dict(y)
+        self.logger.info(f"Finished validation")
 
     def validate(self, records: Generator[Dict, None, None], validator: Type[BaseModel]) -> 'StateFileValidation':
         self.logger.info(f"Created validation generators")

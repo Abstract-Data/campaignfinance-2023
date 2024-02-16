@@ -1,8 +1,6 @@
-from sqlalchemy import create_engine, MetaData, select
+from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.ext.automap import automap_base
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 import os
 from pathlib import Path
@@ -28,6 +26,4 @@ SessionLocal: sessionmaker = sessionmaker(
     autocommit=False, autoflush=False, bind=engine
 )
 
-
-class Base(DeclarativeBase):
-    pass
+Base = declarative_base()

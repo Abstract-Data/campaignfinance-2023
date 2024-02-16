@@ -1,14 +1,7 @@
 from abcs.state_configs import StateCampaignFinanceConfigs
-import requests
-import ssl
-import sys
-from tqdm import tqdm
-from dataclasses import dataclass, field
-import urllib.request
-from zipfile import ZipFile
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Self, ClassVar, Protocol, Type
-import os
+from typing import Self, ClassVar, Protocol
 
 
 @dataclass

@@ -3,16 +3,11 @@ from sqlalchemy.orm import relationship
 from ..database import Base
 
 
-class FilerModel(Base):
-    __tablename__ = 'filers'
-    filerIdent = Column(String, primary_key=True)
-    filerTypeCd = Column(String)
-    filerName = Column(ForeignKey('FilerNameModel.filerIdent'))
-    campaigns = relationship('FilerNameModel', back_populates='filer_names')
 
 
 class TreasurerModel(Base):
     __tablename__ = 'treasurers'
+    __table_args__ = {"schema": 'texas'}
     filerIdent = Column(String, primary_key=True)
     treasPersentTypeCd = Column(String)
     treasNameOrganization = Column(String)
@@ -49,7 +44,7 @@ class TreasurerModel(Base):
     treasEffStopDt = Column(Date)
     treasurerNameKey = Column(String, nullable=True)
     treasurerAddressKey = Column(String, nullable=True)
-    filer = relationship('FilerModel', back_populates='treasurers')
+    # filer = relationship('FilerModel', back_populates='treasurers')
 
 
 class AssistantTreasurerModel(Base):
@@ -80,7 +75,7 @@ class AssistantTreasurerModel(Base):
     assttreasAppointorNameFirst = Column(String)
     assistantTreasurerNameKey = Column(String)
     assistantTreasurerAddressKey = Column(String)
-    filer = relationship('FilerModel', back_populates='assistant_treasurers')
+    # filer = relationship('FilerModel', back_populates='assistant_treasurers')
 
 
 class ChairModel(Base):
@@ -118,7 +113,6 @@ class ChairModel(Base):
     chairPrimaryPhoneExt = Column(String)
     chairNameKey = Column(String, nullable=True)
     chairAddressKey = Column(String, nullable=True)
-    filer = relationship('FilerModel', back_populates='chairs')
 
 
 class FilerNameModel(Base):
@@ -175,15 +169,23 @@ class FilerNameModel(Base):
     contestSeekOfficeDescr = Column(String)
     contestSeekOfficeCountyCd = Column(String)
     contestSeekOfficeCountyDescr = Column(String)
-    treasurerKey = Column(ForeignKey('treasurers.treasurerNameKey'))
-    asstTreasurerKey = Column(ForeignKey('assistant_treasurers.assistantTreasurerNameKey'))
-    chairKey = Column(ForeignKey('chairs.chairNameKey'))
-    contributionKey = Column(ForeignKey('ContributionDataModel.filerIdent'))
+    treasurerKey = Column(String, ForeignKey('treasurers.treasurerNameKey', use_alter=True), nullable=True)
+    asstTreasurerKey = Column(String, ForeignKey('assistant_treasurers.assistantTreasurerNameKey', use_alter=True), nullable=True)
+    chairKey = Column(String, ForeignKey('chairs.chairNameKey', use_alter=True), nullable=True)
+    contributionKey = Column(Integer, ForeignKey('contribution_data.filerIdent', use_alter=True), nullable=True)
 
-    filer = relationship('FilerModel', back_populates='filer_names')
-    treasurer = relationship('TreasurerModel', back_populates='filer_names')
-    assistant_treasurer = relationship('AssistantTreasurerModel', back_populates='filer_names')
-    chair = relationship('ChairModel', back_populates='filer_names')
-    contribution = relationship('ContributionData', back_populates='filer_names')
-    reports = relationship('FinalReportModel', back_populates='filer_names')
+    # filer = relationship('FilerModel', back_populates='filer_names')
+    # treasurer = relationship('TreasurerModel', back_populates='filer_names')
+    # assistant_treasurer = relationship('AssistantTreasurerModel', back_populates='filer_names')
+    # chair = relationship('ChairModel', back_populates='filer_names')
+    # contribution = relationship('ContributionData', back_populates='filer_names')
+    # reports = relationship('FinalReportModel', back_populates='filer_names')
 
+
+class FilerModel(Base):
+    __tablename__ = 'filers'
+    __table_args__ = {"schema": 'texas'}
+    filerIdent = Column(String, primary_key=True)
+    filerTypeCd = Column(String)
+    filerName = Column(Integer, ForeignKey('filer_names.filerIdent', use_alter=True), nullable=True)
+    # campaigns = relationship('FilerNameModel', back_populates='filer_names')

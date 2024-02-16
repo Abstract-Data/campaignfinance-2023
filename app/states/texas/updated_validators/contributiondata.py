@@ -52,7 +52,7 @@ class ContributorDetails(BaseModel):
             values['contributorAddressStandardized'] = " ".join(x[0] for x in _address if x) if _address else None
         return values
 
-    @model_validator(mode='after')
+    @model_validator(mode='before')
     @classmethod
     def create_contributor_name_key(cls, values):
         _fields = [
@@ -67,7 +67,7 @@ class ContributorDetails(BaseModel):
             values['contributorNameKey'] = hashlib.sha256(key.encode()).hexdigest()
         return values
 
-    @model_validator(mode='after')
+    @model_validator(mode='before')
     @classmethod
     def create_contributor_org_key(cls, values):
         _fields = [
@@ -78,7 +78,7 @@ class ContributorDetails(BaseModel):
             values['contributorOrgKey'] = hashlib.sha256(key.encode()).hexdigest()
         return values
 
-    @model_validator(mode='after')
+    @model_validator(mode='before')
     @classmethod
     def create_contributor_address_key(cls, values):
         if 'contributorAddressStandardized' in values:
@@ -97,6 +97,12 @@ class ContributorDetails(BaseModel):
             values['contributorNameAddressKey'] = hashlib.sha256(
                 f"{name_key}{values['contributorAddressKey']}".encode()
             ).hexdigest()
+        return values
+
+    @model_validator(mode='after')
+    def check_for_name_or_org_key(cls, values):
+        if ['contributorNameKey', 'contributorOrgKey', 'contributorNameAddressKey'] not in values:
+            raise ValueError('Must have either a contributorNameKey or contributorOrgKey or contributorNameAddressKey')
         return values
 
 

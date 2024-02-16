@@ -1,9 +1,8 @@
 import csv
 from pathlib import Path
 from typing import Dict, Generator
-from tqdm import tqdm
 import datetime
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass

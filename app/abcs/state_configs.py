@@ -1,13 +1,13 @@
 from dataclasses import dataclass, field
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy import create_engine
 from pathlib import Path
 from typing import Protocol, ClassVar, Union, Type
 
 
 VALIDATOR_PLACEHOLDER = Union[Type[BaseModel], None]
-SQL_MODEL_PLACEHOLDER = Union[Type[DeclarativeBase], None]
+SQL_MODEL_PLACEHOLDER = Union[Type[declarative_base], None]
 STRING_PLACEHOLDER = str
 FOLDER_PATH_PLACEHOLDER = Path
 
@@ -20,20 +20,20 @@ class StateCampaignFinanceConfigs(Protocol):
 
     VALIDATOR: ClassVar[BaseModel] = VALIDATOR_PLACEHOLDER
 
-    DB_BASE: ClassVar[Type[DeclarativeBase]] = SQL_MODEL_PLACEHOLDER
+    DB_BASE: ClassVar[Type[declarative_base]] = SQL_MODEL_PLACEHOLDER
     DB_ENGINE: ClassVar[create_engine] = None
     DB_SESSION: ClassVar[sessionmaker] = None
 
     EXPENSE_VALIDATOR: ClassVar[BaseModel] = VALIDATOR_PLACEHOLDER
-    EXPENSE_MODEL: ClassVar[Type[DeclarativeBase]] = SQL_MODEL_PLACEHOLDER
+    EXPENSE_MODEL: ClassVar[Type[declarative_base]] = SQL_MODEL_PLACEHOLDER
     EXPENSE_FILE_PREFIX: ClassVar[str] = None
 
     CONTRIBUTION_VALIDATOR: ClassVar[BaseModel] = VALIDATOR_PLACEHOLDER
-    CONTRIBUTION_MODEL: ClassVar[Type[DeclarativeBase]] = SQL_MODEL_PLACEHOLDER
+    CONTRIBUTION_MODEL: ClassVar[Type[declarative_base]] = SQL_MODEL_PLACEHOLDER
     CONTRIBUTION_FILE_PREFIX: ClassVar[str] = None
 
     FILERS_VALIDATOR: ClassVar[BaseModel] = VALIDATOR_PLACEHOLDER
-    FILERS_MODEL: ClassVar[Type[DeclarativeBase]] = SQL_MODEL_PLACEHOLDER
+    FILERS_MODEL: ClassVar[Type[declarative_base]] = SQL_MODEL_PLACEHOLDER
     FILERS_FILE_PREFIX: ClassVar[str] = None
 
     REPORTS_FILE_PREFIX: ClassVar[str] = None
