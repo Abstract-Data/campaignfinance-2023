@@ -11,7 +11,6 @@ import urllib.request
 import itertools
 from typing import Generator, Tuple, Type, Iterator, Optional, Any, Protocol
 from collections import namedtuple, defaultdict
-import pandas as pd
 from pydantic import ValidationError, BaseModel
 import funcs
 from logger import Logger
@@ -19,9 +18,8 @@ from abcs import (
     StateCampaignFinanceConfigs,
     FileDownloader,
 )
-from db_loaders.postgres_loader import PostgresLoader
+# from db_loaders.postgres_loader import PostgresLoader
 from states.texas.database import (
-    DeclarativeBase,
     sessionmaker,
     create_engine,
     Base,
@@ -36,7 +34,7 @@ import states.texas.updated_models as models
 logger = Logger(__name__)
 logger.info(f"Logger initialized in {__name__}")
 
-SQLModels = Generator[DeclarativeBase, None, None]
+SQLModels = Generator[Base, None, None]
 
 FileValidationResults = namedtuple(
     'FileValidationResults', ['passed', 'failed', 'passed_count', 'failed_count'])
@@ -80,26 +78,26 @@ class TexasConfigs(StateCampaignFinanceConfigs):
     TEMP_FOLDER: ClassVar[StateCampaignFinanceConfigs.TEMP_FOLDER] = Path.cwd().parent / "tmp"
     TEMP_FILENAME: ClassVar[StateCampaignFinanceConfigs.TEMP_FILENAME] = Path.cwd().parent / "tmp" / "TEC_CF_CSV.zip"
 
-    DB_BASE: ClassVar[Type[DeclarativeBase]] = Base
+    DB_BASE: ClassVar[Type[Base]] = Base
     DB_ENGINE: ClassVar[create_engine] = engine
     DB_SESSION: ClassVar[sessionmaker] = SessionLocal
 
     # EXPENSE_VALIDATOR: ClassVar[
     #     Type[StateCampaignFinanceConfigs.EXPENSE_VALIDATOR]
     # ] = TECExpense
-    EXPENSE_MODEL: ClassVar[Type[DeclarativeBase]] = None
+    EXPENSE_MODEL: ClassVar[Type[Base]] = None
     EXPENSE_FILE_PREFIX: ClassVar[str] = "expend"
 
     # CONTRIBUTION_VALIDATOR: ClassVar[
     #     Type[StateCampaignFinanceConfigs.CONTRIBUTION_VALIDATOR]
     # ] = TECContribution
-    CONTRIBUTION_MODEL: ClassVar[Type[DeclarativeBase]] = None
+    CONTRIBUTION_MODEL: ClassVar[Type[Base]] = None
     CONTRIBUTION_FILE_PREFIX: ClassVar[str] = "contribs"
 
     # FILERS_VALIDATOR: ClassVar[
     #     Type[StateCampaignFinanceConfigs.FILERS_VALIDATOR]
     # ] = TECFiler
-    FILERS_MODEL: ClassVar[Type[DeclarativeBase]] = None
+    FILERS_MODEL: ClassVar[Type[Base]] = None
     FILERS_FILE_PREFIX: ClassVar[str] = "filer"
 
     REPORTS_FILE_PREFIX: ClassVar[str] = "finals"
@@ -117,6 +115,7 @@ class TexasConfigs(StateCampaignFinanceConfigs):
     CONTRIBUTION_DATE_COLUMN: ClassVar[str] = "contributionDt"
 
     EXPENDITURE_AMOUNT_COLUMN: ClassVar[str] = "expendAmount"
+
 
 @dataclass
 class TECFileDownload:
@@ -138,7 +137,6 @@ class TECFileDownload:
 
     def download_file_with_requests(self) -> None:
         return ...
-
 
 
 @dataclass
@@ -329,6 +327,8 @@ class TECFileDownloader(FileDownloader):
 #                 x['error'] = e.errors()
 #                 _failed.append(x)
 #         return _passed, _failed
+
+
 @dataclass
 class CategoryValidator(Protocol):
 
@@ -337,6 +337,7 @@ class CategoryValidator(Protocol):
 
     def run_validation(self, records):
         return self
+
 
 @dataclass
 class TECFilerValidation(CategoryValidator):
@@ -386,7 +387,7 @@ class TECFilerValidation(CategoryValidator):
                                                    treasurerKey=validators.Treasurer(**record).treasurerNameKey,
                                                    asstTreasurerKey=validators.AssistantTreasurer(**record).assistantTreasurerNameKey,
                                                    chairKey=validators.Chair(**record).chairNameKey,
-                                                   contributionKey=validators.ContributionData(**record).filerIdent)
+                                                   contributionKey=validators.Treasurer(**record).filerIdent)
                 yield 'filer_name_passed', _filer_name
             except ValidationError as e:
                 record['error'] = e.errors()
@@ -444,15 +445,23 @@ class TECExpenseValidators(CategoryValidator):
         self.expenditure_failed = validation_result_generator(expenditure_failed, 'expenditure_failed')
         return self
 
+
 @dataclass
 class TECContributionValidators(CategoryValidator):
     contributor_details_passed: funcs.PassedRecords = field(init=False)
     contributor_details_failed: funcs.FailedRecords = field(init=False)
     contribution_data_passed: funcs.PassedRecords = field(init=False)
     contribution_data_failed: funcs.FailedRecords = field(init=False)
+    _logger: Logger = field(init=False)
+
+    @property
+    def logger(self):
+        self._logger = Logger(self.__class__.__name__)
+        return self._logger
 
     def process_records(self, records):
-        for record in tqdm(records, desc="Validating contribution records", unit=" records"):
+        self.logger.info(f"Processing records...")
+        for record in records:
             try:
                 _contributor_details = validators.ContributorDetails(**record)
                 _contribution_data = validators.ContributionData(
@@ -470,6 +479,7 @@ class TECContributionValidators(CategoryValidator):
             except ValidationError as e:
                 record['error'] = e.errors()
                 yield 'contribution_data_failed', record
+        self.logger.info(f"Finished processing records...")
         return self
 
     def run_validation(self, records):
@@ -495,7 +505,6 @@ class TECReportsValidator(CategoryValidator):
                 record['error'] = e.errors()
                 yield 'report_details_failed', record
         return self
-
 
 
 @dataclass

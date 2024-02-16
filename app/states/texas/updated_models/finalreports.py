@@ -13,7 +13,7 @@ class FinalReportModel(Base):
     reportInfoIdent = Column(Integer, primary_key=True)
     receivedDt = Column(Date, nullable=False)
     infoOnlyFlag = Column(String, nullable=False)
-    filerIdent = Column(String, ForeignKey('filers.filerIdent'), nullable=False)
+    filerIdent = Column(String, ForeignKey('filers.filerIdent', use_alter=True), nullable=True)
     filerTypeCd = Column(String, nullable=False)
     filerName = Column(String, nullable=False)
     finalUnexpendContribFlag = Column(String, nullable=False)

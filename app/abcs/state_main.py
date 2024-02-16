@@ -1,9 +1,7 @@
 from abcs import FileDownloader, StateCategories, StateFileValidation, StateCampaignFinanceConfigs
-from pydantic import BaseModel
-from typing import Protocol, Callable, List, Dict
+from typing import Protocol, Callable, List
 from db_loaders.postgres_loader import PostgresLoader
 from states.texas.database import Base, engine, SessionLocal
-from states.texas.models import TECExpenseRecord
 from collections import namedtuple
 
 

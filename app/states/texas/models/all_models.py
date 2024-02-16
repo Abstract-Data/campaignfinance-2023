@@ -1,13 +1,13 @@
-from states.texas.database import Base
-from sqlalchemy import Column, ForeignKey, Integer, String, text, Float, Boolean
-from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy.orm import relationship
-from sqlalchemy.orm import Mapped
-from sqlalchemy.orm import mapped_column
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.orm import relationship
-from datetime import date
-from typing import List, Set
+# from states.texas.database import Base
+# from sqlalchemy import Column, ForeignKey, Integer, String, text, Float, Boolean
+# from sqlalchemy.dialects.postgresql import ARRAY
+# from sqlalchemy.orm import relationship
+# from sqlalchemy.orm import Mapped
+# from sqlalchemy.orm import mapped_column
+# from sqlalchemy.orm import DeclarativeBase
+# from sqlalchemy.orm import relationship
+# from datetime import date
+# from typing import List, Set
 
 
 # class TECFilerRecord(Base):

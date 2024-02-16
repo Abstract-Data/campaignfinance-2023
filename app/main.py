@@ -1,15 +1,24 @@
 #! /usr/bin/env python3
 from states.texas.texas import TECFileDownloader, TECCategory
-from db_loaders.postgres_loader import PostgresLoader
 from states.texas.database import Base, engine, SessionLocal
+# from states.texas.updated_models.finalreports import FinalReportModel
+# from states.texas.updated_models.expensedata import PayeeModel, ExpenditureModel
+from states.texas.updated_models.filers import FilerNameModel
+# from states.texas.updated_models.contributiondata import ContributionDataModel, ContributorDetailModel
 # from states.texas.texas_search import TECQueryBuilder
 import pandas as pd
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
+
+""" Update the model order of imports. Break out each model to a 
+separate script so they're created in the correct order."""
 # Pandas Display Options
 pd.options.display.max_columns = None
 pd.options.display.max_rows = None
+
+
+Base.metadata.create_all(bind=engine)
 
 # download = TECFileDownloader()
 # download.download()
@@ -20,26 +29,40 @@ reports = TECCategory("reports")
 
 filers.validate()
 contributions.validate()
-# expenses.validate()
+expenses.validate()
 
 # filers_filer_passed = [dict(x) for x in filers.validators.filer_passed]
+# filers_filer_failed = [dict(x) for x in filers.validators.filer_failed]
+#
 # treasurer_passed = [dict(x) for x in filers.validators.treasurer_passed]
 # treasurer_failed = [dict(x) for x in filers.validators.treasurer_failed]
-# assistant_treasurer_passed = [dict(x) for x in filers.validators.assistant_treasurer_passed]
-# chair_passed = [dict(x) for x in filers.validators.chair_passed]
-# filer_name_passed = [dict(x) for x in filers.validators.filer_name_passed]
 #
-# expenditures_passed = [dict(x) for x in expenses.validators.payee_passed]
-# expenditures_failed = [dict(x) for x in expenses.validators.payee_failed]
+# assistant_treasurer_passed = [dict(x) for x in filers.validators.assistant_treasurer_passed]
+# # assistant_treasurer_failed = [dict(x) for x in filers.validators.assistant_treasurer_failed]
+#
+# chair_passed = [dict(x) for x in filers.validators.chair_passed]
+# chair_failed = [dict(x) for x in filers.validators.chair_failed]
+#
+#
+# filer_name_passed = [dict(x) for x in filers.validators.filer_name_passed]
+# filer_name_failed = [dict(x) for x in filers.validators.filer_name_failed]
+#
+# payee_passed = [dict(x) for x in expenses.validators.payee_passed]
+# payee_failed = [dict(x) for x in expenses.validators.payee_failed]
+#
+# expenditure_passed = [dict(x) for x in expenses.validators.expenditure_passed]
+# expenditure_failed = [dict(x) for x in expenses.validators.expenditure_failed]
+
+
+# PostgresLoader.load(session=SessionLocal, records=filers_filer_passed, table=Base.metadata.tables['texas_filers'])
 
 # expenses_passed = [dict(x) for x in expenses.validators.expenditure_passed]
 # expenses_failed = [dict(x) for x in expenses.validators.expenditure_failed]
 
-
 # contributors_passed = [dict(x) for x in contributions.validators.contributor_details_passed]
 # contributors_failed = iter([dict(x) for x in contributions.validators.contributor_details_failed])
-contributions_passed = len([dict(x) for x in contributions.validators.contribution_data_passed])
-contributions_failed = len([dict(x) for x in contributions.validators.contribution_data_failed])
+# contributions_passed = [dict(x) for x in contributions.validators.contribution_data_passed]
+# contributions_failed = len([dict(x) for x in contributions.validators.contribution_data_failed])
 
 # contributions_passed = [dict(x) for x in contributions.validators.contribution_data_passed]
 # contributors_passed = [dict(x) for x in contributions.validators.contributor_details_passed]

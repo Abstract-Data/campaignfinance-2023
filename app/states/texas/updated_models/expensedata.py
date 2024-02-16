@@ -1,11 +1,11 @@
-from sqlalchemy import Column, Integer, String, Date, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Date, Float, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from ..database import Base
 
 
 class PayeeModel(Base):
     __tablename__ = 'payees'
-    __tableargs__ = {"schema": 'texas'}
+    __tableargs__ = (UniqueConstraint('payeeId'), {"schema": 'texas'})
 
     id = Column(Integer, primary_key=True)
     payeePersentTypeCd = Column(String, nullable=True)
@@ -33,7 +33,7 @@ class PayeeModel(Base):
     StreetNamePostType = Column(String, nullable=True)
     OccupancyIdentifier = Column(String, nullable=True)
     OccupancyType = Column(String, nullable=True)
-    payeeID = Column(String, nullable=True)
+    payeeId = Column(String, nullable=True)
     payeeAddressKey = Column(String, nullable=True)
     payeeNameKey = Column(String, nullable=True)
 
@@ -48,7 +48,7 @@ class ExpenditureModel(Base):
     recordType = Column(String, nullable=True)
     formTypeCd = Column(String, nullable=True)
     schedFormTypeCd = Column(String, nullable=True)
-    reportInfoIdent = Column(ForeignKey('FinalReportModel.reportInfoIdent'), nullable=False)
+    reportInfoIdent = Column(Integer, ForeignKey('final_reports.reportInfoIdent', use_alter=True), nullable=True)
     receivedDt = Column(Date, nullable=True)
     infoOnlyFlag = Column(String, nullable=True)
     filerIdent = Column(String, nullable=True)
@@ -68,5 +68,5 @@ class ExpenditureModel(Base):
     capitalLivingexpFlag = Column(String, nullable=True)
     creditCardIssuer = Column(String, nullable=True)
 
-    payeeId = Column(Integer, ForeignKey('payees.payeeId'))
+    payeeId = Column(Integer, ForeignKey('payees.payeeId', use_alter=True), nullable=True)
     payee = relationship("Payee", back_populates="expenditures")
