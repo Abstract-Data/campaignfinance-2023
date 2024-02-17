@@ -375,14 +375,7 @@ class FilerName(TECSettings):
     asstTreasurerKey: Annotated[Optional[str], Field(description="AssistantTreasurer.assistantTreasurerNameKey")] = None
     chairKey: Annotated[Optional[str], Field(description="Chairs.chairNameKey")] = None
     contributionKey: Annotated[Optional[str], Field(description="ContributionData.filerIdent")] = None
-    reportKey: Optional[str] = None
 
     _clear_blank_strings = model_validator(mode='before')(clear_blank_strings)
     _validate_phone_number = field_validator('filerPrimaryPhoneNumber', mode='before')(validate_phone_number)
     _validate_date = field_validator('filerEffStartDt', 'filerEffStopDt', mode='before')(validate_date)
-
-    @model_validator(mode='before')
-    @classmethod
-    def create_filer_reportkey(cls, values):
-        values['reportKey'] = values['filerIdent']
-        return values
