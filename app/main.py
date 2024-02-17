@@ -1,10 +1,7 @@
 #! /usr/bin/env python3
 from states.texas.texas import TECFileDownloader, TECCategory
 from states.texas.database import Base, engine, SessionLocal
-# from states.texas.updated_models.finalreports import FinalReportModel
-# from states.texas.updated_models.expensedata import PayeeModel, ExpenditureModel
-from states.texas.updated_models.filers import FilerNameModel
-# from states.texas.updated_models.contributiondata import ContributionDataModel, ContributorDetailModel
+import states.texas.updated_models as models
 # from states.texas.texas_search import TECQueryBuilder
 import pandas as pd
 from tqdm import tqdm
@@ -18,7 +15,17 @@ pd.options.display.max_columns = None
 pd.options.display.max_rows = None
 
 
-Base.metadata.create_all(bind=engine)
+models.PayeeModel.__table__.create(bind=engine, checkfirst=True)
+models.ExpenditureModel.__table__.create(bind=engine, checkfirst=True)
+models.TreasurerModel.__table__.create(bind=engine, checkfirst=True)
+models.AssistantTreasurerModel.__table__.create(bind=engine, checkfirst=True)
+models.ChairModel.__table__.create(bind=engine, checkfirst=True)
+models.ContributionDataModel.__table__.create(bind=engine, checkfirst=True)
+models.ContributorDetailModel.__table__.create(bind=engine, checkfirst=True)
+models.FilerModel.__table__.create(bind=engine, checkfirst=True)
+models.FilerNameModel.__table__.create(bind=engine, checkfirst=True)
+models.CandidateDataModel.__table__.create(bind=engine, checkfirst=True)
+models.FinalReportModel.__table__.create(bind=engine, checkfirst=True)
 
 # download = TECFileDownloader()
 # download.download()
@@ -31,28 +38,49 @@ filers.validate()
 contributions.validate()
 expenses.validate()
 
-# filers_filer_passed = [dict(x) for x in filers.validators.filer_passed]
-# filers_filer_failed = [dict(x) for x in filers.validators.filer_failed]
-#
-# treasurer_passed = [dict(x) for x in filers.validators.treasurer_passed]
-# treasurer_failed = [dict(x) for x in filers.validators.treasurer_failed]
-#
-# assistant_treasurer_passed = [dict(x) for x in filers.validators.assistant_treasurer_passed]
-# # assistant_treasurer_failed = [dict(x) for x in filers.validators.assistant_treasurer_failed]
-#
-# chair_passed = [dict(x) for x in filers.validators.chair_passed]
-# chair_failed = [dict(x) for x in filers.validators.chair_failed]
-#
-#
-# filer_name_passed = [dict(x) for x in filers.validators.filer_name_passed]
-# filer_name_failed = [dict(x) for x in filers.validators.filer_name_failed]
-#
-# payee_passed = [dict(x) for x in expenses.validators.payee_passed]
-# payee_failed = [dict(x) for x in expenses.validators.payee_failed]
-#
-# expenditure_passed = [dict(x) for x in expenses.validators.expenditure_passed]
-# expenditure_failed = [dict(x) for x in expenses.validators.expenditure_failed]
+filers_filer_passed = [dict(x) for x in filers.validators.filer_passed]
+filers_filer_failed = [dict(x) for x in filers.validators.filer_failed]
 
+treasurer_passed = [dict(x) for x in filers.validators.treasurer_passed]
+treasurer_failed = [dict(x) for x in filers.validators.treasurer_failed]
+
+assistant_treasurer_passed = [dict(x) for x in filers.validators.assistant_treasurer_passed]
+# assistant_treasurer_failed = [dict(x) for x in filers.validators.assistant_treasurer_failed]
+
+chair_passed = [dict(x) for x in filers.validators.chair_passed]
+chair_failed = [dict(x) for x in filers.validators.chair_failed]
+
+
+filer_name_passed = [dict(x) for x in filers.validators.filer_name_passed]
+filer_name_failed = [dict(x) for x in filers.validators.filer_name_failed]
+
+payee_passed = [dict(x) for x in expenses.validators.payee_passed]
+payee_failed = [dict(x) for x in expenses.validators.payee_failed]
+
+expenditure_passed = [dict(x) for x in expenses.validators.expenditure_passed]
+expenditure_failed = [dict(x) for x in expenses.validators.expenditure_failed]
+
+with SessionLocal() as session:
+    session.add_all([models.FilerModel(**x) for x in filers_filer_passed])
+    session.commit()
+
+    session.add_all([models.TreasurerModel(**x) for x in treasurer_passed])
+    session.commit()
+
+    session.add_all([models.AssistantTreasurerModel(**x) for x in assistant_treasurer_passed])
+    session.commit()
+
+    session.add_all([models.ChairModel(**x) for x in chair_passed])
+    session.commit()
+
+    session.add_all([models.FilerNameModel(**x) for x in filer_name_passed])
+    session.commit()
+
+    session.add_all([models.PayeeModel(**x) for x in payee_passed])
+    session.commit()
+
+    session.add_all([models.ExpenditureModel(**x) for x in expenditure_passed])
+    session.commit()
 
 # PostgresLoader.load(session=SessionLocal, records=filers_filer_passed, table=Base.metadata.tables['texas_filers'])
 
