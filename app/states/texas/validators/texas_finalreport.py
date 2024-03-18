@@ -1,15 +1,18 @@
-from pydantic import Field, field_validator
+from pydantic import field_validator
 from datetime import datetime
+from sqlmodel import Field
 from .texas_settings import TECSettings
 
 
-class FinalData(TECSettings):
+class TECFinalReport(TECSettings):
+    __tablename__ = "tx_finalreports"
+    __table_args__ = {"schema": "texas"}
     recordType: str = Field(..., description="Record type code - always FINL", max_length=20)
     formTypeCd: str = Field(..., description="TEC form used", max_length=20)
-    reportInfoIdent: int = Field(..., description="Unique report #")
+    reportInfoIdent: int = Field(..., description="Unique report #", primary_key=True)
     receivedDt: datetime = Field(..., description="Date report received by TEC")
     infoOnlyFlag: str = Field(..., description="Superseded by other report", max_length=1)
-    filerIdent: str = Field(..., description="Filer account #", max_length=100)
+    filerIdent: str = Field(..., description="Filer account #", max_length=100, foreign_key="tx_filers.filerIdent")
     filerTypeCd: str = Field(..., description="Type of filer", max_length=30)
     filerName: str = Field(..., description="Filer name", max_length=200)
     finalUnexpendContribFlag: str = Field(..., description="Unexpended contributions indicator", max_length=1)

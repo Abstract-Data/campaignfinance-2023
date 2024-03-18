@@ -5,7 +5,7 @@ from typing import Optional, Annotated
 from ..validators.texas_settings import TECSettings
 from ..database import SessionLocal
 from sqlalchemy.orm import Session
-# from ..updated_models.filers import FilerModel
+from ..updated_models import FilerModel
 from funcs.validator_functions import clear_blank_strings, validate_phone_number, validate_date
 import usaddress
 import hashlib
@@ -37,7 +37,7 @@ class Filer(TECSettings):
 
 
 class Treasurer(TECSettings):
-    filerIdent: str
+    filerIdent: int
     treasPersentTypeCd: Annotated[Optional[str],  Field(max_length=30)] = None
     treasNameOrganization: Annotated[Optional[str],  Field(max_length=100)] = None
     treasNameLast: Annotated[Optional[str],  Field(max_length=100)] = None
@@ -73,6 +73,7 @@ class Treasurer(TECSettings):
     treasEffStopDt: Optional[date] = None
     treasurerNameKey: str
     treasurerAddressKey: Optional[str] = None
+    treasurerNameAddressKey: Optional[str] = None
 
     _clear_blank_strings = model_validator(mode='before')(clear_blank_strings)
     _validate_phone_number = field_validator('treasPrimaryPhoneNumber', mode='before')(validate_phone_number)
@@ -141,6 +142,11 @@ class Treasurer(TECSettings):
             values['treasurerAddressKey'] = hashlib.sha256(_address.encode()).hexdigest()
         return values
 
+    @model_validator(mode='after')
+    def create_name_address_key(self):
+        self.treasurerNameAddressKey = hashlib.sha256(
+            f"{self.treasurerNameKey}{self.treasurerAddressKey}".encode()).hexdigest()
+        return self
 
     # @field_validator('*')
     # def check_string(cls, v):
@@ -154,7 +160,7 @@ class Treasurer(TECSettings):
 
 
 class AssistantTreasurer(TECSettings):
-    filerIdent: str
+    filerIdent: int
     assttreasPersentTypeCd: Annotated[Optional[str], Field(max_length=30)] = None
     assttreasNameOrganization: Annotated[Optional[str], Field(max_length=100)] = None
     assttreasNameLast: Annotated[Optional[str], Field(max_length=100)] = None
@@ -178,6 +184,7 @@ class AssistantTreasurer(TECSettings):
     assttreasAppointorNameFirst: Annotated[Optional[str], Field(max_length=45)] = None
     assistantTreasurerNameKey: Optional[str] = None
     assistantTreasurerAddressKey: Optional[str] = None
+    assistantTreasurerNameAddressKey: Optional[str] = None
 
     _clear_blank_strings = model_validator(mode='before')(clear_blank_strings)
     _validate_phone_number = field_validator('assttreasPrimaryPhoneNumber', mode='before')(validate_phone_number)
@@ -222,9 +229,15 @@ class AssistantTreasurer(TECSettings):
                 values['assttreasStreetAddrStandardized'].encode()).hexdigest()
         return values
 
+    @model_validator(mode='after')
+    def create_name_address_key(self):
+        self.assistantTreasurerNameAddressKey = hashlib.sha256(
+            f"{self.assistantTreasurerNameKey}{self.assistantTreasurerAddressKey}".encode()).hexdigest()
+        return self
+
 
 class Chair(TECSettings):
-    filerIdent: str
+    filerIdent: int
     chairPersentTypeCd: Annotated[Optional[str], Field(max_length=30)] = None
     chairNameOrganization: Annotated[Optional[str], Field(max_length=100)] = None
     chairNameLast: Annotated[Optional[str], Field(max_length=100)] = None
@@ -322,7 +335,7 @@ class Chair(TECSettings):
 
 class FilerName(TECSettings):
     filerName: str
-    filerIdent: str
+    filerIdent: int
     committeeStatusCd: Optional[str] = None
     ctaSeekOfficeCd: Optional[str] = None
     ctaSeekOfficeDistrict: Optional[str] = None
@@ -371,11 +384,20 @@ class FilerName(TECSettings):
     contestSeekOfficeDescr: Optional[str] = None
     contestSeekOfficeCountyCd: Optional[str] = None
     contestSeekOfficeCountyDescr: Optional[str] = None
-    treasurerKey: str
-    asstTreasurerKey: Annotated[Optional[str], Field(description="AssistantTreasurer.assistantTreasurerNameKey")] = None
-    chairKey: Annotated[Optional[str], Field(description="Chairs.chairNameKey")] = None
-    contributionKey: Annotated[Optional[str], Field(description="ContributionData.filerIdent")] = None
+    # treasurerKey: Annotated[Optional[int], Field(description="Treasurer.filerIdent")] = None
+    # asstTreasurerKey: Annotated[Optional[int], Field(description="AssistantTreasurer.filerIdent")] = None
+    # chairKey: Annotated[Optional[int], Field(description="Chairs.filerIdent")] = None
+    # contributionKey: Annotated[Optional[int], Field(description="ContributionData.filerIdent")] = None
+    # reportKey: Optional[int] = None
+    # expenseKey: Optional[int] = None
 
     _clear_blank_strings = model_validator(mode='before')(clear_blank_strings)
     _validate_phone_number = field_validator('filerPrimaryPhoneNumber', mode='before')(validate_phone_number)
     _validate_date = field_validator('filerEffStartDt', 'filerEffStopDt', mode='before')(validate_date)
+
+    # @model_validator(mode='before')
+    # @classmethod
+    # def create_filer_reportkey(cls, values):
+    #     values['reportKey'] = values['filerIdent']
+    #     values['expenseKey'] = values['filerIdent']
+    #     return values

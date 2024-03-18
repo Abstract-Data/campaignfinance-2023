@@ -7,10 +7,10 @@ from typing import Self, ClassVar, Protocol
 @dataclass
 class FileDownloader(Protocol):
     _configs: ClassVar[StateCampaignFinanceConfigs]
-    _folder: Path
+    _folder: StateCampaignFinanceConfigs.TEMP_FOLDER
 
     @property
-    def folder(self) -> Path:
+    def folder(self) -> StateCampaignFinanceConfigs.TEMP_FOLDER:
         return ...
 
     @folder.setter
@@ -24,7 +24,7 @@ class FileDownloader(Protocol):
     def check_if_folder_exists(self) -> Path:
         ...
 
-    def download(self, read_from_temp: bool = True) -> Self:
+    def download(self, config: StateCampaignFinanceConfigs, read_from_temp: bool = True) -> Self:
         ...
 
     def read(self):

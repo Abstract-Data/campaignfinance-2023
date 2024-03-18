@@ -1,14 +1,14 @@
 #! /usr/bin/env python3
 from states.texas.texas import TECFileDownloader, TECCategory
-from states.texas.database import Base, engine, SessionLocal
-# from states.texas.updated_models.finalreports import FinalReportModel
-# from states.texas.updated_models.expensedata import PayeeModel, ExpenditureModel
-from states.texas.updated_models.filers import FilerNameModel
-# from states.texas.updated_models.contributiondata import ContributionDataModel, ContributorDetailModel
+from states.texas.database import engine, Session, SQLModel
+import states.texas.validators as validators
+from sqlmodel import select
 # from states.texas.texas_search import TECQueryBuilder
 import pandas as pd
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+from sqlalchemy.exc import SQLAlchemyError
+import itertools
 
 
 """ Update the model order of imports. Break out each model to a 
@@ -17,41 +17,111 @@ separate script so they're created in the correct order."""
 pd.options.display.max_columns = None
 pd.options.display.max_rows = None
 
+SQLModel.metadata.create_all(engine)
 
-Base.metadata.create_all(bind=engine)
-
-# download = TECFileDownloader()
-# download.download()
-filers = TECCategory("filers")
-contributions = TECCategory("contributions")
-expenses = TECCategory("expenses")
-reports = TECCategory("reports")
-
-filers.validate()
-contributions.validate()
-expenses.validate()
-
-# filers_filer_passed = [dict(x) for x in filers.validators.filer_passed]
-# filers_filer_failed = [dict(x) for x in filers.validators.filer_failed]
+download = TECFileDownloader()
+download.download()
+# filers = TECCategory("filers")
+# contributions = TECCategory("contributions")
+# expenses = TECCategory("expenses")
+# reports = TECCategory("reports")
 #
-# treasurer_passed = [dict(x) for x in filers.validators.treasurer_passed]
-# treasurer_failed = [dict(x) for x in filers.validators.treasurer_failed]
+# filers.read()
+# filers.validate()
+# filers_passed = [x for x in filers.validation.passed]
+# filers_failed = [x for x in filers.validation.failed]
+# SessionLocal.add_all(filers_passed)
+# SessionLocal.commit()
+
+# expenses.read()
+# expenses.validate()
+# expenses_passed = [x for x in expenses.validation.passed]
+# expenses_failed = [x for x in expenses.validation.failed]
+# SessionLocal.add_all(expenses_passed)
+# SessionLocal.commit()
+
+# contributions.read()
+# contributions.validate()
+# contributions_passed = (x for x in contributions.validation.passed)
+# contributions_failed = (x for x in contributions.validation.failed)
+# with Session(engine) as session:
+#     existing_records = session.exec(select(validators.TECContribution.contributionInfoId)).all()
+#     while True:
+#         _records = itertools.islice(contributions.validation.passed, 1000000)
+#         _records = [x for x in _records if x.contributionInfoId not in existing_records]
+#         try:
+#             session.add_all(_records)
+#             session.commit()
+#         except SQLAlchemyError as e:
+#             print(e)
+#             break
 #
-# assistant_treasurer_passed = [dict(x) for x in filers.validators.assistant_treasurer_passed]
+# reports.read()
+# reports.validate()
+# reports_passed = [x for x in reports.validation.passed]
+# reports_failed = [x for x in reports.validation.failed]
+# SessionLocal.add_all(reports_passed)
+# SessionLocal.commit()
+
+# contributions.load()
+# expenses.load()
+# reports.load()
+
+# filers_filer_passed = (dict(x) for x in filers.validators.filer_passed)
+# filers_filer_failed = (dict(x) for x in filers.validators.filer_failed)
+#
+# treasurer_passed = (dict(x) for x in filers.validators.treasurer_passed)
+# treasurer_failed = (dict(x) for x in filers.validators.treasurer_failed)
+#
+# assistant_treasurer_passed = (dict(x) for x in filers.validators.assistant_treasurer_passed)
 # # assistant_treasurer_failed = [dict(x) for x in filers.validators.assistant_treasurer_failed]
 #
-# chair_passed = [dict(x) for x in filers.validators.chair_passed]
-# chair_failed = [dict(x) for x in filers.validators.chair_failed]
+# chair_passed = (dict(x) for x in filers.validators.chair_passed)
+# chair_failed = (dict(x) for x in filers.validators.chair_failed)
 #
 #
-# filer_name_passed = [dict(x) for x in filers.validators.filer_name_passed]
-# filer_name_failed = [dict(x) for x in filers.validators.filer_name_failed]
+# filer_name_passed = (dict(x) for x in filers.validators.filer_name_passed)
+# filer_name_failed = (dict(x) for x in filers.validators.filer_name_failed)
 #
-# payee_passed = [dict(x) for x in expenses.validators.payee_passed]
+# payee_passed = (dict(x) for x in expenses.validators.payee_passed)
 # payee_failed = [dict(x) for x in expenses.validators.payee_failed]
 #
-# expenditure_passed = [dict(x) for x in expenses.validators.expenditure_passed]
-# expenditure_failed = [dict(x) for x in expenses.validators.expenditure_failed]
+# expenditure_passed = (dict(x) for x in expenses.validators.expenditure_passed)
+# expenditure_failed = (dict(x) for x in expenses.validators.expenditure_failed)
+#
+# reports_passed = (dict(x) for x in reports.validators.reports_passed)
+# reports_failed = [dict(x) for x in reports.validators.reports_failed]
+# def add_to_database(objects: list) -> None:
+#     failed_objects = []
+#
+#     # Split upload to be 15,000 records at a time
+#     for i in range(0, len(objects), 15000):
+#         try:
+#             with SessionLocal as session:
+#                 session.add_all(objects[i:i+15000])
+#                 session.commit()
+#         except SQLAlchemyError as e:
+#             print(e)
+#             failed_objects.append(objects[i:i+15000])
+#
+#
+# with SessionLocal as session:
+#     filers = add_to_database([models.FilerModel(**x) for x in filers_filer_passed])
+#
+#     treasurers = add_to_database([models.TreasurerModel(**x) for x in treasurer_passed])
+#
+#     asst_treas = add_to_database([models.AssistantTreasurerModel(**x) for x in assistant_treasurer_passed])
+#
+#     chairs = add_to_database([models.ChairModel(**x) for x in chair_passed])
+#
+#     filer_name = add_to_database([models.FilerNameModel(**x) for x in filer_name_passed])
+#
+#     payess = add_to_database([models.PayeeModel(**x) for x in payee_passed])
+#
+#     expenditures = add_to_database([models.ExpenditureModel(**x) for x in expenditure_passed])
+#
+#     reports = add_to_database([models.FinalReportModel(**x) for x in reports_passed])
+
 
 
 # PostgresLoader.load(session=SessionLocal, records=filers_filer_passed, table=Base.metadata.tables['texas_filers'])

@@ -8,7 +8,7 @@ from sqlmodel import SQLModel
 """
 
 
-class TECSettings(SQLModel):
+class OklahomaSettings(SQLModel):
     model_config = ConfigDict(
         populate_by_name=True,
         str_strip_whitespace=True,

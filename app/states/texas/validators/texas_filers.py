@@ -1,15 +1,19 @@
 from datetime import date, datetime
 from typing import Optional, Annotated, List, Any
+from sqlmodel import SQLModel, Field, Relationship
 import probablepeople as pp
 from nameparser import HumanName
-from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
+from pydantic import field_validator, model_validator
 from pydantic_extra_types.phone_numbers import PhoneNumber
 from pydantic_core import PydanticCustomError
 from .texas_settings import TECSettings
 import phonenumbers
 
 
-class TECFiler(TECSettings):
+class TECFiler(TECSettings, table=True, validate=True, schema='texas'):
+    __tablename__ = "tx_filers"
+    __table_args__ = {"schema": "texas"}
+    id: Annotated[Optional[int], Field(primary_key=True)] = None
     recordType: str
     filerIdent: int
     filerTypeCd: str
@@ -51,7 +55,7 @@ class TECFiler(TECSettings):
     filerMailingRegion: Optional[str]
     filerPrimaryUsaPhoneFlag: Optional[str]
 
-    filerPrimaryPhoneNumber: Optional[PhoneNumber]
+    filerPrimaryPhoneNumber: Optional[PhoneNumber] = None
     filerPrimaryPhoneExt: Optional[str]
     filerHoldOfficeCd: Optional[str]
     filerHoldOfficeDistrict: Optional[str]
@@ -95,7 +99,7 @@ class TECFiler(TECSettings):
     treasMailingRegion: Optional[str]
     treasPrimaryUsaPhoneFlag: Optional[str]
 
-    treasPrimaryPhoneNumber: Optional[PhoneNumber]
+    treasPrimaryPhoneNumber: Optional[PhoneNumber] = None
     treasPrimaryPhoneExt: Optional[str]
     treasAppointorNameLast: Optional[str]
     treasAppointorNameFirst: Optional[str]
@@ -121,7 +125,7 @@ class TECFiler(TECSettings):
     assttreasStreetRegion: Optional[str]
     assttreasPrimaryUsaPhoneFlag: Optional[str]
 
-    assttreasPrimaryPhoneNumber: Optional[PhoneNumber]
+    assttreasPrimaryPhoneNumber: Optional[PhoneNumber] = None
     assttreasPrimaryPhoneExt: Optional[str]
     assttreasAppointorNameLast: Optional[str]
     assttreasAppointorNameFirst: Optional[str]
@@ -154,10 +158,12 @@ class TECFiler(TECSettings):
 
     chairPrimaryPhoneNumber: Optional[PhoneNumber]
     chairPrimaryPhoneExt: Optional[str]
-    org_names: str
+    # org_names: str
     file_origin: str
-    # expenses: Optional[List] = None
-    # contributions: Optional[List] = None
+    expense_id: Optional[int]
+    contribution_id: Optional[int]
+    # expenses: Optional[List['TECExpense']] = Relationship(back_populates="filers")
+    # contributions: Optional[List['TECContribution']] = Relationship(back_populates="filers")
 
     @model_validator(mode="before")
     @classmethod
@@ -241,7 +247,7 @@ class TECFiler(TECSettings):
         "treasEffStartDt",
         "treasEffStopDt",
         mode="before",
-    )
+)
     @classmethod
     def _check_expend_date(cls, value):
         if value:

@@ -1,75 +1,72 @@
 from datetime import date, datetime
 from typing import Optional, Annotated, List
-from pydantic import Field, field_validator, model_validator
+from pydantic import field_validator, model_validator
+from sqlmodel import SQLModel, Field
 from pydantic_core import PydanticCustomError
 from states.texas.validators.texas_settings import TECSettings
 
 
-class TECContribution(TECSettings):
+class TECContribution(TECSettings, table=True):
+    __tablename__ = "tx_contributions"
+    __table_args__ = {"schema": "texas"}
     recordType: str
     formTypeCd: str
     schedFormTypeCd: str
     reportInfoIdent: int
     receivedDt: date
-    infoOnlyFlag: bool
+    infoOnlyFlag: Optional[bool] = None
     filerIdent: int
     filerTypeCd: str
     filerName: str
-    contributionInfoId: int
+    contributionInfoId: int = Field(primary_key=True)
     contributionDt: date
     contributionAmount: float
-    contributionDescr: Optional[str]
-    itemizeFlag: Optional[bool]
-    travelFlag: Optional[bool]
-    contributorPersentTypeCd: str = Field(
+    contributionDescr: Optional[str] = None
+    itemizeFlag: Optional[bool] = None
+    travelFlag: Optional[bool] = None
+    contributorPersentTypeCd: str = Field(...,
         description="Type of contributor name data - INDIVIDUAL or ENTITY"
     )
-    contributorNameOrganization: Optional[str] = Field(
+    contributorNameOrganization: Optional[str] = Field(default=None,
         description="For ENTITY, the contributor organization name"
     )
-    contributorNameLast: Optional[str] = Field(
+    contributorNameLast: Optional[str] = Field(default=None,
         description="For INDIVIDUAL, the contributor last name"
     )
-    contributorNameSuffixCd: Optional[str] = Field(
+    contributorNameSuffixCd: Optional[str] = Field(default=None,
         description="For INDIVIDUAL, the contributor suffix"
     )
-    contributorNameFirst: Optional[str] = Field(
+    contributorNameFirst: Optional[str] = Field(default=None,
         description="For INDIVIDUAL, the contributor first name"
     )
-    contributorNamePrefixCd: Optional[str] = Field(
+    contributorNamePrefixCd: Optional[str] = Field(default=None,
         description="For INDIVIDUAL, the contributor prefix"
     )
-    contributorNameShort: Optional[str] = Field(
+    contributorNameShort: Optional[str] = Field(default=None,
         description="For INDIVIDUAL, the contributor short name (nickname)"
     )
-    contributorStreetCity: Optional[str] = Field(
+    contributorStreetCity: Optional[str] = Field(default=None,
         description="The contributor street address city"
     )
-    contributorStreetStateCd: Optional[str] = Field(
+    contributorStreetStateCd: Optional[str] = Field(default=None,
         description="Contributor street address - state code (e.g. TX, CA) - for  \
-     country=USA/UMI only"
-    )
+     country=USA/UMI only")
 
-    contributorStreetCountyCd: Optional[str]
-    contributorStreetCountryCd: Optional[str]
-    contributorStreetPostalCode: Optional[str]
-    contributorStreetRegion: Optional[str]
-    contributorEmployer: Optional[str]
-    contributorOccupation: Optional[str]
-    contributorJobTitle: Optional[str]
-    contributorPacFein: Optional[
-        Annotated[
-            str,
-            Field(
+    contributorStreetCountyCd: Optional[str] = None
+    contributorStreetCountryCd: Optional[str] = None
+    contributorStreetPostalCode: Optional[str] = None
+    contributorStreetRegion: Optional[str] = None
+    contributorEmployer: Optional[str] = None
+    contributorOccupation: Optional[str] = None
+    contributorJobTitle: Optional[str] = None
+    contributorPacFein: Optional[str] = Field(
                 description="Indicates if contributor is an out-of-state PAC",
-            ),
-        ]
-    ]
-    contributorOosPacFlag: Optional[bool]
-    contributorLawFirmName: Optional[str]
-    contributorSpouseLawFirmName: Optional[str]
-    contributorParent1LawFirmName: Optional[str]
-    contributorParent2LawFirmName: Optional[str]
+            )
+    contributorOosPacFlag: Optional[bool] = None
+    contributorLawFirmName: Optional[str] = None
+    contributorSpouseLawFirmName: Optional[str] = None
+    contributorParent1LawFirmName: Optional[str] = None
+    contributorParent2LawFirmName: Optional[str] = None
     file_origin: str
     # filer_id: Optional[int]
     # filers: Optional[List]

@@ -1,6 +1,10 @@
+
+from __future__ import annotations
 from pathlib import Path
-from typing import ClassVar, Dict, List, Any, Generator
+from typing import ClassVar, Dict, List
 from dataclasses import field, dataclass
+import contextlib
+import inject
 from tqdm import tqdm
 from zipfile import ZipFile
 import requests
@@ -8,36 +12,61 @@ import os
 import sys
 import ssl
 import urllib.request
-import itertools
-from typing import Generator, Tuple, Type, Iterator, Optional, Any, Protocol
+from typing import Generator, Type, Optional, Any
 from collections import namedtuple, defaultdict
-from pydantic import ValidationError, BaseModel
+from sqlmodel import SQLModel
 import funcs
 from logger import Logger
 from abcs import (
     StateCampaignFinanceConfigs,
     FileDownloader,
 )
-# from db_loaders.postgres_loader import PostgresLoader
-from states.texas.database import (
-    sessionmaker,
-    create_engine,
-    Base,
-    engine,
-    SessionLocal
-)
-import itertools
-import states.texas.updated_validators as validators
-import states.texas.updated_models as models
+from funcs.validation import StateFileValidation
+import states.texas.validators as validators
+from states.texas.database import engine, Session
 
+# from db_loaders.postgres_loader import PostgresLoader
+# from states.texas.database import (
+#     SQLModel,
+#     create_engine,
+#     engine,
+#     SessionLocal,
+#     Session
+# )
+# import itertools
+# import states.texas.updated_validators as validators
+# import states.texas.updated_models as models
 
 logger = Logger(__name__)
 logger.info(f"Logger initialized in {__name__}")
 
-SQLModels = Generator[Base, None, None]
+# SQLModels = Generator[SQLModel, None, None]
 
 FileValidationResults = namedtuple(
     'FileValidationResults', ['passed', 'failed', 'passed_count', 'failed_count'])
+
+
+def download_base_config(binder):
+    binder.bind(StateCampaignFinanceConfigs, TexasConfigs)
+
+
+def category_base_config(binder):
+    binder.bind(StateCampaignFinanceConfigs, TexasConfigs)
+    binder.bind_to_provider(Session, session_scope)
+
+
+@contextlib.contextmanager
+def session_scope():
+    """Provide a transactional scope around a series of operations."""
+    session = Session(engine)
+    try:
+        yield session
+        session.commit()
+    except:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 def generate_file_list(folder: Path):
@@ -66,38 +95,29 @@ def merge_filer_names(records: Generator[Dict, None, None]) -> Generator[Dict, N
     return (x for x in _unique_filers.values())
 
 
-def validation_result_generator(
-        gen: Iterator[Tuple],
-        name: str) -> Generator[BaseModel | Dict, None, None]:
-    return (record for status, record in gen if status == name)
-
-
 class TexasConfigs(StateCampaignFinanceConfigs):
     STATE: ClassVar[str] = "Texas"
     STATE_ABBREVIATION: ClassVar[str] = "TX"
-    TEMP_FOLDER: ClassVar[StateCampaignFinanceConfigs.TEMP_FOLDER] = Path.cwd().parent / "tmp"
-    TEMP_FILENAME: ClassVar[StateCampaignFinanceConfigs.TEMP_FILENAME] = Path.cwd().parent / "tmp" / "TEC_CF_CSV.zip"
-
-    DB_BASE: ClassVar[Type[Base]] = Base
-    DB_ENGINE: ClassVar[create_engine] = engine
-    DB_SESSION: ClassVar[sessionmaker] = SessionLocal
+    TEMP_FOLDER: ClassVar[StateCampaignFinanceConfigs.TEMP_FOLDER] = Path.cwd().parent / "tmp" / "texas"
+    TEMP_FILENAME: ClassVar[StateCampaignFinanceConfigs.TEMP_FILENAME] = (
+            Path.cwd().parent / "tmp" / "texas" / "TEC_CF_CSV.zip")
 
     # EXPENSE_VALIDATOR: ClassVar[
     #     Type[StateCampaignFinanceConfigs.EXPENSE_VALIDATOR]
     # ] = TECExpense
-    EXPENSE_MODEL: ClassVar[Type[Base]] = None
+    # EXPENSE_MODEL: ClassVar[Type[SQLModel]] = None
     EXPENSE_FILE_PREFIX: ClassVar[str] = "expend"
 
     # CONTRIBUTION_VALIDATOR: ClassVar[
     #     Type[StateCampaignFinanceConfigs.CONTRIBUTION_VALIDATOR]
     # ] = TECContribution
-    CONTRIBUTION_MODEL: ClassVar[Type[Base]] = None
+    # CONTRIBUTION_MODEL: ClassVar[Type[SQLModel]] = None
     CONTRIBUTION_FILE_PREFIX: ClassVar[str] = "contribs"
 
     # FILERS_VALIDATOR: ClassVar[
     #     Type[StateCampaignFinanceConfigs.FILERS_VALIDATOR]
     # ] = TECFiler
-    FILERS_MODEL: ClassVar[Type[Base]] = None
+    # FILERS_MODEL: ClassVar[Type[SQLModel]] = None
     FILERS_FILE_PREFIX: ClassVar[str] = "filer"
 
     REPORTS_FILE_PREFIX: ClassVar[str] = "finals"
@@ -118,10 +138,13 @@ class TexasConfigs(StateCampaignFinanceConfigs):
 
 
 @dataclass
-class TECFileDownload:
-    _configs: StateCampaignFinanceConfigs = TexasConfigs
-    _folder: StateCampaignFinanceConfigs.TEMP_FOLDER = TexasConfigs.TEMP_FOLDER
+class TECFileDownloader(FileDownloader):
+    _configs: ClassVar[StateCampaignFinanceConfigs]
+    _folder: Path = TexasConfigs.TEMP_FOLDER
     __logger: Logger = field(init=False)
+
+    def init(self):
+        inject.configure(download_base_config)
 
     @property
     def folder(self) -> StateCampaignFinanceConfigs.TEMP_FOLDER:
@@ -133,39 +156,17 @@ class TECFileDownload:
 
     @property
     def _tmp(self) -> Path:
-        return self.folder if self.folder else self.folder
-
-    def download_file_with_requests(self) -> None:
-        return ...
-
-
-@dataclass
-class TECFileDownloader(FileDownloader):
-    _configs: ClassVar[StateCampaignFinanceConfigs] = TexasConfigs
-    _folder: Path = TexasConfigs.TEMP_FOLDER
-    __logger: Logger = field(init=False)
-
-    @property
-    def folder(self) -> Path:
-        return self._folder
-
-    @folder.setter
-    def folder(self, value: Path) -> None:
-        self._folder = value
-
-    @property
-    def _tmp(self) -> Path:
-        return self.folder if self.folder else self._configs.TEMP_FOLDER
+        return self.folder if self.folder else StateCampaignFinanceConfigs.TEMP_FOLDER
 
     @classmethod
-    def download_file_with_requests(cls) -> None:
+    def download_file_with_requests(cls, config: StateCampaignFinanceConfigs) -> None:
         # download files
-        with requests.get(cls._configs.ZIPFILE_URL, stream=True) as resp:
+        with requests.get(config.ZIPFILE_URL, stream=True) as resp:
             # check header to get content length, in bytes
             total_length = int(resp.headers.get("Content-Length"))
 
             # Chunk download of zip file and write to temp folder
-            with open(cls._configs.TEMP_FILENAME, "wb") as f:
+            with open(config.TEMP_FILENAME, "wb") as f:
                 for chunk in tqdm(
                         resp.iter_content(chunk_size=1024),
                         total=round(total_length / 1024, 2),
@@ -194,10 +195,11 @@ class TECFileDownloader(FileDownloader):
             self.__logger.info("User selected 'n'. Exiting...")
             sys.exit()
 
+    @inject.autoparams()
     def download(
         self,
+        config: StateCampaignFinanceConfigs,
         read_from_temp: bool = False,
-        config: StateCampaignFinanceConfigs = TexasConfigs,
     ) -> None:
         tmp = self._tmp
         temp_filename = tmp / "TEC_CF_CSV.zip"
@@ -300,226 +302,28 @@ class TECFileDownloader(FileDownloader):
 
     def __post_init__(self):
         TECFileDownloader.__logger = Logger(self.__class__.__name__)
+        self.init()
         self.check_if_folder_exists()
-
-#
-# @dataclass
-# class TECFileValidator:
-#     """ Validator class for TEC Files"""
-#     __logger: Logger = field(init=False)
-#     _db: ClassVar[PostgresLoader] = field(init=False)
-#
-#     def __post_init__(self):
-#         TECFileValidator.__logger = Logger(self.__class__.__name__)
-#
-#     @staticmethod
-#     def validate_generator(file: 'TECFile') -> Generator[Dict, None, None]:
-#         for x in file.records:
-#             yield file.validator(**dict(x))
-#
-#     @staticmethod
-#     def validate(file):
-#         _passed, _failed = [], []
-#         for x in tqdm(TECFileValidator.validate_generator(file.read()), desc=f"VALIDATING: {file.file.name} records"):
-#             try:
-#                 _passed.append(x)
-#             except ValidationError as e:
-#                 x['error'] = e.errors()
-#                 _failed.append(x)
-#         return _passed, _failed
-
-
-@dataclass
-class CategoryValidator(Protocol):
-
-    def validate(self, records):
-        return self
-
-    def run_validation(self, records):
-        return self
-
-
-@dataclass
-class TECFilerValidation(CategoryValidator):
-    filer_passed: funcs.PassedRecords = field(init=False)
-    filer_failed: funcs.FailedRecords = field(init=False)
-    filer_name_passed: funcs.PassedRecords = field(init=False)
-    filer_name_failed: funcs.FailedRecords = field(init=False)
-    treasurer_passed: funcs.PassedRecords = field(init=False)
-    treasurer_failed: funcs.FailedRecords = field(init=False)
-    assistant_treasurer_passed: funcs.PassedRecords = field(init=False)
-    assistant_treasurer_failed: funcs.FailedRecords = field(init=False)
-    chair_passed: funcs.PassedRecords = field(init=False)
-    chair_failed: funcs.FailedRecords = field(init=False)
-
-    def process_records(self, _records):
-        for record in tqdm(_records, desc="Validating filer records", unit=" records"):
-            try:
-                _filer = validators.Filer(**record)
-                yield 'filer_passed', _filer
-            except ValidationError as e:
-                record['error'] = e.errors()
-                yield 'filer_failed', record
-
-            try:
-                _treasurer = validators.Treasurer(**record)
-                yield 'treasurer_passed', _treasurer
-            except ValidationError as e:
-                record['error'] = e.errors()
-                yield 'treasurer_failed', record
-
-            try:
-                _assistant_treasurer = validators.AssistantTreasurer(**record)
-                yield 'assistant_treasurer_passed', _assistant_treasurer
-            except ValidationError as e:
-                record['error'] = e.errors()
-                yield 'assistant_treasurer_failed', record
-
-            try:
-                _chair = validators.Chair(**record)
-                yield 'chair_passed', _chair
-            except ValidationError as e:
-                record['error'] = e.errors()
-                yield 'chair_failed', record
-
-            try:
-                _filer_name = validators.FilerName(**record,
-                                                   treasurerKey=validators.Treasurer(**record).treasurerNameKey,
-                                                   asstTreasurerKey=validators.AssistantTreasurer(**record).assistantTreasurerNameKey,
-                                                   chairKey=validators.Chair(**record).chairNameKey,
-                                                   contributionKey=validators.Treasurer(**record).filerIdent)
-                yield 'filer_name_passed', _filer_name
-            except ValidationError as e:
-                record['error'] = e.errors()
-                yield 'filer_name_failed', record
-
-    def run_validation(self, records):
-        filer_passed, filer_failed,  \
-            filer_name_passed, filer_name_failed,  \
-            treasurer_passed, treasurer_failed,  \
-            assistant_treasurer_passed, assistant_treasurer_failed,  \
-            chair_passed, chair_failed = itertools.tee(self.process_records(records), 10)
-        self.filer_passed = validation_result_generator(filer_passed, 'filer_passed')
-        self.filer_failed = validation_result_generator(filer_failed, 'filer_failed')
-        self.filer_name_passed = validation_result_generator(filer_name_passed, 'filer_name_passed')
-        self.filer_name_failed = validation_result_generator(filer_name_failed, 'filer_name_failed')
-        self.treasurer_passed = validation_result_generator(treasurer_passed, 'treasurer_passed')
-        self.treasurer_failed = validation_result_generator(treasurer_failed, 'treasurer_failed')
-        self.assistant_treasurer_passed = validation_result_generator(
-            assistant_treasurer_passed, 'assistant_treasurer_passed')
-        self.chair_passed = validation_result_generator(chair_passed, 'chair_passed')
-        self.chair_failed = validation_result_generator(chair_failed, 'chair_failed')
-        return self
-
-
-@dataclass
-class TECExpenseValidators(CategoryValidator):
-    payee_passed: funcs.PassedRecords = None
-    payee_failed: funcs.FailedRecords = None
-    expenditure_passed: funcs.PassedRecords = None
-    expenditure_failed: funcs.FailedRecords = None
-
-    def process_records(self, records):
-        for record in tqdm(records, desc="Validating expense records", unit=" records"):
-            try:
-                _payee = validators.Payee(**record)
-                yield 'payee_passed', _payee
-            except ValidationError as e:
-                record['error'] = e.errors()
-                yield 'payee_failed', record
-
-            try:
-                _expenditure = validators.Expenditure(**record, payeeId=_payee.payeeId)
-                yield 'expenditure_passed', _expenditure
-            except ValidationError as e:
-                record['error'] = e.errors()
-                yield 'expenditure_failed', record
-        return self
-
-    def run_validation(self, records):
-        payee_passed, payee_failed,  \
-            expenditure_passed, expenditure_failed = itertools.tee(self.process_records(records), 4)
-        self.payee_passed = validation_result_generator(payee_passed, 'payee_passed')
-        self.payee_failed = validation_result_generator(payee_failed, 'payee_failed')
-        self.expenditure_passed = validation_result_generator(expenditure_passed, 'expenditure_passed')
-        self.expenditure_failed = validation_result_generator(expenditure_failed, 'expenditure_failed')
-        return self
-
-
-@dataclass
-class TECContributionValidators(CategoryValidator):
-    contributor_details_passed: funcs.PassedRecords = field(init=False)
-    contributor_details_failed: funcs.FailedRecords = field(init=False)
-    contribution_data_passed: funcs.PassedRecords = field(init=False)
-    contribution_data_failed: funcs.FailedRecords = field(init=False)
-    _logger: Logger = field(init=False)
-
-    @property
-    def logger(self):
-        self._logger = Logger(self.__class__.__name__)
-        return self._logger
-
-    def process_records(self, records):
-        self.logger.info(f"Processing records...")
-        for record in records:
-            try:
-                _contributor_details = validators.ContributorDetails(**record)
-                _contribution_data = validators.ContributionData(
-                    **record,
-                    contributorNameAddressKey=_contributor_details.contributorNameAddressKey,
-                    contributorOrgKey=_contributor_details.contributorOrgKey)
-                yield 'contributor_details_passed', _contributor_details
-            except ValidationError as e:
-                record['error'] = e.errors()
-                yield 'contributor_details_failed', record
-
-            try:
-                _contribution_data = validators.ContributionData(**record)
-                yield 'contribution_data_passed', _contribution_data
-            except ValidationError as e:
-                record['error'] = e.errors()
-                yield 'contribution_data_failed', record
-        self.logger.info(f"Finished processing records...")
-        return self
-
-    def run_validation(self, records):
-        contributor_details_passed, contributor_details_failed, \
-            contribution_data_passed, contribution_data_failed = itertools.tee(self.process_records(records), 4)
-        self.contributor_details_passed = validation_result_generator(contributor_details_passed, 'contributor_details_passed')
-        self.contributor_details_failed = validation_result_generator(contributor_details_failed, 'contributor_details_failed')
-        self.contribution_data_passed = validation_result_generator(contribution_data_passed, 'contribution_data_passed')
-        self.contribution_data_failed = validation_result_generator(contribution_data_failed, 'contribution_data_failed')
-        return self
-
-
-class TECReportsValidator(CategoryValidator):
-    reports_passed: funcs.PassedRecords = None
-    reports_failed: funcs.FailedRecords = None
-
-    def process_records(self, records):
-        for record in tqdm(records, desc="Validating contribution records", unit=" records"):
-            try:
-                _report_details = validators.FinalReport(**record)
-                yield 'report_details_passed', _report_details
-            except ValidationError as e:
-                record['error'] = e.errors()
-                yield 'report_details_failed', record
-        return self
 
 
 @dataclass
 class TECCategory:
     category: str
     records: Generator[Dict, None, None] = field(init=False)
-    validators: CategoryValidator = field(init=False)
-    config: StateCampaignFinanceConfigs = TexasConfigs
+    validation: StateFileValidation = field(init=False)
+    validator: Type[validators.TECSettings] = field(init=False)
+    config: StateCampaignFinanceConfigs = field(init=False)
     _files: Optional[Generator[Path, Any, None]] = None
     __logger: Logger = field(init=False)
 
     def __repr__(self):
         return f"TECFileCategories({self.category})"
 
+    def init(self):
+        inject.configure(category_base_config, clear=True)
+
     def __post_init__(self):
+        self.init()
         self.create_file_list()
         self.get_validators()
 
@@ -528,37 +332,38 @@ class TECCategory:
         self.__logger = Logger(self.__class__.__name__)
         return self.__logger
 
-    def create_file_list(self):
+    @inject.autoparams()
+    def create_file_list(self, config: StateCampaignFinanceConfigs) -> Generator[Path, Any, None]:
         if self.category == "expenses":
             self._files = (
-                x for x in generate_file_list(TexasConfigs.TEMP_FOLDER)
-                if x.name.startswith(self.config.EXPENSE_FILE_PREFIX))
+                x for x in generate_file_list(config.TEMP_FOLDER)
+                if x.name.startswith(config.EXPENSE_FILE_PREFIX))
         elif self.category == "contributions":
             self._files = (
-                x for x in generate_file_list(TexasConfigs.TEMP_FOLDER)
-                if x.name.startswith(self.config.CONTRIBUTION_FILE_PREFIX))
+                x for x in generate_file_list(config.TEMP_FOLDER)
+                if x.name.startswith(config.CONTRIBUTION_FILE_PREFIX))
         elif self.category == "filers":
             self._files = (
-                x for x in generate_file_list(TexasConfigs.TEMP_FOLDER)
-                if x.name.startswith(self.config.FILERS_FILE_PREFIX))
+                x for x in generate_file_list(config.TEMP_FOLDER)
+                if x.name.startswith(config.FILERS_FILE_PREFIX))
         elif self.category == "reports":
             self._files = (
-                x for x in generate_file_list(TexasConfigs.TEMP_FOLDER)
-                if x.name.startswith(self.config.REPORTS_FILE_PREFIX))
+                x for x in generate_file_list(config.TEMP_FOLDER)
+                if x.name.startswith(config.REPORTS_FILE_PREFIX))
         return self._files
 
-    def get_validators(self):
+    def get_validators(self) -> Type[validators.TECSettings]:
         if self.category == "expenses":
-            self.validators = TECExpenseValidators()
+            self.validator = validators.TECExpense
         elif self.category == "contributions":
-            self.validators = TECContributionValidators()
+            self.validator = validators.TECContribution
         elif self.category == "filers":
-            self.validators = TECFilerValidation()
+            self.validator = validators.TECFiler
         elif self.category == 'reports':
-            self.validators = TECReportsValidator()
+            self.validator = validators.TECFinalReport
         else:
             raise ValueError(f"Invalid category: {self.category}")
-        return self.validators
+        return self.validator
 
     def read(self) -> Generator[Dict, None, None]:
         self.records = (record for file in list(self._files) for record in funcs.FileReader.read_file(file))
@@ -571,45 +376,18 @@ class TECCategory:
 
     def validate(self,
                  records: Generator[Dict, None, None] = None,
-                 validator: Type[BaseModel] = None
-                 ) -> 'CategoryValidator':
-        return self.validators.run_validation(records=self.read())
+                 validator: Type[SQLModel] = None
+                 ) -> StateFileValidation:
+        if not records:
+            records = self.records
 
-    # def create_models(self, records: funcs.PassedRecords = None) -> SQLModels:
-    #     if not records:
-    #         self.models = (self.sql_model(**dict(x)) for x in self.passed)
-    #     self.logger.info(f"Created {self.category} model generator...")
-    #     return self.models
-    #
-    # def add_to_database(self, models: SQLModels = None) -> None:
-    #     _db = PostgresLoader(Base)
-    #     _db.build(engine=engine)
-    #     if not models:
-    #         models = self.create_models()
-    #     _db.load(
-    #         records=models,
-    #         session=SessionLocal,
-    #         table=self.sql_model
-    #     )
-    #
-    # def update_database(self, models: Generator[BaseModel, None, None] = None) -> None:
-    #     _db = PostgresLoader(Base)
-    #     _db.build(engine=engine)
-    #     if not models:
-    #         models = (dict(x) for x in self.passed)
-    #         _db = PostgresLoader(Base)
-    #         _db.update(
-    #             records=models,
-    #             session=SessionLocal,
-    #             table=self.sql_model,
-    #             primary_key=self.primary_key
-    #         )
+        if not validator:
+            validator = self.validator
 
-        # _db = PostgresLoader(Base)
-        # errors = None
-        # for file in tqdm(category, desc=f"UPDATING DATABASE"):
-        #     file.create_models()
-        #     print([x for x in file._models])
-            # errors = _db.update(records=_models, session=SessionLocal, table=file._sql_model)
-        # return _models
+        self.validation = StateFileValidation()
+        return self.validation.validate(records=records, validator=validator)
 
+    @inject.autoparams()
+    def load_to_db(self, records: Generator[Dict, None, None], session: Session) -> None:
+        session.add_all(records)
+        session.commit()
