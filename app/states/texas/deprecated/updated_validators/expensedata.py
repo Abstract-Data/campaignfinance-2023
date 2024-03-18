@@ -33,6 +33,7 @@ class Payee(BaseModel):
     StreetNamePostType: Optional[str] = None
     OccupancyIdentifier: Optional[str] = None
     OccupancyType: Optional[str] = None
+    expendInfoId: Optional[str] = None
 
     @property
     def payeeNameKey(self):
@@ -111,6 +112,7 @@ class Expenditure(BaseModel):
     srcCorpContribFlag: Optional[str] = None
     capitalLivingexpFlag: Optional[str] = None
     creditCardIssuer: Optional[str] = None
+    expendPayee: Optional[str] = None
     payeeId: str
 
     _clear_blank_strings = model_validator(mode='before')(clear_blank_strings)

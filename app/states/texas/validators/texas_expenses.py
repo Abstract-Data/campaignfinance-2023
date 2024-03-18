@@ -1,18 +1,21 @@
 from datetime import date, datetime
 from typing import Optional, List
 from nameparser import HumanName
-from pydantic import field_validator, model_validator, Field
+from pydantic import field_validator, model_validator
+from sqlmodel import SQLModel, Field
 from pydantic_core import PydanticCustomError
 from states.texas.validators.texas_settings import TECSettings
 
 
-class TECExpenseCategory(TECSettings):
-    recordType: str = Field(..., description="Record type code - always EXCAT")
-    expendCategoryCodeValue: str = Field(..., description="Expenditure category code")
-    expendCategoryCodeLabel: str = Field(..., description="Expenditure category description")
+# class TECExpenseCategory(TECSettings, table=True):
+#     recordType: str = Field(..., description="Record type code - always EXCAT")
+#     expendCategoryCodeValue: str = Field(..., description="Expenditure category code")
+#     expendCategoryCodeLabel: str = Field(..., description="Expenditure category description")
 
 
-class TECExpense(TECSettings):
+class TECExpense(TECSettings, table=True):
+    __tablename__ = "tx_expenses"
+    __table_args__ = {"schema": "texas"}
     recordType: str
     formTypeCd: str
     schedFormTypeCd: str
@@ -22,7 +25,7 @@ class TECExpense(TECSettings):
     filerIdent: int
     filerTypeCd: str
     filerName: str
-    expendInfoId: int
+    expendInfoId: int = Field(primary_key=True)
     expendDt: date
     expendAmount: float
     expendDescr: str

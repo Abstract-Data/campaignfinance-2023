@@ -1,6 +1,6 @@
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+# from sqlalchemy import create_engine, MetaData
+# from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from sqlmodel import create_engine, Session, SQLModel
 from dotenv import load_dotenv
 import os
 from pathlib import Path
@@ -22,8 +22,10 @@ LOCAL_DATABASE_URL = f"postgresql://{LOCAL_POSTGRES_USR}:{LOCAL_POSTGRES_PWD}@lo
 
 engine = create_engine(LOCAL_DATABASE_URL, pool_size=200, echo=True)
 
-SessionLocal: sessionmaker = sessionmaker(
-    autocommit=False, autoflush=False, bind=engine
-)
-
-Base = declarative_base()
+# SessionLocal: sessionmaker = sessionmaker(
+#     autocommit=False, autoflush=False, bind=engine
+# )
+#
+#
+# class Base(DeclarativeBase):
+#     pass
