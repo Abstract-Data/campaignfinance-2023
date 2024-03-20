@@ -1,12 +1,14 @@
 from typing import Tuple, Dict, Generator, Type
 from dataclasses import dataclass
 from tqdm import tqdm
-from pydantic import ValidationError, BaseModel
+from pydantic import ValidationError
+from sqlmodel import SQLModel
 from logger import Logger
+from joblib import Parallel, delayed
 import itertools
 
 
-PassedRecords = Generator[BaseModel, None, None]
+PassedRecords = Generator[SQLModel, None, None]
 FailedRecords = Generator[Dict, None, None]
 PassedFailedRecords = Tuple[PassedRecords, FailedRecords]
 
@@ -22,20 +24,34 @@ class StateFileValidation:
         self._logger = Logger(self.__class__.__name__)
         return self._logger
 
-    def validate_records(self, _records: Generator[Dict, None, None], _validator: Type[BaseModel]) -> PassedFailedRecords:
+    def validate_record(self, record: Dict, _validator: Type[SQLModel]) -> Tuple[str, SQLModel] | Tuple[str, Dict]:
+        try:
+            _record = _validator.model_validate(record)
+            return 'passed', _record
+        except ValidationError as e:
+            record['error'] = str(e.errors())
+            return 'failed', dict(record)
+
+    def validate(self, records: Generator[Dict, None, None], validator: Type[SQLModel]) -> 'StateFileValidation':
         self.logger.info(f"Started validation")
-        for y in tqdm(_records, desc="Validating records", unit="records"):
-            try:
-                _record = _validator.model_validate(y)
-                yield 'passed', _record
-            except ValidationError as e:
-                y['error'] = str(e.errors())
-                yield 'failed', dict(y)
+        results = Parallel(
+            n_jobs=-1
+        )(
+            delayed(
+                self.validate_record
+            )(
+                record,
+                validator
+            ) for record in tqdm(
+                records,
+                desc=f"Validating records {validator.__name__}",
+                unit=" records",
+            )
+        )
         self.logger.info(f"Finished validation")
 
-    def validate(self, records: Generator[Dict, None, None], validator: Type[BaseModel]) -> 'StateFileValidation':
         self.logger.info(f"Created validation generators")
-        passed_gen, failed_gen = itertools.tee((x for x in self.validate_records(records, validator)))
+        passed_gen, failed_gen = itertools.tee((x for x in results))
 
         self.passed = (record for status, record in passed_gen if status == 'passed')
         self.failed = (record for status, record in failed_gen if status == 'failed')

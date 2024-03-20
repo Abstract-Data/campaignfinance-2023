@@ -3,7 +3,7 @@ from sqlmodel import SQLModel
 
 """
 ======================
-==== TEC Settings ====
+==== OKEC Settings ===
 ======================
 """
 

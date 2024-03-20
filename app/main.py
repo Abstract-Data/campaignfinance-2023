@@ -19,10 +19,10 @@ pd.options.display.max_rows = None
 
 SQLModel.metadata.create_all(engine)
 
-download = TECFileDownloader()
-download.download()
+# download = TECFileDownloader()
+# download.download()
 # filers = TECCategory("filers")
-# contributions = TECCategory("contributions")
+contributions = TECCategory("contributions")
 # expenses = TECCategory("expenses")
 # reports = TECCategory("reports")
 #
@@ -40,21 +40,29 @@ download.download()
 # SessionLocal.add_all(expenses_passed)
 # SessionLocal.commit()
 
-# contributions.read()
-# contributions.validate()
-# contributions_passed = (x for x in contributions.validation.passed)
-# contributions_failed = (x for x in contributions.validation.failed)
-# with Session(engine) as session:
-#     existing_records = session.exec(select(validators.TECContribution.contributionInfoId)).all()
-#     while True:
-#         _records = itertools.islice(contributions.validation.passed, 1000000)
-#         _records = [x for x in _records if x.contributionInfoId not in existing_records]
-#         try:
-#             session.add_all(_records)
-#             session.commit()
-#         except SQLAlchemyError as e:
-#             print(e)
-#             break
+contributions.read()
+contributions.validate()
+
+
+def chunks(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+
+with Session(engine) as session:
+    while True:
+        existing_records = session.exec(select(validators.TECContribution.contributionInfoId)).all()
+        _matched = [x for x in contributions.validation.passed if x.contributionInfoId not in existing_records]
+        if not _matched:
+            break
+        for chunk in chunks(_matched, 1000000):
+            try:
+                session.add_all(chunk)
+                session.commit()
+            except SQLAlchemyError as e:
+                print(e)
+                break
 #
 # reports.read()
 # reports.validate()
