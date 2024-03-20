@@ -366,7 +366,9 @@ class TECCategory:
         return self.validator
 
     def read(self) -> Generator[Dict, None, None]:
-        self.records = (record for file in list(self._files) for record in funcs.FileReader.read_file(file))
+        self.records = (
+            record for file in list(self._files) for record in funcs.FileReader.read_file(file)
+        )
         # if self.category == "filers":
         #     records = merge_filer_names(records)
         return self.records
