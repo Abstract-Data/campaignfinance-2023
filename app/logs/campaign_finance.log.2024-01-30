@@ -1,0 +1,366 @@
+2024-01-12 23:49:11  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-12 23:49:11  campaignfinance@campaignfinance  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp exists...
+2024-01-12 23:49:11  campaignfinance@campaignfinance  INFO: Setting temp filename to /Users/johneakin/PyCharmProjects/campaignfinance/tmp/TEC_CF_CSV.zip in download func
+2024-01-12 23:50:50  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-12 23:50:50  campaignfinance@campaignfinance  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp exists...
+2024-01-12 23:50:50  campaignfinance@campaignfinance  INFO: Setting temp filename to /Users/johneakin/PyCharmProjects/campaignfinance/tmp/TEC_CF_CSV.zip in download func
+2024-01-12 23:50:56  campaignfinance@campaignfinance  INFO: Downloading TEC Files...
+2024-01-12 23:50:56  campaignfinance@campaignfinance  INFO: SSL Context: <ssl.SSLContext object at 0x168d21be0>
+2024-01-12 23:50:56  campaignfinance@campaignfinance  DEBUG: Downloading TEC Files...
+2024-01-12 23:55:02  campaignfinance@campaignfinance  DEBUG: Extracting /Users/johneakin/PyCharmProjects/campaignfinance/tmp/TEC_CF_CSV.zip to /Users/johneakin/PyCharmProjects/campaignfinance/tmp...
+2024-01-13 00:12:44  campaignfinance@campaignfinance  DEBUG: Extracted /Users/johneakin/PyCharmProjects/campaignfinance/tmp/TEC_CF_CSV.zip to /Users/johneakin/PyCharmProjects/campaignfinance/tmp, set folder to /Users/johneakin/PyCharmProjects/campaignfinance/tmp
+2024-01-13 00:15:50  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-13 00:15:50  campaignfinance@campaignfinance  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp exists...
+2024-01-13 00:15:50  campaignfinance@campaignfinance  INFO: Created filers model generator...
+2024-01-13 00:15:50  campaignfinance@campaignfinance  DEBUG: Created tables for dict_keys(['texas.filers', 'texas.expenses', 'texas.contributions'])
+2024-01-13 00:15:50  campaignfinance@campaignfinance  INFO: Created filers model generator...
+2024-01-13 00:15:50  campaignfinance@campaignfinance  DEBUG: Loading records to <class 'states.texas.models.all_models.TECFilerRecord'>...
+2024-01-13 00:15:50  campaignfinance@campaignfinance  INFO: Created validation generator for filers records...
+2024-01-13 00:15:56  campaignfinance@campaignfinance  ERROR: Error: (psycopg2.errors.UniqueViolation) duplicate key value violates unique constraint "filers_pkey"
+DETAIL:  Key ("filerIdent")=(10066) already exists.
+
+[SQL: INSERT INTO texas.filers ("recordType", "filerIdent", "filerTypeCd", "filerName", "unexpendContribFilerFlag", "modifiedElectCycleFlag", "filerJdiCd", "committeeStatusCd", "ctaSeekOfficeCd", "ctaSeekOfficeDistrict", "ctaSeekOfficePlace", "ctaSeekOffic ... 966447 characters truncated ... rPrimaryPhoneNumber__243)s, %(chairPrimaryPhoneExt__243)s, %(org_names__243)s, %(file_origin__243)s)]
+[parameters: {'treasPersentTypeCd__0': None, 'filerHoldOfficeCd__0': None, 'filerStreetRegion__0': None, 'chairMailingCountyCd__0': None, 'treasPrimaryPhoneNumber__0': None, 'treasEffStopDt__0': None, 'filerNameOrganization__0': None, 'filerNameFirst__0': 'HOMERO R.', 'filerStreetCountryCd__0': 'USA', 'chairNameShort__0': None, 'treasPrimaryPhoneExt__0': None, 'assttreasNameShort__0': None, 'filerHoldOfficePlace__0': None, 'filerFilerpersStatusCd__0': 'NOT_OFFICEHOLDER', 'treasMailingAddr2__0': None, 'filerStreetCountyCd__0': None, 'assttreasPrimaryPhoneNumber__0': None, 'filerNamePrefixCd__0': 'MR', 'treasMailingAddr1__0': None, 'treasFilerpersStatusCd__0': None, 'chairNameOrganization__0': None, 'ctaSeekOfficeDistrict__0': None, 'filerHoldOfficeCountyDescr__0': None, 'treasStreetCountyCd__0': None, 'treasStreetCity__0': None, 'filerMailingPostalCode__0': '78749', 'chairPrimaryUsaPhoneFlag__0': None, 'filerPrimaryUsaPhoneFlag__0': 'Y', 'treasStreetStateCd__0': None, 'assttreasNameLast__0': None, 'filerJdiCd__0': None, 'treasNameLast__0': None, 'chairStreetRegion__0': None, 'chairMailingAddr2__0': None, 'chairMailingPostalCode__0': None, 'treasNameShort__0': None, 'treasMailingCountryCd__0': None, 'filerHoldOfficeCountyCd__0': None, 'filerStreetAddr2__0': None, 'treasMailingStateCd__0': None, 'modifiedElectCycleFlag__0': 'N', 'filerNameSuffixCd__0': None, 'filerNameShort__0': None, 'treasAppointorNameLast__0': None, 'chairPersentTypeCd__0': None, 'treasEffStartDt__0': None, 'chairPrimaryPhoneExt__0': None, 'chairMailingStateCd__0': None, 'filerTypeCd__0': 'COH', 'treasAppointorNameFirst__0': None ... 32596 parameters truncated ... 'chairMailingCountryCd__243': None, 'assttreasAppointorNameLast__243': None, 'treasStreetAddr1__243': None, 'assttreasNameFirst__243': None, 'assttreasNamePrefixCd__243': None, 'assttreasStreetCity__243': None, 'treasPrimaryUsaPhoneFlag__243': 'Y', 'treasMailingPostalCode__243': '78746-5490', 'ctaSeekOfficePlace__243': None, 'filerEffStopDt__243': datetime.date(1994, 1, 14), 'assttreasNameSuffixCd__243': None, 'filerStreetAddr1__243': '706 LAS LOMAS DRIVE', 'filerNameLast__243': None, 'treasMailingCountyCd__243': None, 'chairStreetPostalCode__243': None, 'chairStreetCity__243': None, 'chairMailingRegion__243': None, 'filerStreetStateCd__243': 'TX', 'assttreasStreetStateCd__243': None, 'filerMailingAddr2__243': None, 'filerMailingCity__243': None, 'chairNameSuffixCd__243': None, 'ctaSeekOfficeDescr__243': None, 'filerIdent__243': 15673, 'assttreasPrimaryUsaPhoneFlag__243': None, 'chairNameLast__243': None, 'filerHoldOfficeDistrict__243': None, 'recordType__243': 'FILER', 'contestSeekOfficeCountyDescr__243': None, 'ctaSeekOfficeCountyCd__243': None, 'treasStreetPostalCode__243': None, 'chairNamePrefixCd__243': None, 'unexpendContribFilerFlag__243': 'N', 'filerStreetPostalCode__243': '78746-5490', 'ctaSeekOfficeCd__243': None, 'ctaSeekOfficeCountyDescr__243': None, 'filerMailingAddr1__243': None, 'contestSeekOfficeDistrict__243': None, 'treasMailingCity__243': 'AUSTIN', 'chairMailingCity__243': None, 'assttreasStreetAddr1__243': None, 'filerStreetCity__243': 'AUSTIN', 'treasMailingRegion__243': None, 'filerEffStartDt__243': None, 'filerPersentTypeCd__243': 'ENTITY', 'treasStreetRegion__243': None, 'contestSeekOfficeCd__243': None, 'chairStreetCountryCd__243': None, 'filerPrimaryPhoneExt__243': None, 'contestSeekOfficeDescr__243': None}]
+(Background on this error at: https://sqlalche.me/e/20/gkpj)
+2024-01-13 00:26:57  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-13 00:26:57  campaignfinance@campaignfinance  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp exists...
+2024-01-13 00:26:57  campaignfinance@campaignfinance  INFO: Created filers model generator...
+2024-01-13 00:26:57  campaignfinance@campaignfinance  DEBUG: Created tables for dict_keys(['texas.filers', 'texas.expenses', 'texas.contributions'])
+2024-01-13 00:26:57  campaignfinance@campaignfinance  INFO: Created filers model generator...
+2024-01-13 00:26:57  campaignfinance@campaignfinance  INFO: Created validation generator for filers records...
+2024-01-13 00:27:22  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-13 00:27:22  campaignfinance@campaignfinance  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp exists...
+2024-01-13 00:27:22  campaignfinance@campaignfinance  INFO: Created filers model generator...
+2024-01-13 00:27:22  campaignfinance@campaignfinance  DEBUG: Created tables for dict_keys(['texas.filers', 'texas.expenses', 'texas.contributions'])
+2024-01-13 00:27:22  campaignfinance@campaignfinance  INFO: Created filers model generator...
+2024-01-13 00:27:22  campaignfinance@campaignfinance  INFO: Created validation generator for filers records...
+2024-01-13 00:27:23  campaignfinance@campaignfinance  ERROR: Error: 'filerIdent'
+2024-01-13 00:29:00  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-13 00:29:00  campaignfinance@campaignfinance  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp exists...
+2024-01-13 00:29:00  campaignfinance@campaignfinance  INFO: Created filers model generator...
+2024-01-13 00:29:00  campaignfinance@campaignfinance  DEBUG: Created tables for dict_keys(['texas.filers', 'texas.expenses', 'texas.contributions'])
+2024-01-13 00:29:00  campaignfinance@campaignfinance  INFO: Created filers model generator...
+2024-01-13 00:29:00  campaignfinance@campaignfinance  INFO: Created validation generator for filers records...
+2024-01-13 00:30:48  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-13 00:30:48  campaignfinance@campaignfinance  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp exists...
+2024-01-13 00:30:48  campaignfinance@campaignfinance  INFO: Created filers model generator...
+2024-01-13 00:30:48  campaignfinance@campaignfinance  DEBUG: Created tables for dict_keys(['texas.filers', 'texas.expenses', 'texas.contributions'])
+2024-01-13 00:30:48  campaignfinance@campaignfinance  INFO: Created filers model generator...
+2024-01-13 00:30:48  campaignfinance@campaignfinance  INFO: Created validation generator for filers records...
+2024-01-13 00:35:08  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-13 00:35:08  campaignfinance@campaignfinance  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp exists...
+2024-01-13 00:35:09  campaignfinance@campaignfinance  INFO: Created filers model generator...
+2024-01-13 00:35:09  campaignfinance@campaignfinance  DEBUG: Created tables for dict_keys(['texas.filers', 'texas.expenses', 'texas.contributions'])
+2024-01-13 00:35:09  campaignfinance@campaignfinance  INFO: Created filers model generator...
+2024-01-13 00:35:09  campaignfinance@campaignfinance  INFO: Created validation generator for filers records...
+2024-01-13 00:35:13  campaignfinance@campaignfinance  ERROR: Error: Either constraint or index_elements, but not both, must be specified unless DO NOTHING
+2024-01-13 00:44:41  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-13 00:44:42  campaignfinance@campaignfinance  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp exists...
+2024-01-13 00:44:42  campaignfinance@campaignfinance  INFO: Created filers model generator...
+2024-01-13 00:44:42  campaignfinance@campaignfinance  DEBUG: Created tables for dict_keys(['texas.filers', 'texas.expenses', 'texas.contributions'])
+2024-01-13 00:44:42  campaignfinance@campaignfinance  INFO: Created validation generator for filers records...
+2024-01-13 00:50:01  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-13 00:50:01  campaignfinance@campaignfinance  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp exists...
+2024-01-13 00:50:01  campaignfinance@campaignfinance  INFO: Created filers model generator...
+2024-01-13 00:50:01  campaignfinance@campaignfinance  DEBUG: Created tables for dict_keys(['texas.filers', 'texas.expenses', 'texas.contributions'])
+2024-01-13 00:50:02  campaignfinance@campaignfinance  INFO: Created validation generator for filers records...
+2024-01-13 01:01:35  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-13 01:01:35  campaignfinance@campaignfinance  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp exists...
+2024-01-13 01:01:36  campaignfinance@campaignfinance  INFO: Created filers model generator...
+2024-01-13 01:01:36  campaignfinance@campaignfinance  DEBUG: Created tables for dict_keys(['texas.filers', 'texas.expenses', 'texas.contributions'])
+2024-01-13 01:01:36  campaignfinance@campaignfinance  INFO: Created validation generator for filers records...
+2024-01-13 01:03:41  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-13 01:03:41  campaignfinance@campaignfinance  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp exists...
+2024-01-13 01:03:41  campaignfinance@campaignfinance  DEBUG: Created tables for dict_keys(['texas.filers', 'texas.expenses', 'texas.contributions'])
+2024-01-13 01:05:37  campaignfinance@campaignfinance  INFO: Created validation generator for expenses records...
+2024-01-16 17:21:37  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 17:21:37  campaignfinance@campaignfinance  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp exists...
+2024-01-16 17:21:37  campaignfinance@campaignfinance  INFO: Setting temp filename to /Users/johneakin/PyCharmProjects/campaignfinance/tmp/TEC_CF_CSV.zip in download func
+2024-01-16 17:21:41  campaignfinance@campaignfinance  INFO: Downloading TEC Files...
+2024-01-16 17:21:41  campaignfinance@campaignfinance  INFO: SSL Context: <ssl.SSLContext object at 0x15e121be0>
+2024-01-16 17:21:41  campaignfinance@campaignfinance  DEBUG: Downloading TEC Files...
+2024-01-16 17:27:01  campaignfinance@campaignfinance  DEBUG: Extracting /Users/johneakin/PyCharmProjects/campaignfinance/tmp/TEC_CF_CSV.zip to /Users/johneakin/PyCharmProjects/campaignfinance/tmp...
+2024-01-16 17:42:52  campaignfinance@campaignfinance  DEBUG: Extracted /Users/johneakin/PyCharmProjects/campaignfinance/tmp/TEC_CF_CSV.zip to /Users/johneakin/PyCharmProjects/campaignfinance/tmp, set folder to /Users/johneakin/PyCharmProjects/campaignfinance/tmp
+2024-01-16 19:01:41  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:10:58  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:11:27  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:11:40  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:13:48  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:14:32  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:15:04  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:16:32  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:17:19  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:18:58  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:26:48  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:27:58  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:36:20  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:37:10  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:37:26  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:38:11  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:38:42  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:41:00  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:41:40  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:43:10  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:43:53  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:44:34  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:45:52  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:48:49  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:49:50  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:51:28  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:53:03  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-16 19:54:10  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-17 17:50:13  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-17 17:55:28  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-17 18:10:42  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-17 18:13:08  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-17 18:13:45  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 12:45:38  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 12:48:00  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 12:49:33  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 12:49:59  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 12:50:36  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 12:50:49  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 13:16:56  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:28:56  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:29:42  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:30:32  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:31:37  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:32:42  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:33:31  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:34:28  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:35:33  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:36:45  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:37:43  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:40:38  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:41:19  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:43:57  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:44:24  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:44:51  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:45:28  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:47:57  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:48:00  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:48:00  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:48:00  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:48:00  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:48:00  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:49:20  campaignfinance@campaignfinance  INFO: Created validation generator
+2024-01-24 14:50:46  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:51:04  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:51:04  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:51:04  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:51:04  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:51:04  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:51:04  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:51:04  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:51:04  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:51:04  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:51:04  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:52:49  campaignfinance@campaignfinance  INFO: Created validation generator
+2024-01-24 14:53:58  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:53:58  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:53:58  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:53:58  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:53:58  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:53:58  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:53:58  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:53:58  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:53:58  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:53:58  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:53:58  campaignfinance@campaignfinance  INFO: Created validation generator
+2024-01-24 14:54:15  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:54:15  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:54:15  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:54:15  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:54:15  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:54:15  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:54:15  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:54:15  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:54:15  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:54:15  campaignfinance@campaignfinance  INFO: Validating records
+2024-01-24 14:54:15  campaignfinance@campaignfinance  INFO: Created validation generator
+2024-01-24 14:55:37  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:55:37  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:37  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:37  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:37  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:37  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:37  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:37  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:37  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:37  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:37  campaignfinance@campaignfinance  INFO: Started validation
+2024-01-24 14:55:55  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:55:55  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:55  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:55  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:55  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:55  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:55  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:55  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:55  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:55  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:55:55  campaignfinance@campaignfinance  INFO: Started validation
+2024-01-24 14:56:07  campaignfinance@campaignfinance  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:56:07  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:56:07  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:56:07  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:56:07  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:56:07  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:56:07  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:56:07  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:56:07  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:56:07  campaignfinance@campaignfinance  INFO: Created validation generators
+2024-01-24 14:56:07  campaignfinance@campaignfinance  INFO: Started validation
+2024-01-24 14:59:29  states.texas.texas@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 14:59:29  StateFileValidation@StateFileValidation  INFO: Created validation generators
+2024-01-24 14:59:29  StateFileValidation@StateFileValidation  INFO: Created validation generators
+2024-01-24 14:59:29  StateFileValidation@StateFileValidation  INFO: Created validation generators
+2024-01-24 14:59:29  StateFileValidation@StateFileValidation  INFO: Created validation generators
+2024-01-24 14:59:29  StateFileValidation@StateFileValidation  INFO: Created validation generators
+2024-01-24 14:59:29  StateFileValidation@StateFileValidation  INFO: Created validation generators
+2024-01-24 14:59:29  StateFileValidation@StateFileValidation  INFO: Created validation generators
+2024-01-24 14:59:29  StateFileValidation@StateFileValidation  INFO: Created validation generators
+2024-01-24 14:59:29  StateFileValidation@StateFileValidation  INFO: Created validation generators
+2024-01-24 14:59:29  StateFileValidation@StateFileValidation  INFO: Started validation
+2024-01-24 15:01:21  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 15:01:22  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:01:22  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:01:22  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:01:22  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:01:22  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:01:22  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:01:22  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:01:22  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:01:22  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:01:22  campaignfinance@StateFileValidation  INFO: Started validation
+2024-01-24 15:02:05  campaignfinance@states.texas.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 15:02:05  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:05  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:05  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:05  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:05  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:05  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:05  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:05  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:05  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:05  campaignfinance@StateFileValidation  INFO: Started validation
+2024-01-24 15:02:52  campaignfinance@states.texas.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 15:02:52  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:52  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:52  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:52  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:52  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:52  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:52  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:52  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:52  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:02:52  campaignfinance@StateFileValidation  INFO: Started validation
+2024-01-24 15:04:10  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 15:04:10  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:04:10  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:04:10  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:04:10  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:04:10  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:04:10  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:04:10  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:04:10  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:04:10  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:04:10  campaignfinance@StateFileValidation  INFO: Started validation
+2024-01-24 15:22:06  campaignfinance@StateFileValidation  INFO: Started validation
+2024-01-24 15:24:29  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 15:24:29  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:24:29  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:24:29  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:24:29  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:24:29  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:24:29  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:24:29  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:24:29  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:24:29  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-01-24 15:24:29  campaignfinance@StateFileValidation  INFO: Started validation
+2024-01-24 15:44:03  campaignfinance@StateFileValidation  INFO: Started validation
+2024-01-24 16:52:58  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 16:54:05  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 16:54:47  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 16:55:37  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 16:56:31  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 16:57:49  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 16:58:35  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 16:59:10  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 16:59:45  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:00:16  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:04:03  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:05:25  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:06:52  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:23:30  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:24:27  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:24:43  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:27:20  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:28:01  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:39:10  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:40:01  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:40:43  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:41:16  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:41:51  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:43:38  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:44:19  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:45:01  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:46:08  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:51:55  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:53:53  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:54:21  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:55:06  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:56:44  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:57:44  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:58:16  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 17:58:54  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 18:01:34  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 18:02:20  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 18:03:10  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 18:04:04  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 18:05:30  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 18:06:22  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 18:08:53  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 18:17:20  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 18:45:33  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 18:46:06  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 18:46:35  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 18:48:05  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 18:48:23  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 18:52:14  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 18:54:18  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 19:45:12  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 21:21:53  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 22:39:41  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-24 22:52:39  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-26 01:47:33  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-26 20:43:07  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-26 20:44:00  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-26 20:45:27  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-26 20:47:54  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-26 20:48:36  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-26 20:49:23  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-26 20:49:56  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-26 20:51:58  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-28 01:10:16  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-28 01:10:29  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-28 01:23:02  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-28 23:11:50  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 02:29:16  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 02:33:16  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 02:35:02  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 04:11:40  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 04:12:18  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 04:12:39  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 04:13:11  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 04:14:36  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 04:15:18  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 04:16:10  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 04:16:24  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 04:17:42  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 04:18:17  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 18:22:44  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 18:23:20  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 20:36:03  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-29 23:28:53  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-01-30 18:13:08  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas

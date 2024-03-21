@@ -195,11 +195,12 @@ class TECFileDownloader(FileDownloader):
             self.__logger.info("User selected 'n'. Exiting...")
             sys.exit()
 
-    @inject.autoparams()
+    @inject.autoparams(read_from_temp=False, overwrite=True)
     def download(
         self,
         config: StateCampaignFinanceConfigs,
-        read_from_temp: bool = False,
+        read_from_temp: bool,
+        overwrite: bool
     ) -> None:
         tmp = self._tmp
         temp_filename = tmp / "TEC_CF_CSV.zip"
@@ -222,7 +223,7 @@ class TECFileDownloader(FileDownloader):
                     ):
                         if chunk:
                             f.write(chunk)
-                    print("Download Complete")
+                    self.__logger.info("Download Complete")
                 return None
 
         def download_file_with_urllib3() -> None:
@@ -262,27 +263,36 @@ class TECFileDownloader(FileDownloader):
             if read_from_temp is False:
                 # check if tmp folder exists
                 if tmp.is_dir():
-                    ask_to_make_folder = input(
-                        "Temp folder already exists. Overwrite? (y/n): "
-                    )
-                    if ask_to_make_folder.lower() == "y":
-                        print("Overwriting Temp Folder...")
-                        download_file_with_urllib3()
-                        extract_zipfile()
-                    else:
-                        as_to_change_folder = input(
-                            "Use temp folder as source? (y/n): "
+                    if overwrite is False:
+                        ask_to_make_folder = input(
+                            "Temp folder already exists. Overwrite? (y/n): "
                         )
-                        if as_to_change_folder.lower() == "y":
-                            if tmp.glob("*.csv") == 0 and tmp.glob("*.zip") == 1:
-                                print("No CSV files in temp folder. Found .zip file...")
-                                print("Extracting .zip file...")
-                                extract_zipfile()
-                            else:
-                                self.folder = tmp  # set folder to temp folder
+                        if ask_to_make_folder.lower() == "y":
+                            print("Overwriting Temp Folder...")
+                            download_file_with_urllib3()
+                            extract_zipfile()
                         else:
-                            print("Exiting...")
-                            sys.exit()
+                            as_to_change_folder = input(
+                                "Use temp folder as source? (y/n): "
+                            )
+                            if as_to_change_folder.lower() == "y":
+                                if tmp.glob("*.csv") == 0 and tmp.glob("*.zip") == 1:
+                                    print("No CSV files in temp folder. Found .zip file...")
+                                    print("Extracting .zip file...")
+                                    extract_zipfile()
+                                else:
+                                    self.folder = tmp  # set folder to temp folder
+                            else:
+                                print("Exiting...")
+                                sys.exit()
+                    else:
+                        self.__logger.info("Overwriting Temp Folder...")
+                        download_file_with_urllib3()
+                        self.__logger.info("Temp Folder Overwritten, extracting zip file...")
+                        extract_zipfile()
+                        self.__logger.info("Zip file extracted")
+                    
+                                
 
                 # else:
                 #     self.folder = tmp  # set folder to temp folder
@@ -388,6 +398,16 @@ class TECCategory:
 
         self.validation = StateFileValidation()
         return self.validation.validate(records=records, validator=validator)
+    
+    @inject.autoparams()
+    def write_to_csv(self, records, validation_status):
+        funcs.write_records_to_csv(
+            records=records,
+            folder_path=StateCampaignFinanceConfigs.TEMP_FOLDER,
+            record_type=self.category,
+            validation_status=validation_status
+        )
+        return self
 
     @inject.autoparams()
     def load_to_db(self, records: Generator[Dict, None, None], session: Session) -> None:
