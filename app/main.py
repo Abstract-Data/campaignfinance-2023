@@ -1,4 +1,5 @@
 #! /usr/bin/env python3
+from app.funcs import validation
 from states.texas.texas import TECFileDownloader, TECCategory
 from states.texas.database import engine, Session, SQLModel
 import states.texas.validators as validators
@@ -17,54 +18,81 @@ separate script so they're created in the correct order."""
 pd.options.display.max_columns = None
 pd.options.display.max_rows = None
 
-SQLModel.metadata.create_all(engine)
+# SQLModel.metadata.create_all(engine)
 
-# download = TECFileDownloader()
-# download.download()
-# filers = TECCategory("filers")
+download = TECFileDownloader()
+download.download()
+
+filers = TECCategory("filers")
 contributions = TECCategory("contributions")
-# expenses = TECCategory("expenses")
-# reports = TECCategory("reports")
-#
-# filers.read()
-# filers.validate()
-# filers_passed = [x for x in filers.validation.passed]
-# filers_failed = [x for x in filers.validation.failed]
-# SessionLocal.add_all(filers_passed)
-# SessionLocal.commit()
+expenses = TECCategory("expenses")
+reports = TECCategory("reports")
 
-# expenses.read()
-# expenses.validate()
-# expenses_passed = [x for x in expenses.validation.passed]
-# expenses_failed = [x for x in expenses.validation.failed]
-# SessionLocal.add_all(expenses_passed)
-# SessionLocal.commit()
+filers.read()
+filers.validate()
+expenses.write_to_csv(
+    records=filers.validation.passed,
+    validation_status="passed"
+).write_to_csv(
+    records=filers.validation.failed,
+    validation_status="failed"
+)
+
+expenses.read()
+expenses.validate()
+expenses.write_to_csv(
+    records=expenses.validation.passed,
+    validation_status="passed"
+).write_to_csv(
+    records=expenses.validation.failed,
+    validation_status='failed'
+)
+
 
 contributions.read()
 contributions.validate()
+contributions.write_to_csv(
+    records=contributions.validation.passed, 
+    validation_status="passed"
+).write_to_csv(
+    records=contributions.validation.failed,
+    validation_status="failed"
+)
 
+reports.read()
+reports.validate()
+reports.write_to_csv(
+    records=reports.validation.passed,
+    validation_status="passed"
+).write_to_csv(
+    records=reports.validation.failed,
+    validation_status="failed"
+)
 
-def chunks(lst, n):
-    """Yield successive n-sized chunks from lst."""
-    for i in range(0, len(lst), n):
-        yield lst[i:i + n]
+# def chunks(lst, n):
+#     """Yield successive n-sized chunks from lst."""
+#     for i in range(0, len(lst), n):
+#         yield lst[i:i + n]
 
-
-with Session(engine) as session:
-    while True:
-        existing_records = session.exec(select(validators.TECContribution.contributionInfoId)).all()
-        _matched = [x for x in contributions.validation.passed if x.contributionInfoId not in existing_records]
-        if not _matched:
-            break
-        for chunk in chunks(_matched, 1000000):
-            try:
-                session.add_all(chunk)
-                session.commit()
-            except SQLAlchemyError as e:
-                print(e)
-                break
-#
-# reports.read()
+# def load_records():
+#     with Session(engine) as session:
+#         for contribution in contributions.validation.passed:
+#             exists = session.query(
+#                 session.query(validators.TECContribution)
+#                 .filter_by(contributionInfoId=contribution.contributionInfoId)
+#                 .exists()
+#             ).scalar()
+#             print("Exists: ", exists)
+#             if not exists:
+#                 try:
+#                     session.add(contribution)
+#                     print("Added: ", contribution.contributionInfoId)
+#                     session.commit()
+#                 except SQLAlchemyError as e:
+#                     print(e)
+#                     break
+# load_records()   
+    # reports.read()
 # reports.validate()
 # reports_passed = [x for x in reports.validation.passed]
 # reports_failed = [x for x in reports.validation.failed]

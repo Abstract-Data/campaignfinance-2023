@@ -6,6 +6,7 @@ from sqlmodel import SQLModel
 from logger import Logger
 from joblib import Parallel, delayed
 import itertools
+import csv
 
 
 PassedRecords = Generator[SQLModel, None, None]
@@ -56,3 +57,10 @@ class StateFileValidation:
         self.passed = (record for status, record in passed_gen if status == 'passed')
         self.failed = (record for status, record in failed_gen if status == 'failed')
         return self
+
+    def write_records_to_csv(records, filename):
+        if records:
+            with open(filename, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=records[0].keys())
+                writer.writeheader()
+                writer.writerows(records)
