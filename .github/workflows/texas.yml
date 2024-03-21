@@ -1,29 +1,34 @@
 name: Run Texas Download
 
 on:
-  push:
-    branches: [ main, master ]
+    push:
+        branches: [ main, master ]
 
 jobs:
-  run-texas-download:
+    run-texas-download:
 
-    runs-on: ubuntu-latest
+        runs-on: ubuntu-latest
 
-    steps:
-    - uses: actions/checkout@v2
+        steps:
+        - name: Set up Node.js
+            uses: actions/setup-node@v2
+            with:
+                node-version: 16
 
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.9
+        - uses: actions/checkout@v2
 
-    - name: Install Poetry
-      run: |
-        curl -sSL https://install.python-poetry.org | python3 -
+        - name: Set up Python
+            uses: actions/setup-python@v2
+            with:
+                python-version: 3.9
 
-    - name: Install dependencies
-      run: |
-        poetry install
+        - name: Install Poetry
+            run: |
+                curl -sSL https://install.python-poetry.org | python3 -
 
-    - name: Run script
-      run: poetry run python app/workflows/texas_download.py
+        - name: Install dependencies
+            run: |
+                poetry install
+
+        - name: Run script
+            run: poetry run python app/workflows/texas_download.py
