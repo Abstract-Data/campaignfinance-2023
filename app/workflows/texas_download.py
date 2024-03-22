@@ -1,4 +1,5 @@
-from app.states.texas import TECFileDownloader, TECCategory
+#! /usr/bin/env python3
+from ..states.texas import TECFileDownloader, TECCategory
 
 download = TECFileDownloader()
 download.download()
