@@ -1,5 +1,5 @@
 #! /usr/bin/env python3
-from app.funcs import validation
+from funcs import validation
 from states.texas.texas import TECFileDownloader, TECCategory
 from states.texas.database import engine, Session, SQLModel
 import states.texas.validators as validators
