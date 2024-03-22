@@ -1,4 +1,4 @@
-from states.texas.texas import TECFileDownloader, TECCategory
+from app.states.texas.texas import TECFileDownloader, TECCategory
 
 download = TECFileDownloader()
 download.download()
