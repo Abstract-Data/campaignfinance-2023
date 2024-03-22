@@ -37,6 +37,6 @@ jobs:
     - name: Install dependencies
       run: |
         poetry install
-
     - name: Run script
-      run: poetry run python workflows/texas_download.py
+      run: |
+        poetry run python workflows/texas_download.py
