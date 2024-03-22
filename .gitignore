@@ -2,6 +2,10 @@
 *.csv
 *.log
 *.zip
+*.DS_Store
+*.env
+*.__pycache__/
+/logs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
