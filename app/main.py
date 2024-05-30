@@ -136,22 +136,25 @@ def upsert_records(category: TECCategory, _engine=engine):
 
 ok_expenses = OklahomaCategory('expenses')
 ok_expenses.records = ok_expenses.read()
+expenses_passed_records = list(ok_expenses.validation.passed_records(ok_expenses.records))
 expenses_failed_records = list(ok_expenses.validation.failed_records(ok_expenses.records))
 
 ok_contributions = OklahomaCategory('contributions')
 ok_contributions.records = ok_contributions.read()
+contributions_passed_records = list(ok_contributions.validation.passed_records(ok_contributions.records))
 contributions_failed_records = list(ok_contributions.validation.failed_records(ok_contributions.records))
 
 ok_lobby = OklahomaCategory('lobby')
 ok_lobby.records = ok_lobby.read()
+lobby_passed_records = list(ok_lobby.validation.passed_records(ok_lobby.records))
 lobby_failed_records = list(ok_lobby.validation.failed_records(ok_lobby.records))
 lobby_errors = ok_lobby.validation.show_errors()
 
 session = oklahoma_snowpark.create()
 
-expenses = list(sqlmodel_todict(ok_expenses.validation.passed_records(ok_expenses.records)))
-contributions = list(sqlmodel_todict(ok_contributions.validation.passed_records(ok_contributions.records)))
-lobby = list(sqlmodel_todict(ok_lobby.validation.passed_records(ok_lobby.records)))
+expenses = list(sqlmodel_todict(expenses_passed_records))
+contributions = list(sqlmodel_todict(contributions_passed_records))
+lobby = list(sqlmodel_todict(lobby_passed_records))
 
 # expense_df = session.create_dataframe(expenses)
 # contribution_df = session.create_dataframe(contributions)
