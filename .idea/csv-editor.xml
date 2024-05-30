@@ -178,6 +178,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/tmp/texas/spacs.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/tmp/texas/travel.csv">
           <value>
             <Attribute>
