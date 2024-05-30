@@ -1,16 +1,17 @@
-from abcs.state_configs import StateCampaignFinanceConfigs
+from __future__ import annotations
+from abcs.abc_config import StateCampaignFinanceConfigClass
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Self, ClassVar, Protocol
+from typing import ClassVar, Protocol
 
 
 @dataclass
 class FileDownloader(Protocol):
-    _configs: ClassVar[StateCampaignFinanceConfigs]
-    _folder: StateCampaignFinanceConfigs.TEMP_FOLDER
+    _configs: ClassVar[StateCampaignFinanceConfigClass]
+    _folder: StateCampaignFinanceConfigClass.TEMP_FOLDER
 
     @property
-    def folder(self) -> StateCampaignFinanceConfigs.TEMP_FOLDER:
+    def folder(self) -> StateCampaignFinanceConfigClass.TEMP_FOLDER:
         return ...
 
     @folder.setter
@@ -24,7 +25,7 @@ class FileDownloader(Protocol):
     def check_if_folder_exists(self) -> Path:
         ...
 
-    def download(self, config: StateCampaignFinanceConfigs, read_from_temp: bool = True) -> Self:
+    def download(self, config: StateCampaignFinanceConfigClass, read_from_temp: bool = True) -> FileDownloader:
         ...
 
     def read(self):

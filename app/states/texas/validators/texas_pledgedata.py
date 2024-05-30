@@ -1,9 +1,11 @@
 from pydantic import Field, field_validator
-from datetime import datetime
+from datetime import datetime, date
 from .texas_settings import TECSettings
+from typing import Optional
 
 
 class PledgeData(TECSettings):
+    id: Optional[str] = Field(default=None, description="Unique record ID")
     recordType: str = Field(..., description="Record type code - always PLDG", max_length=20)
     formTypeCd: str = Field(..., description="TEC form used", max_length=20)
     schedFormTypeCd: str = Field(..., description="TEC Schedule Used", max_length=20)
@@ -41,6 +43,8 @@ class PledgeData(TECSettings):
     pledgerSpouseLawFirmName: str = Field(..., description="Pledger spouse law firm name", max_length=60)
     pledgerParent1LawFirmName: str = Field(..., description="Pledger parent #1 law firm name", max_length=60)
     pledgerParent2LawFirmName: str = Field(..., description="Pledger parent #2 law firm name", max_length=60)
+    file_origin: str = Field(..., description="File origin", max_length=20)
+    download_date: date = Field(..., description="Date file downloaded")
 
     @field_validator('receivedDt', 'pledgeDt', mode='before')
     def parse_date(cls, v):

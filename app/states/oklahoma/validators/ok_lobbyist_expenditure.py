@@ -3,7 +3,8 @@ from pydantic import field_validator, model_validator, AliasChoices
 from sqlmodel import SQLModel, Field
 from pydantic_core import PydanticCustomError
 from datetime import date
-from ok_settings import OklahomaSettings
+from .ok_settings import OklahomaSettings
+import funcs.validator_functions as funcs
 
 """
 Oklahoma Expenditure Model/Validator 
@@ -13,87 +14,114 @@ URL: https://guardian.ok.gov/PublicSite/Resources/PublicDocuments/OKLobbyistExpe
 
 
 class OklahomaLobbyistExpenditure(OklahomaSettings, table=True):
-    expenditureId: int = Field(
-        alias="EXPENDITURE ID",
-        description="This is the Expenditure internal ID. This ID is unique.")
-    lobbyistId: int = Field(
-        alias="LOBBYIST ID",
-        description="This is the unique ID of the lobbyist.")
-    lobbyistFirstName: str = Field(
-        alias="LOBBYIST FIRST NAME",
-        description="Lobbyist First Name")
-    lobbyistMiddleName: Optional[str] = Field(
-        alias="LOBBYIST MIDDLE NAME",
-        description="Lobbyist Middle Initial or Name if provided.")
-    lobbyistLastName: str = Field(
-        alias="LOBBYIST LAST NAME",
-        description="Last Name of Lobbyist.")
-    lobbyistSuffix: Optional[str] = Field(
-        alias="LOBBYIST SUFFIX",
-        description="Lobbyist Name Suffix")
-    expenditureType: str = Field(
-        alias="EXPENDITURE TYPE",
-        description="Indicates Type of Expenditure.")
-    expenditureDate: date = Field(
-        alias="EXPENDITURE DATE",
-        description="Expenditure Date")
-    expenditureCost: float = Field(
-        alias="EXPENDITURE COST",
-        description="Expenditure Cost")
-    mealType: Optional[str] = Field(
-        alias="MEAL TYPE",
-        description="Meal Type")
-    otherMealDescription: Optional[str] = Field(
-        alias="OTHER MEAL DESCRIPTION",
-        description="Other Meal Description")
-    explanation: Optional[str] = Field(
-        alias="EXPLANATION",
-        description="This is the explanation provided for the expenditure.")
-    recipientFirstName: str = Field(
-        alias="RECIPIENT FIRST NAME",
-        description="Recipient First Name")
-    recipientMiddleName: Optional[str] = Field(
-        alias="RECIPIENT MIDDLE NAME",
-        description="Recipient Middle Name")
-    recipientLastName: str = Field(
-        alias="RECIPIENT LAST NAME",
-        description="Recipient Last Name")
-    recipientSuffix: Optional[str] = Field(
-        alias="RECIPIENT SUFFIX",
-        description="Recipient Suffix")
-    recipientType: str = Field(
-        alias="RECIPIENT TYPE",
-        description="Legislator or Non-Legislator State Officer or Employee")
-    recipientTitle: Optional[str] = Field(
-        alias="RECIPIENT TITLE",
-        description="Recipient Title")
-    recipientAgencyOffice: Optional[str] = Field(
-        alias="RECIPIENT AGENCY/OFFICE",
-        description="Recipient Agency/Office Name")
-    relationshipToStateOfficerOrEmployee: Optional[str] = Field(
-        alias="RELATIONSHIP TO STATE OFFICER OR EMPLOYEE",
-        description="Relationship to State Officer or Employee if recipient is family member")
-    familyMemberName: Optional[str] = Field(
-        alias="FAMILY MEMBER NAME",
-        description="Family Member Name")
-    principalName: str = Field(
-        alias="PRINCIPAL NAME",
-        description="This is the name of the lobbyist principal related to the expenditure.")
-    principalPercentageOfCost: float = Field(
-        alias="PRINCICPAL’S PERCENTAGE OF COST",
-        description="Principal’s Percentage of Cost")
-    caucus: Optional[str] = Field(
-        alias="CAUCUS",
-        description="Caucus Name")
-    committeeSubcommittee: Optional[str] = Field(
-        alias="COMMITTEE/SUBCOMMITTEE",
-        description="Committee/Subcommittee Name")
-    eventLocation: Optional[str] = Field(
-        alias="EVENT LOCATION",
-        description="Event Location")
-    eventCity: Optional[str] = Field(
-        alias="EVENT CITY",
-        description="Event City")
-    eventState: Optional[str] = Field(
-        alias="EVENT STATE",
-        description="Event State")
+    __tablename__ = 'lobby_expenses'
+    __table_args__ = {'schema': 'oklahoma'}
+    id: Optional[int] = Field(default=None, primary_key=True)
+    expenditure_id: int = Field(..., title="Expenditure ID")
+    lobbyistid: int = Field(..., title="Lobbyist ID")
+    lobbyist_firstname: Optional[str] = Field(default=None, title="Lobbyist First Name")
+    lobbyist_middlename: Optional[str] = Field(default=None, title="Lobbyist Middle Name")
+    lobbyist_lastname: str = Field(..., title="Lobbyist Last Name")
+    lobbyist_suffix: Optional[str] = Field(default=None, title="Lobbyist Suffix")
+    expenditure_type: str = Field(..., title="Expenditure Type")
+    expenditure_date: date = Field(..., title="Expenditure Date")
+    expenditure_cost: float = Field(..., title="Expenditure Cost")
+    meal_type: Optional[str] = Field(default=None, title="Meal Type")
+    other_meal_description: Optional[str] = Field(default=None, title="Other Meal Description")
+    explanation: Optional[str] = Field(default=None, title="Explanation")
+    recipient_first_name: Optional[str] = Field(default=None, title="Recipient First Name")
+    recipient_middle_name: Optional[str] = Field(default=None, title="Recipient Middle Name")
+    recipient_last_name: Optional[str] = Field(default=None, title="Recipient Last Name")
+    recipient_suffix: Optional[str] = Field(default=None, title="Recipient Suffix")
+    recipient_type: Optional[str] = Field(default=None, title="Recipient Type")
+    recipient_title: Optional[str] = Field(default=None, title="Recipient Title")
+    recipient_agency_office: Optional[str] = Field(default=None, title="Recipient Agency Office")
+    relationship_to_state_officer_or_employee: Optional[str] = Field(default=None, title="Relationship to State Officer or Employee")
+    family_member_name: Optional[str] = Field(default=None, title="Family Member Name")
+    principal_name: Optional[str] = Field(default=None, title="Principal Name")
+    principal_percentage_cost: Optional[str] = Field(default=None, title="Principal Percentage Cost")
+    caucus: Optional[str] = Field(default=None, title="Caucus")
+    committee_subcommittee: Optional[str] = Field(default=None, title="Committee Subcommittee")
+    event_location: Optional[str] = Field(default=None, title="Event Location")
+    event_city: Optional[str] = Field(default=None, title="Event City")
+    event_state: Optional[str] = Field(default=None, title="Event State", max_length=2)
+    download_date: date
+    file_origin: str
+
+    clear_blank_strings = model_validator(mode='before')(funcs.clear_blank_strings)
+
+    validate_dates = field_validator(
+        'expenditure_date',
+        mode='before')(lambda v: funcs.validate_date(v, fmt='%m/%d/%Y'))
+
+    @model_validator(mode='before')
+    @classmethod
+    def parse_candidate_name(cls, values):
+        if 'lobbyist_firstname' in values:
+            _lobbyist_name_components = [
+                values[x] for x in [
+                    'lobbyist_firstname',
+                    'lobbyist_middlename',
+                    'lobbyist_lastname',
+                    'lobbyist_suffix'
+                ] if x is not None
+            ]
+            name = funcs.person_name_parser(' '.join(_lobbyist_name_components))
+            values['lobbyist_firstname'] = name.first
+            values['lobbyist_lastname'] = name.last
+            values['lobbyist_middlename'] = name.middle
+            values['lobbyist_suffix'] = name.suffix
+
+        if 'recipient_first_name' in values:
+            _recipient_name_components = [
+                values[x] for x in [
+                    'recipient_first_name',
+                    'recipient_middle_name',
+                    'recipient_last_name',
+                    'recipient_suffix'
+                ] if x is not None
+            ]
+            name = funcs.person_name_parser(' '.join(_recipient_name_components))
+            values['recipient_first_name'] = name.first
+            values['recipient_lastname'] = name.last
+            values['recipient_middlename'] = name.middle
+            values['recipient_suffix'] = name.suffix
+        return values
+
+    @model_validator(mode='before')
+    @classmethod
+    def validate_meal_type(cls, values):
+        if 'meal_type' in values:
+            if values['meal_type'].upper() in ['BREAKFAST', 'DINNER', 'LUNCH', 'OTHER']:
+                return values
+            elif values['meal_type'] == '':
+                values['meal_type'] = None
+                return values
+            else:
+                raise PydanticCustomError(
+                    'invalid_type',
+                    f"{values['meal_type']} is not a valid meal type",
+                    {
+                        'column': 'meal_type',
+                        'value': values['meal_type']
+                    }
+                )
+
+    @model_validator(mode='before')
+    @classmethod
+    def validate_recipient_type(cls, values):
+        if 'recipient_type' in values:
+            if values['recipient_type'].upper() in ['LEGISLATOR', 'NON-LEGISLATOR STATE OFFICER OR EMPLOYEE']:
+                return values
+            elif values['recipient_type'] == '':
+                values['recipient_type'] = None
+                return values
+            else:
+                raise PydanticCustomError(
+                    'invalid_type',
+                    f"{values['recipient_type']} is not a valid recipient type",
+                    {
+                        'column': 'recipient_type',
+                        'value': values['recipient_type']
+                    }
+                )

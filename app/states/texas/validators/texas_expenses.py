@@ -5,6 +5,8 @@ from pydantic import field_validator, model_validator
 from sqlmodel import SQLModel, Field
 from pydantic_core import PydanticCustomError
 from states.texas.validators.texas_settings import TECSettings
+import funcs.validator_functions as funcs
+import states.texas.funcs.tx_validation_funcs as tx_funcs
 
 
 # class TECExpenseCategory(TECSettings, table=True):
@@ -16,74 +18,181 @@ from states.texas.validators.texas_settings import TECSettings
 class TECExpense(TECSettings, table=True):
     __tablename__ = "tx_expenses"
     __table_args__ = {"schema": "texas"}
-    recordType: str
-    formTypeCd: str
-    schedFormTypeCd: str
-    reportInfoIdent: int
-    receivedDt: date
-    infoOnlyFlag: Optional[bool]
-    filerIdent: int
-    filerTypeCd: str
-    filerName: str
-    expendInfoId: int = Field(primary_key=True)
-    expendDt: date
-    expendAmount: float
-    expendDescr: str
-    expendCatCd: str
-    expendCatDescr: str
-    itemizeFlag: Optional[bool]
-    travelFlag: Optional[bool]
-    politicalExpendCd: Optional[str]
-    reimburseIntendedFlag: Optional[str]
-    srcCorpContribFlag: Optional[str]
-    capitalLivingexpFlag: Optional[str]
-    payeePersentTypeCd: str
-    payeeNameOrganization: Optional[str]
-    payeeNameLast: Optional[str]
-    payeeNameSuffixCd: Optional[str]
-    payeeNameFirst: Optional[str]
-    payeeNamePrefixCd: Optional[str]
-    payeeNameShort: Optional[str]
-    payeeStreetAddr1: str
-    payeeStreetAddr2: Optional[str]
-    payeeStreetCity: str
-    payeeStreetStateCd: str
-    payeeStreetCountyCd: str
-    payeeStreetCountryCd: str
-    payeeStreetPostalCode: Optional[str]
-    payeeStreetRegion: Optional[str]
-    creditCardIssuer: Optional[str]
-    repaymentDt: Optional[date]
-    file_origin: str
-    # filer_id: Optional[int]
-    # filers: Optional[List]
+    id: Optional[str] = Field(default=None, description="Unique record ID")
+    recordType: str = Field(
+        ...,
+        description="Record type code - always EXPN",
+        max_length=20
+    )
+    formTypeCd: str = Field(
+        ...,
+        description="TEC form used",
+        max_length=20
+    )
+    schedFormTypeCd: str = Field(
+        ...,
+        description="TEC Schedule Used",
+        max_length=20
+    )
+    reportInfoIdent: int = Field(
+        ...,
+        description="Unique report #"
+    )
+    receivedDt: date = Field(
+        ...,
+        description="Date report received by TEC"
+    )
+    infoOnlyFlag: Optional[bool] = Field(
+        ...,
+        description="Superseded by other report"
+    )
+    filerIdent: int = Field(
+        ...,
+        description="Filer account #"
+    )
+    filerTypeCd: str = Field(
+        ...,
+        description="Type of filer"
+    )
+    filerName: str = Field(
+        ...,
+        description="Filer name"
+    )
+    expendInfoId: int = Field(
+        primary_key=True,
+        description="Unique expenditure identifier"
+    )
+    expendDt: date = Field(
+        ...,
+        description="Expenditure date"
+    )
+    expendAmount: float = Field(
+        ...,
+        description="Expenditure amount"
+    )
+    expendDescr: str = Field(
+        ...,
+        description="Expenditure description"
+    )
+    expendCatCd: Optional[str] = Field(
+        default=None,
+        description="Expenditure category code"
+    )
+    expendCatDescr: Optional[str] = Field(
+        default=None,
+        description="Expenditure category description"
+    )
+    itemizeFlag: Optional[bool] = Field(
+        ...,
+        description="Y indicates that the expenditure is itemized"
+    )
+    travelFlag: Optional[bool] = Field(
+        ...,
+        description="Y indicates that the expenditure is for travel"
+    )
+    politicalExpendCd: Optional[bool] = Field(
+        ...,
+        description="Political expenditure indicator",
+    )
+    reimburseIntendedFlag: Optional[bool] = Field(
+        ...,
+        description="Reimbursement intended indicator",
+    )
+    srcCorpContribFlag: Optional[bool] = Field(
+        ...,
+        description="Corporate contribution indicator",
+    )
+    capitalLivingexpFlag: Optional[bool] = Field(
+        ...,
+        description="Austin living expense indicator",
+    )
+    payeePersentTypeCd: str = Field(
+        ...,
+        description="Type of payee name data - INDIVIDUAL or ENTITY"
+    )
+    payeeNameOrganization: Optional[str] = Field(
+        ...,
+        description="For ENTITY, the payee organization name"
+    )
+    payeeNameLast: Optional[str] = Field(
+        default=None,
+        description="For INDIVIDUAL, the payee last name"
+    )
+    payeeNameSuffixCd: Optional[str] = Field(
+        default=None,
+        description="For INDIVIDUAL, the payee suffix"
+    )
+    payeeNameFirst: Optional[str] = Field(
+        default=None,
+        description="For INDIVIDUAL, the payee first name"
+    )
+    payeeNamePrefixCd: Optional[str] = Field(
+        default=None,
+        description="For INDIVIDUAL, the payee prefix"
+    )
+    payeeNameShort: Optional[str] = Field(
+        default=None,
+        description="For INDIVIDUAL, the payee short name"
+    )
+    payeeNameFull: Optional[str] = Field(
+        default=None,
+        description="For INDIVIDUAL, the payee full name"
+    )
+    payeeStreetAddr1: Optional[str] = Field(
+        ...,
+        description="Payee street address line 1"
+    )
+    payeeStreetAddr2: Optional[str] = Field(
+        default=None,
+        description="Payee street address line 2"
+    )
+    payeeStreetCity: Optional[str] = Field(
+        ...,
+        description="Payee street address city"
+    )
+    payeeStreetStateCd: str = Field(
+        ...,
+        description="Payee street address state code"
+    )
+    payeeStreetCountyCd: Optional[str] = Field(
+        ...,
+        description="Payee street address Texas county"
+    )
+    payeeStreetCountryCd: Optional[str] = Field(
+        ...,
+        description="Payee street address - country (e.g. USA, UMI, MEX, CAN)",
+        max_length=3
+    )
+    payeeStreetPostalCode: Optional[str] = Field(
+        default=None,
+        description="Payee street address - postal code - for USA addresses only"
+    )
+    payeeStreetRegion: Optional[str] = Field(
+        default=None,
+        description="Payee street address - region for country other than USA"
+    )
+    creditCardIssuer: Optional[str] = Field(
+        default=None,
+        description="Financial institution issuing credit card"
+    )
+    repaymentDt: Optional[date] = Field(
+        default=None,
+        description="Repayment date"
+    )
+    file_origin: str = Field(
+        ...,
+        description="File origin"
+    )
+    download_date: date = Field(
+        ...,
+        description="Download date"
+    )
 
-    @model_validator(mode="before")
-    @classmethod
-    def add_filer_id(cls, values):
-        values["filer_id"] = values["filerIdent"]
-        # values["contribution_id"] = values["filerIdent"]
-        return values
-
-    @field_validator("expendDt", "repaymentDt", "receivedDt", mode="before")
-    @classmethod
-    def _check_expend_date(cls, value):
-        if value:
-            if isinstance(value, str):
-                try:
-                    return date(
-                        int(str(value[:4])), int(str(value[4:6])), int(str(value[6:8]))
-                    )
-                except ValueError:
-                    raise PydanticCustomError(
-                        'date_check',
-                        f"{value} must be in YYYYMMDD format",
-                        {'value': value}
-                    )
-
-
-    # _expense_expend_dt = format_dates("expendDt")
-    # _expense_repayment_dt = field_validator("repaymentDt", mode="before")(classmethod, format_dates)
+    clear_blank_strings = model_validator(mode='before')(funcs.clear_blank_strings)
+    check_dates = model_validator(mode='before')(tx_funcs.validate_dates)
+    check_zipcodes = model_validator(mode='before')(tx_funcs.check_zipcodes)
+    address_formatting = model_validator(mode='before')(tx_funcs.address_formatting)
+    phone_number_validation = model_validator(mode='before')(tx_funcs.phone_number_validation)
 
     @model_validator(mode="before")
     @classmethod
@@ -93,72 +202,66 @@ class TECExpense(TECSettings, table=True):
                 raise PydanticCustomError(
                     'payee_field_check',
                     "payeeNameLast is required for INDIVIDUAL payeePersentTypeCd",
-                    {'value': values["payeeNameLast"]}
+                    {
+                        'column': 'payeeNameLast',
+                        'value': values["payeeNameLast"]
+                    }
                 )
             if not values["payeeNameFirst"]:
                 raise PydanticCustomError(
                     'payee_field_check',
                     "payeeNameFirst is required for INDIVIDUAL payeePersentTypeCd",
-                    {'value': values["payeeNameFirst"]}
+                    {
+                        'column': 'payeeNameFirst',
+                        'value': values["payeeNameFirst"]
+                    }
                 )
         elif values["payeePersentTypeCd"] == "ENTITY":
             if not values["payeeNameOrganization"]:
                 raise PydanticCustomError(
                     'payee_field_check',
                     "payeeNameOrganization is required for ENTITY payeePersentTypeCd",
-                    {'value': values["payeeNameOrganization"]}
+                    {
+                        'column': 'payeeNameOrganization',
+                        'value': values["payeeNameOrganization"]
+                    }
                 )
         else:
             raise PydanticCustomError(
                 'payee_field_check',
                 "payeePersentTypeCd must be INDIVIDUAL or ENTITY",
-                {'value': values["payeePersentTypeCd"]}
+                {
+                    'column': 'payeePersentTypeCd',
+                    'value': values["payeePersentTypeCd"]
+                }
             )
         return values
 
+
+    # @model_validator(mode="before")
+    # @classmethod
+    # def _check_entity_or_individual(cls, values):
+    #     if not values["payeePersentTypeCd"] == "INDIVIDUAL":
+    #         if values["payeeNameFirst"] and values["payeeNameLast"]:
+    #             values["payeePersentTypeCd"] = "INDIVIDUAL"
+    #         else:
+    #             values["payeePersentTypeCd"] = "ENTITY"
+    #     return values
+
     @model_validator(mode="before")
     @classmethod
-    def _check_person_name(cls, values):
-        def complete_name_cols(person: HumanName):
-            values["payeeNameLast"] = person.last
-            values["payeeNameSuffixCd"] = person.suffix
-            values["payeeNameFirst"] = person.first
-            values["payeeNamePrefixCd"] = person.title
-            values["payeeNameShort"] = person.nickname
-            return values
-
+    def format_payee_name(cls, values):
         if values["payeePersentTypeCd"] == "INDIVIDUAL":
-            if values["payeeNameFirst"] and not values["payeeNameLast"]:
-                name = HumanName(values["payeeNameFirst"])
-                if name.last:
-                    complete_name_cols(name)
-                else:
-                    raise PydanticCustomError(
-                        'person_name_check',
-                        "payeeNameLast is required if payeeNameFirst is provided",
-                        {'value': values["payeeNameLast"]}
-                    )
+            _payee_name_fields = [
+                x for x in values.keys() if x.startswith("payeeName") and x != "payeeNameOrganization"
+            ]
+            _name_fields_not_empty = [values[x] for x in _payee_name_fields if values[x] != ""]
+            payee_name = funcs.person_name_parser(" ".join(_name_fields_not_empty))
+            payee_name.parse_full_name()
+            values["payeeNameLast"] = payee_name.last
+            values["payeeNameFirst"] = payee_name.first
+            values["payeeNameSuffixCd"] = payee_name.suffix
+            values["payeeNamePrefixCd"] = payee_name.title
+            values["payeeNameFull"] = payee_name.full_name
 
-            elif values["payeeNameLast"] and not values["payeeNameFirst"]:
-                name = HumanName(values["payeeNameLast"])
-                if name.first:
-                    complete_name_cols(name)
-                else:
-                    raise PydanticCustomError(
-                        'person_name_check',
-                        "payeeNameFirst is required if payeeNameLast is provided",
-                        {'value': values["payeeNameFirst"]}
-                    )
-            else:
-                pass
-        return values
-
-    @model_validator(mode="before")
-    @classmethod
-    def _check_entity_or_individual(cls, values):
-        if not values["payeePersentTypeCd"] == "INDIVIDUAL":
-            if values["payeeNameFirst"] and values["payeeNameLast"]:
-                values["payeePersentTypeCd"] = "INDIVIDUAL"
-            else:
-                values["payeePersentTypeCd"] = "ENTITY"
         return values

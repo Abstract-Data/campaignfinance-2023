@@ -4,52 +4,39 @@ from typing import ClassVar, Dict, List
 from dataclasses import field, dataclass
 import contextlib
 import inject
-from tqdm import tqdm
-from zipfile import ZipFile
-import requests
-import os
-import sys
-import ssl
-import urllib.request
-from typing import Generator, Type, Optional, Any
+from typing import Generator, Type, Optional, Callable, Iterator, Iterable
 from collections import namedtuple, defaultdict
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, Session
 import funcs
+from funcs.db_loader import DBLoader
 from logger import Logger
-from abcs import (
-    StateCampaignFinanceConfigs,
-    FileDownloader,
-)
-from funcs.validation import StateFileValidation
+from abcs import StateCampaignFinanceConfigClass
+from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn, MofNCompleteColumn
+from states.oklahoma.oklahoma_database import oklahoma_snowpark
 import states.oklahoma.validators as validators
-
+from functools import singledispatch
 
 # TODO: Change File Prefix Configurations to Oklahoma
 # TODO: Make sure file folder reads only CSVs in Oklahoma so it doesn't try to read Zip files
 
-
+ENGINE = oklahoma_snowpark
 logger = Logger(__name__)
 logger.info(f"Logger initialized in {__name__}")
 
 # SQLModels = Generator[SQLModel, None, None]
 
+CategoryFileList = List[Path]
+OklahomaValidatorType = Type[validators.OklahomaSettings]
+FileRecords = Generator[Dict, None, None]
+
 FileValidationResults = namedtuple(
     'FileValidationResults', ['passed', 'failed', 'passed_count', 'failed_count'])
-
-
-def download_base_config(binder):
-    binder.bind(StateCampaignFinanceConfigs, OklahomaConfigs)
-
-
-def category_base_config(binder):
-    binder.bind(StateCampaignFinanceConfigs, OklahomaConfigs)
-    binder.bind_to_provider(Session, session_scope)
 
 
 @contextlib.contextmanager
 def session_scope():
     """Provide a transactional scope around a series of operations."""
-    session = Session(engine)
+    session = Session(ENGINE)
     try:
         yield session
         session.commit()
@@ -60,14 +47,30 @@ def session_scope():
         session.close()
 
 
+@singledispatch
 def generate_file_list(folder: Path):
     return list(sorted([file for file in folder.glob("*.csv")]))
 
 
-class OklahomaConfigs(StateCampaignFinanceConfigs):
+@generate_file_list.register
+def _(folder: Path) -> tuple[list[Path], Callable[[str], CategoryFileList]]:
+    _folder = list(folder.glob("*.csv"))
+
+    def contains_prefix(prefix: str) -> CategoryFileList:
+        return [file for file in _folder if file.stem.endswith(prefix)]
+
+    return _folder, contains_prefix
+
+
+def category_base_config(binder):
+    binder.bind(StateCampaignFinanceConfigClass, OklahomaConfigs)
+    binder.bind_to_provider(Session, session_scope)
+
+
+class OklahomaConfigs(StateCampaignFinanceConfigClass):
     STATE: ClassVar[str] = "Oklahoma"
     STATE_ABBREVIATION: ClassVar[str] = "OK"
-    TEMP_FOLDER: ClassVar[StateCampaignFinanceConfigs.TEMP_FOLDER] = Path.cwd().parent / "tmp" / "oklahoma"
+    TEMP_FOLDER: ClassVar[StateCampaignFinanceConfigClass.TEMP_FOLDER] = Path(__file__).parents[3] / "tmp" / "oklahoma"
     # TEMP_FILENAME: ClassVar[StateCampaignFinanceConfigs.TEMP_FILENAME] = (
     #         Path.cwd().parent / "tmp" / "texas" / "TEC_CF_CSV.zip")
 
@@ -75,19 +78,19 @@ class OklahomaConfigs(StateCampaignFinanceConfigs):
     #     Type[StateCampaignFinanceConfigs.EXPENSE_VALIDATOR]
     # ] = TECExpense
     # EXPENSE_MODEL: ClassVar[Type[SQLModel]] = None
-    EXPENSE_FILE_PREFIX: ClassVar[str] = "expenditures"
+    EXPENSE_FILE_SUFFIX: ClassVar[str] = "ExpenditureExtract"
 
     # CONTRIBUTION_VALIDATOR: ClassVar[
     #     Type[StateCampaignFinanceConfigs.CONTRIBUTION_VALIDATOR]
     # ] = TECContribution
     # CONTRIBUTION_MODEL: ClassVar[Type[SQLModel]] = None
-    CONTRIBUTION_FILE_PREFIX: ClassVar[str] = "contribution"
+    CONTRIBUTION_FILE_SUFFIX: ClassVar[str] = "ContributionLoanExtract"
 
     # FILERS_VALIDATOR: ClassVar[
     #     Type[StateCampaignFinanceConfigs.FILERS_VALIDATOR]
     # ] = TECFiler
     # FILERS_MODEL: ClassVar[Type[SQLModel]] = None
-    FILERS_FILE_PREFIX: ClassVar[str] = "filer"
+    LOBBY_FILE_SUFFIX: ClassVar[str] = "LobbyistExpenditures"
 
     REPORTS_FILE_PREFIX: ClassVar[str] = "finals"
 
@@ -106,14 +109,36 @@ class OklahomaConfigs(StateCampaignFinanceConfigs):
     EXPENDITURE_AMOUNT_COLUMN: ClassVar[str] = "expendAmount"
 
 
+def merge_filer_names(records: Generator[Dict, None, None]) -> FileRecords:
+    # Create a dictionary of filerIdent's and filerNames
+    org_names = defaultdict(set)
+    records_dict = {}  # Use a dictionary to store records
+
+    for record in records:
+        if record['file_origin'].startswith("filer"):
+            org_names[record['filerIdent']].add(record['filerName'])
+            records_dict[record['filerIdent']] = record  # Store record in dictionary
+
+    # Convert set of names to comma-separated string
+    for _id in org_names:
+        org_names[_id] = ', '.join(org_names[_id])
+
+    # Add filerNames to each record and yield the result
+    for _id, record in records_dict.items():
+        if _id in org_names:
+            record['org_names'] = org_names[_id]
+    _unique_filers = {x['filerIdent']: x for x in records_dict.values()}
+    return (x for x in _unique_filers.values())
+
+
 @dataclass
 class OklahomaCategory:
     category: str
     records: Generator[Dict, None, None] = field(init=False)
-    validation: StateFileValidation = field(init=False)
-    validator: Type[validators.OklahomaSettings] = field(init=False)
-    config: StateCampaignFinanceConfigs = field(init=False)
-    _files: Optional[Generator[Path, Any, None]] = None
+    record_count: int = field(init=False, default=0)
+    validation: funcs.StateFileValidation = field(init=False)
+    config: StateCampaignFinanceConfigClass = field(init=False)
+    _files: Optional[List[Path]] = None
     __logger: Logger = field(init=False)
 
     def __repr__(self):
@@ -124,8 +149,8 @@ class OklahomaCategory:
 
     def __post_init__(self):
         self.init()
-        self.create_file_list()
-        self.get_validators()
+        self._create_file_list()
+        self.validation = funcs.StateFileValidation(validator_to_use=self.get_validator())
 
     @property
     def logger(self):
@@ -133,59 +158,112 @@ class OklahomaCategory:
         return self.__logger
 
     @inject.autoparams()
-    def create_file_list(self, config: StateCampaignFinanceConfigs) -> Generator[Path, Any, None]:
-        if self.category == "expenses":
-            self._files = (
-                x for x in generate_file_list(config.TEMP_FOLDER)
-                if x.name.startswith(config.EXPENSE_FILE_PREFIX))
-        elif self.category == "contributions":
-            self._files = (
-                x for x in generate_file_list(config.TEMP_FOLDER)
-                if x.name.startswith(config.CONTRIBUTION_FILE_PREFIX))
-        elif self.category == "filers":
-            self._files = (
-                x for x in generate_file_list(config.TEMP_FOLDER)
-                if x.name.startswith(config.FILERS_FILE_PREFIX))
-        elif self.category == "reports":
-            self._files = (
-                x for x in generate_file_list(config.TEMP_FOLDER)
-                if x.name.startswith(config.REPORTS_FILE_PREFIX))
+    def _create_file_list(self, config: StateCampaignFinanceConfigClass) -> CategoryFileList:
+        """
+        Create a list of files based on the category.
+        :param config: StateCampaignFinanceConfigs object
+        :return: Generator[Path, Any, None]
+        """
+        _, contains_prefix = generate_file_list(config.TEMP_FOLDER)
+        match self.category:
+            case "expenses":
+                self._files = contains_prefix(config.EXPENSE_FILE_SUFFIX)
+            case "contributions":
+                self._files = contains_prefix(config.CONTRIBUTION_FILE_SUFFIX)
+            case "lobby":
+                self._files = contains_prefix(config.LOBBY_FILE_SUFFIX)
+            case _:
+                raise ValueError(f"Invalid category: {self.category}")
         return self._files
 
-    def get_validators(self) -> Type[validators.OklahomaSettings]:
-        if self.category == "expenses":
-            self.validator = validators.OklahomaExpenditure
-        elif self.category == "contributions":
-            self.validator = validators.OklahomaContribution
-        elif self.category == "lobby":
-            self.validator = validators.OklahomaLobbyistExpenditure
-        else:
-            raise ValueError(f"Invalid category: {self.category}")
-        return self.validator
+    def get_validator(self) -> OklahomaValidatorType:
+        """
+        Get the validator based on the category.
+        :return: Type[validators.TECSettings]
+        """
+        match self.category:
+            case "expenses":
+                validator = validators.OklahomaExpenditure
+            case "contributions":
+                validator = validators.OklahomaContribution
+            case "lobby":
+                validator = validators.OklahomaLobbyistExpenditure
+            case _:
+                raise ValueError(f"Invalid category: {self.category}")
+        return validator
 
-    def read(self) -> Generator[Dict, None, None]:
-        self.records = (record for file in list(self._files) for record in funcs.FileReader.read_file(file))
-        # if self.category == "filers":
-        #     records = merge_filer_names(records)
-        return self.records
+    def read(self, replace_space=True, lowercase_headers=True) -> Generator[Dict, None, None]:
+        """
+        Read the files based on the category.
+        :return: Generator[Dict, None, None]
+        """
+        pbar = Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            MofNCompleteColumn()
+        )
+        file_reader = funcs.FileReader()
+        file_list = list(self._files)
+        folder_task = pbar.add_task(f"[cyan]Reading {self.category.title()} Files...", total=len(file_list))
+        with pbar as progress:
 
-    def load(self) -> List[Dict]:
-        return list(x for x in self.read())
+            for _file in file_list:
+                file_task = progress.add_task(f"[yellow]Reading {_file.stem}...", total=None)
+                for record in file_reader.read_csv(
+                        _file,
+                        change_space_in_headers=replace_space,
+                        lowercase_headers=lowercase_headers):
+                    file_reader.record_count += 1
+                    yield record
+                    progress.update(file_task, advance=1)
+
+                progress.update(file_task, completed=file_reader.record_count)
+                progress.advance(folder_task)
+            progress.stop_task(folder_task)
+
+    def load(self) -> Iterable[Dict]:
+        """
+        Load the records locally as an iterator.
+        :return: Iterable[Dict]
+        """
+        return iter(x for x in self.read())
 
     def validate(self,
-                 records: Generator[Dict, None, None] = None,
-                 validator: Type[SQLModel] = None
-                 ) -> StateFileValidation:
+                 records: FileRecords = None,
+                 ) -> tuple[Iterator[SQLModel], Iterator[dict]]:
+        """
+        Validate the records based on the category.
+        :param records: Generator[Dict, None, None]
+        :return: StateFileValidation
+        """
         if not records:
-            records = self.records
+            records = self.read()
 
-        if not validator:
-            validator = self.validator
-
-        self.validation = StateFileValidation()
-        return self.validation.validate(records=records, validator=validator)
+        self.validation.passed = self.validation.passed_records(records)
+        self.validation.failed = self.validation.failed_records(records)
+        return self.validation.passed, self.validation.failed
 
     @inject.autoparams()
-    def load_to_db(self, records: Generator[Dict, None, None], session: Session) -> None:
-        session.add_all(records)
-        session.commit()
+    def write_to_csv(self, records, validation_status, config: StateCampaignFinanceConfigClass):
+        funcs.write_records_to_csv_validation(
+            records=records,
+            folder_path=config.TEMP_FOLDER,
+            record_type=self.category,
+            validation_status=validation_status
+        )
+        return self
+
+    @inject.autoparams()
+    def load_to_db(self, records: Iterator[Type[OklahomaValidatorType]], **kwargs) -> None:
+        _db_loader = DBLoader(engine=ENGINE)
+        if kwargs.get("create_table") is True:
+            _db_loader.create_all()
+        self.logger.info(f"Loading {self.category} records to database")
+        _db_loader.add(
+            self.read() if not records else records,
+            record_type=self.validation.validator_to_use,
+            add_limit=kwargs.get("limit", None)
+        )
+        return None
