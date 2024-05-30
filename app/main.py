@@ -18,13 +18,14 @@ from joblib import Parallel, delayed
 import pydantic.dataclasses as pydantic_
 from pydantic import Field
 from pydantic import BaseModel
-from typing import List, Dict, Tuple, Generator, Iterator, Optional, Sequence, Type
+from typing import List, Dict, Tuple, Iterator, Optional, Sequence, Type, Any, overload
 from collections import Counter
 from icecream import ic
 from collections import namedtuple
 from enum import Enum
 import matplotlib.pyplot as plt
 from pathlib import Path
+from functools import singledispatch
 
 """ Update the model order of imports. Break out each model to a 
 separate script so they're created in the correct order."""
@@ -32,6 +33,24 @@ separate script so they're created in the correct order."""
 pd.options.display.max_columns = None
 pd.options.display.max_rows = None
 pd.set_option('display.float_format', '{:.2f}'.format)
+
+""" FUNCTIONS """
+
+
+@overload
+def sqlmodel_todict(records: Iterator[SQLModel]) -> map:
+    ...
+
+
+@overload
+def sqlmodel_todict(records: List[SQLModel]) -> map:
+    ...
+
+
+def sqlmodel_todict(records: Any) -> map:
+    for record in records:
+        yield record.dict()
+
 
 # SQLModel.metadata.create_all(engine)
 
@@ -117,22 +136,28 @@ def upsert_records(category: TECCategory, _engine=engine):
 
 ok_expenses = OklahomaCategory('expenses')
 ok_expenses.records = ok_expenses.read()
-expenses_passed_records = list(ok_expenses.validation.passed_records(ok_expenses.records))
 expenses_failed_records = list(ok_expenses.validation.failed_records(ok_expenses.records))
 
 ok_contributions = OklahomaCategory('contributions')
 ok_contributions.records = ok_contributions.read()
-contributions_passed_records = list(ok_contributions.validation.passed_records(ok_contributions.records))
 contributions_failed_records = list(ok_contributions.validation.failed_records(ok_contributions.records))
 
 ok_lobby = OklahomaCategory('lobby')
 ok_lobby.records = ok_lobby.read()
-lobby_passed_records = list(ok_lobby.validation.passed_records(ok_lobby.records))
 lobby_failed_records = list(ok_lobby.validation.failed_records(ok_lobby.records))
 lobby_errors = ok_lobby.validation.show_errors()
 
-session = snowpark_session.create()
+session = oklahoma_snowpark.create()
 
-expenses = map(lambda x: x.model_dump(), expenses_passed_records)
+expenses = list(sqlmodel_todict(ok_expenses.validation.passed_records(ok_expenses.records)))
+contributions = list(sqlmodel_todict(ok_contributions.validation.passed_records(ok_contributions.records)))
+lobby = list(sqlmodel_todict(ok_lobby.validation.passed_records(ok_lobby.records)))
 
-expense_list = list(expenses)
+# expense_df = session.create_dataframe(expenses)
+# contribution_df = session.create_dataframe(contributions)
+# lobby_df = session.create_dataframe(lobby)
+#
+# # Write to Snowflake
+# session.write_table(expense_df, 'CF_EXPENSES')
+# session.write_table(contribution_df, 'CF_CONTRIBUTIONS')
+# session.write_table(lobby_df, 'CF_LOBBY')
