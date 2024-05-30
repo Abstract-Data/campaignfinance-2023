@@ -1,13 +1,15 @@
+from __future__ import annotations
 import csv
 from pathlib import Path
 from sqlmodel import SQLModel
 from typing import List, Dict, Type, Generator
 
+
 def write_records_to_csv_validation(
-    records: List[Dict | Type[SQLModel]] | Generator[Dict | Type[SQLModel]], 
+    records: List[Dict | Type[SQLModel]] | Generator[Dict | Type[SQLModel], None, None], 
     folder_path: Path | str,
     record_type: str,
-    validation_status: str):
+        validation_status: str):
     if not isinstance(folder_path, Path):
         try:
             folder_path = Path(folder_path)

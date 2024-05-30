@@ -1,57 +1,46 @@
-
 from __future__ import annotations
 from pathlib import Path
-from typing import ClassVar, Dict, List
-from dataclasses import field, dataclass
+from typing import (
+    Dict,
+    Iterable,
+    Type,
+    Generator,
+    Callable,
+    Optional,
+    Any,
+    Iterator, Tuple, List
+)
 import contextlib
 import inject
-from tqdm import tqdm
-from zipfile import ZipFile
-import requests
-import os
-import sys
-import ssl
-import urllib.request
-from typing import Generator, Type, Optional, Any
-from collections import namedtuple, defaultdict
-from sqlmodel import SQLModel
+from collections import defaultdict
+from dataclasses import field, dataclass
+
+from sqlmodel import Session, SQLModel
+from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn, MofNCompleteColumn
+
 import funcs
 from logger import Logger
-from abcs import (
-    StateCampaignFinanceConfigs,
-    FileDownloader,
-)
-from funcs.validation import StateFileValidation
-import states.texas.validators as validators
-from states.texas.database import engine, Session
+from abcs import StateCampaignFinanceConfigClass
+from abcs.abc_validation import StateFileValidationClass
 
-# from db_loaders.postgres_loader import PostgresLoader
-# from states.texas.database import (
-#     SQLModel,
-#     create_engine,
-#     engine,
-#     SessionLocal,
-#     Session
-# )
-# import itertools
-# import states.texas.updated_validators as validators
-# import states.texas.updated_models as models
+from funcs.validation import PassedFailedRecordList
+from states.texas.texas_configs import TexasConfigs
+from states.texas.texas_database import engine
+import states.texas.validators as validators
+from funcs.db_loader import DBLoader
 
 logger = Logger(__name__)
 logger.info(f"Logger initialized in {__name__}")
 
 # SQLModels = Generator[SQLModel, None, None]
+CategoryFileList = List[Path]
+TexasValidatorType = Type[validators.TECSettings]
+FileRecords = Generator[Dict, None, None]
 
-FileValidationResults = namedtuple(
-    'FileValidationResults', ['passed', 'failed', 'passed_count', 'failed_count'])
-
-
-def download_base_config(binder):
-    binder.bind(StateCampaignFinanceConfigs, TexasConfigs)
 
 
 def category_base_config(binder):
-    binder.bind(StateCampaignFinanceConfigs, TexasConfigs)
+    binder.bind(StateCampaignFinanceConfigClass, TexasConfigs)
     binder.bind_to_provider(Session, session_scope)
 
 
@@ -69,11 +58,16 @@ def session_scope():
         session.close()
 
 
-def generate_file_list(folder: Path):
-    return list(sorted([file for file in folder.glob("*.csv")]))
+def generate_file_list(folder: Path) -> tuple[list[Path], Callable[[str], CategoryFileList]]:
+    _folder = list(folder.glob("*.csv"))
+
+    def contains_prefix(prefix: str) -> CategoryFileList:
+        return [file for file in _folder if file.stem.startswith(prefix)]
+
+    return _folder, contains_prefix
 
 
-def merge_filer_names(records: Generator[Dict, None, None]) -> Generator[Dict, None, None]:
+def merge_filer_names(records: Generator[Dict, None, None]) -> FileRecords:
     # Create a dictionary of filerIdent's and filerNames
     org_names = defaultdict(set)
     records_dict = {}  # Use a dictionary to store records
@@ -95,235 +89,14 @@ def merge_filer_names(records: Generator[Dict, None, None]) -> Generator[Dict, N
     return (x for x in _unique_filers.values())
 
 
-class TexasConfigs(StateCampaignFinanceConfigs):
-    STATE: ClassVar[str] = "Texas"
-    STATE_ABBREVIATION: ClassVar[str] = "TX"
-    TEMP_FOLDER: ClassVar[StateCampaignFinanceConfigs.TEMP_FOLDER] = Path.cwd().parent / "tmp" / "texas"
-    TEMP_FILENAME: ClassVar[StateCampaignFinanceConfigs.TEMP_FILENAME] = (
-            Path.cwd().parent / "tmp" / "texas" / "TEC_CF_CSV.zip")
-
-    # EXPENSE_VALIDATOR: ClassVar[
-    #     Type[StateCampaignFinanceConfigs.EXPENSE_VALIDATOR]
-    # ] = TECExpense
-    # EXPENSE_MODEL: ClassVar[Type[SQLModel]] = None
-    EXPENSE_FILE_PREFIX: ClassVar[str] = "expend"
-
-    # CONTRIBUTION_VALIDATOR: ClassVar[
-    #     Type[StateCampaignFinanceConfigs.CONTRIBUTION_VALIDATOR]
-    # ] = TECContribution
-    # CONTRIBUTION_MODEL: ClassVar[Type[SQLModel]] = None
-    CONTRIBUTION_FILE_PREFIX: ClassVar[str] = "contribs"
-
-    # FILERS_VALIDATOR: ClassVar[
-    #     Type[StateCampaignFinanceConfigs.FILERS_VALIDATOR]
-    # ] = TECFiler
-    # FILERS_MODEL: ClassVar[Type[SQLModel]] = None
-    FILERS_FILE_PREFIX: ClassVar[str] = "filer"
-
-    REPORTS_FILE_PREFIX: ClassVar[str] = "finals"
-
-    STATE_CAMPAIGN_FINANCE_AGENCY: ClassVar[str] = "TEC"
-    ZIPFILE_URL: ClassVar[
-        str
-    ] = "https://ethics.state.tx.us/data/search/cf/TEC_CF_CSV.zip"
-
-    VENDOR_NAME_COLUMN: ClassVar[str] = "payeeCompanyName"
-    FILER_NAME_COLUMN: ClassVar[str] = "filerNameFormatted"
-
-    PAYMENT_RECEIVED_DATE_COLUMN: ClassVar[str] = "receivedDt"
-    EXPENDITURE_DATE_COLUMN: ClassVar[str] = "expendDt"
-    CONTRIBUTION_DATE_COLUMN: ClassVar[str] = "contributionDt"
-
-    EXPENDITURE_AMOUNT_COLUMN: ClassVar[str] = "expendAmount"
-
-
-@dataclass
-class TECFileDownloader(FileDownloader):
-    _configs: ClassVar[StateCampaignFinanceConfigs]
-    _folder: Path = TexasConfigs.TEMP_FOLDER
-    __logger: Logger = field(init=False)
-
-    def init(self):
-        inject.configure(download_base_config)
-
-    @property
-    def folder(self) -> StateCampaignFinanceConfigs.TEMP_FOLDER:
-        return self._folder
-
-    @folder.setter
-    def folder(self, value: Path) -> None:
-        self._folder = value
-
-    @property
-    def _tmp(self) -> Path:
-        return self.folder if self.folder else StateCampaignFinanceConfigs.TEMP_FOLDER
-
-    @classmethod
-    def download_file_with_requests(cls, config: StateCampaignFinanceConfigs) -> None:
-        # download files
-        with requests.get(config.ZIPFILE_URL, stream=True) as resp:
-            # check header to get content length, in bytes
-            total_length = int(resp.headers.get("Content-Length"))
-
-            # Chunk download of zip file and write to temp folder
-            with open(config.TEMP_FILENAME, "wb") as f:
-                for chunk in tqdm(
-                        resp.iter_content(chunk_size=1024),
-                        total=round(total_length / 1024, 2),
-                        unit="KB",
-                        desc="Downloading",
-                ):
-                    if chunk:
-                        f.write(chunk)
-                print("Download Complete")
-            return None
-
-    def check_if_folder_exists(self) -> Path:
-        self.__logger.info(f"Checking if {self.folder} exists...")
-        if self.folder.exists():
-            return self.folder
-
-        self.__logger.debug(f"{self.folder} does not exist...")
-        self.__logger.debug(f"Throwing input prompt...")
-        _create_folder = input("Temp folder does not exist. Create? (y/n): ")
-        self.__logger.debug(f"User input: {_create_folder}")
-        if _create_folder.lower() == "y":
-            self.folder.mkdir()
-            return self.folder
-        else:
-            print("Exiting...")
-            self.__logger.info("User selected 'n'. Exiting...")
-            sys.exit()
-
-    @inject.autoparams(read_from_temp=False, overwrite=True)
-    def download(
-        self,
-        config: StateCampaignFinanceConfigs,
-        read_from_temp: bool,
-        overwrite: bool
-    ) -> None:
-        tmp = self._tmp
-        temp_filename = tmp / "TEC_CF_CSV.zip"
-
-        self.__logger.info(f"Setting temp filename to {temp_filename} in download func")
-
-        def download_file_with_requests() -> None:
-            # download files
-            with requests.get(config.ZIPFILE_URL, stream=True) as resp:
-                # check header to get content length, in bytes
-                total_length = int(resp.headers.get("Content-Length"))
-
-                # Chunk download of zip file and write to temp folder
-                with open(temp_filename, "wb") as f:
-                    for chunk in tqdm(
-                        resp.iter_content(chunk_size=1024),
-                        total=round(total_length / 1024, 2),
-                        unit="KB",
-                        desc="Downloading",
-                    ):
-                        if chunk:
-                            f.write(chunk)
-                    self.__logger.info("Download Complete")
-                return None
-
-        def download_file_with_urllib3() -> None:
-            self.__logger.info(
-                f"Downloading {config.STATE_CAMPAIGN_FINANCE_AGENCY} Files..."
-            )
-            ssl_context = ssl.create_default_context()
-            ssl_context.options |= ssl.OP_CIPHER_SERVER_PREFERENCE
-            ssl_context.set_ciphers("DEFAULT@SECLEVEL=2")
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-            self.__logger.info(f"SSL Context: {ssl_context}")
-            self.__logger.debug(
-                f"Downloading {config.STATE_CAMPAIGN_FINANCE_AGENCY} Files..."
-            )
-
-            opener = urllib.request.build_opener(
-                urllib.request.HTTPSHandler(context=ssl_context)
-            )
-            urllib.request.install_opener(opener)
-            urllib.request.urlretrieve(config.ZIPFILE_URL, temp_filename)
-
-        def extract_zipfile() -> None:
-            # extract zip file to temp folder
-            self.__logger.debug(f"Extracting {temp_filename} to {tmp}...")
-            with ZipFile(temp_filename, "r") as myzip:
-                print("Extracting Files...")
-                for _ in tqdm(myzip.namelist()):
-                    myzip.extractall(tmp)
-                os.unlink(temp_filename)
-                self.folder = tmp  # set folder to temp folder
-                self.__logger.debug(
-                    f"Extracted {temp_filename} to {tmp}, set folder to {tmp}"
-                )
-
-        try:
-            if read_from_temp is False:
-                # check if tmp folder exists
-                if tmp.is_dir():
-                    if overwrite is False:
-                        ask_to_make_folder = input(
-                            "Temp folder already exists. Overwrite? (y/n): "
-                        )
-                        if ask_to_make_folder.lower() == "y":
-                            print("Overwriting Temp Folder...")
-                            download_file_with_urllib3()
-                            extract_zipfile()
-                        else:
-                            as_to_change_folder = input(
-                                "Use temp folder as source? (y/n): "
-                            )
-                            if as_to_change_folder.lower() == "y":
-                                if tmp.glob("*.csv") == 0 and tmp.glob("*.zip") == 1:
-                                    print("No CSV files in temp folder. Found .zip file...")
-                                    print("Extracting .zip file...")
-                                    extract_zipfile()
-                                else:
-                                    self.folder = tmp  # set folder to temp folder
-                            else:
-                                print("Exiting...")
-                                sys.exit()
-                    else:
-                        self.__logger.info("Overwriting Temp Folder...")
-                        download_file_with_urllib3()
-                        self.__logger.info("Temp Folder Overwritten, extracting zip file...")
-                        extract_zipfile()
-                        self.__logger.info("Zip file extracted")
-                    
-                                
-
-                # else:
-                #     self.folder = tmp  # set folder to temp folder
-
-            # remove tmp folder if user cancels download
-        except KeyboardInterrupt:
-            print("Download Cancelled")
-            print("Removing Temp Folder...")
-            for file in tmp.iterdir():
-                file.unlink()
-            tmp.rmdir()
-            print("Temp Folder Removed")
-        return None
-
-    def read(self):
-        self.folder = self._tmp
-
-    def __post_init__(self):
-        TECFileDownloader.__logger = Logger(self.__class__.__name__)
-        self.init()
-        self.check_if_folder_exists()
-
-
 @dataclass
 class TECCategory:
     category: str
     records: Generator[Dict, None, None] = field(init=False)
-    validation: StateFileValidation = field(init=False)
-    validator: Type[validators.TECSettings] = field(init=False)
-    config: StateCampaignFinanceConfigs = field(init=False)
-    _files: Optional[Generator[Path, Any, None]] = None
+    record_count: int = field(init=False, default=0)
+    validation: funcs.StateFileValidation = field(init=False)
+    config: StateCampaignFinanceConfigClass = field(init=False)
+    _files: Optional[List[Path]] = None
     __logger: Logger = field(init=False)
 
     def __repr__(self):
@@ -334,8 +107,8 @@ class TECCategory:
 
     def __post_init__(self):
         self.init()
-        self.create_file_list()
-        self.get_validators()
+        self._create_file_list()
+        self.validation = funcs.StateFileValidation(validator_used=self.get_validator())
 
     @property
     def logger(self):
@@ -343,73 +116,128 @@ class TECCategory:
         return self.__logger
 
     @inject.autoparams()
-    def create_file_list(self, config: StateCampaignFinanceConfigs) -> Generator[Path, Any, None]:
-        if self.category == "expenses":
-            self._files = (
-                x for x in generate_file_list(config.TEMP_FOLDER)
-                if x.name.startswith(config.EXPENSE_FILE_PREFIX))
-        elif self.category == "contributions":
-            self._files = (
-                x for x in generate_file_list(config.TEMP_FOLDER)
-                if x.name.startswith(config.CONTRIBUTION_FILE_PREFIX))
-        elif self.category == "filers":
-            self._files = (
-                x for x in generate_file_list(config.TEMP_FOLDER)
-                if x.name.startswith(config.FILERS_FILE_PREFIX))
-        elif self.category == "reports":
-            self._files = (
-                x for x in generate_file_list(config.TEMP_FOLDER)
-                if x.name.startswith(config.REPORTS_FILE_PREFIX))
+    def _create_file_list(self, config: StateCampaignFinanceConfigClass) -> CategoryFileList:
+        """
+        Create a list of files based on the category.
+        :param config: StateCampaignFinanceConfigs object
+        :return: Generator[Path, Any, None]
+        """
+        _, contains_prefix = generate_file_list(config.TEMP_FOLDER)
+        match self.category:
+            case "expenses":
+                self._files = contains_prefix(config.EXPENSE_FILE_PREFIX)
+            case "contributions":
+                self._files = contains_prefix(config.CONTRIBUTION_FILE_PREFIX)
+            case "filers":
+                self._files = contains_prefix(config.FILERS_FILE_PREFIX)
+            case "reports":
+                self._files = contains_prefix(config.REPORTS_FILE_PREFIX)
+            case "travel":
+                self._files = contains_prefix(config.TRAVEL_FILE_PREFIX)
+            case "candidates":
+                self._files = contains_prefix(config.CANDIDATE_FILE_PREFIX)
+            case "debts":
+                self._files = contains_prefix(config.DEBT_FILE_PREFIX)
         return self._files
 
-    def get_validators(self) -> Type[validators.TECSettings]:
-        if self.category == "expenses":
-            self.validator = validators.TECExpense
-        elif self.category == "contributions":
-            self.validator = validators.TECContribution
-        elif self.category == "filers":
-            self.validator = validators.TECFiler
-        elif self.category == 'reports':
-            self.validator = validators.TECFinalReport
-        else:
-            raise ValueError(f"Invalid category: {self.category}")
-        return self.validator
+    def get_validator(self) -> TexasValidatorType:
+        """
+        Get the validator based on the category.
+        :return: Type[validators.TECSettings]
+        """
+        match self.category:
+            case "expenses":
+                validator = validators.TECExpense
+            case "contributions":
+                validator = validators.TECContribution
+            case "filers":
+                validator = validators.TECFiler
+            case 'reports':
+                validator = validators.TECFinalReport
+            case 'travel':
+                validator = validators.TECTravelData
+            case 'candidates':
+                validator = validators.CandidateData
+            case 'debts':
+                validator = validators.DebtData
+            case _:
+                raise ValueError(f"Invalid category: {self.category}")
+        return validator
 
     def read(self) -> Generator[Dict, None, None]:
-        self.records = (
-            record for file in list(self._files) for record in funcs.FileReader.read_file(file)
+        """
+        Read the files based on the category.
+        :return: Generator[Dict, None, None]
+        """
+        pbar = Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            MofNCompleteColumn()
         )
-        # if self.category == "filers":
-        #     records = merge_filer_names(records)
-        return self.records
+        file_reader = funcs.FileReader()
+        file_list = list(self._files)
+        folder_task = pbar.add_task(f"[cyan]Reading {self.category.title()} Files...", total=len(file_list))
+        with pbar as progress:
 
-    def load(self) -> List[Dict]:
-        return list(x for x in self.read())
+            for _file in file_list:
+                file_task = progress.add_task(f"[yellow]Reading {_file.stem}...", total=None)
+                for record in file_reader.read_csv(_file):
+                    file_reader.record_count += 1
+                    yield record
+                    progress.update(file_task, advance=1)
+
+                progress.update(file_task, completed=file_reader.record_count)
+                progress.advance(folder_task)
+            progress.stop_task(folder_task)
+
+        # for _file in tqdm(_file_list, desc=f"Reading {self.category.title()} Files", position=0, total=len(_file_list)):
+        #     for record in file_reader.read_csv(_file):
+        #         file_reader.record_count += 1
+        #         yield record
+
+    def load(self) -> Iterable[Dict]:
+        """
+        Load the records locally as an iterator.
+        :return: Iterable[Dict]
+        """
+        return iter(x for x in self.read())
 
     def validate(self,
-                 records: Generator[Dict, None, None] = None,
-                 validator: Type[SQLModel] = None
-                 ) -> StateFileValidation:
+                 records: FileRecords = None,
+                 ) -> tuple[Iterator[SQLModel], Iterator[dict]]:
+        """
+        Validate the records based on the category.
+        :param records: Generator[Dict, None, None]
+        :return: StateFileValidation
+        """
         if not records:
-            records = self.records
+            records = self.read()
 
-        if not validator:
-            validator = self.validator
+        self.validation.passed = self.validation.passed_records(records)
+        self.validation.failed = self.validation.failed_records(records)
+        return self.validation.passed, self.validation.failed
 
-        self.validation = StateFileValidation()
-        return self.validation.validate(records=records, validator=validator)
-    
     @inject.autoparams()
-    def write_to_csv(self, records, validation_status):
-        funcs.write_records_to_csv(
+    def write_to_csv(self, records, validation_status, config: StateCampaignFinanceConfigClass):
+        funcs.write_records_to_csv_validation(
             records=records,
-            folder_path=StateCampaignFinanceConfigs.TEMP_FOLDER,
+            folder_path=config.TEMP_FOLDER,
             record_type=self.category,
             validation_status=validation_status
         )
         return self
 
     @inject.autoparams()
-    def load_to_db(self, records: Generator[Dict, None, None], session: Session) -> None:
-        session.add_all(records)
-        session.commit()
+    def load_to_db(self, records: Iterator[Type[TexasValidatorType]], **kwargs) -> None:
+        _db_loader = DBLoader(engine=engine)
+        if kwargs.get("create_table") is True:
+            _db_loader.create_all()
+        self.logger.info(f"Loading {self.category} records to database")
+        _db_loader.add(
+            self.read() if not records else records,
+            record_type=self.validation.validator_used,
+            add_limit=kwargs.get("limit", None)
+        )
+        return None

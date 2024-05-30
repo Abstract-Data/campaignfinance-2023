@@ -12,7 +12,7 @@ STRING_PLACEHOLDER = str
 FOLDER_PATH_PLACEHOLDER = Path
 
 @dataclass
-class StateCampaignFinanceConfigs(Protocol):
+class StateCampaignFinanceConfigClass(Protocol):
     STATE: ClassVar[str]
     STATE_ABBREVIATION: ClassVar[str]
     TEMP_FOLDER: ClassVar[Path] = None
@@ -37,6 +37,10 @@ class StateCampaignFinanceConfigs(Protocol):
     FILERS_FILE_PREFIX: ClassVar[str] = None
 
     REPORTS_FILE_PREFIX: ClassVar[str] = None
+    TRAVEL_FILE_PREFIX: ClassVar[str] = None
+    CANDIDATE_FILE_PREFIX: ClassVar[str] = None
+    DEBT_FILE_PREFIX: ClassVar[str] = None
+    LOAN_FILE_PREFIX: ClassVar[str] = None
 
     STATE_CAMPAIGN_FINANCE_AGENCY: ClassVar[str]
     ZIPFILE_URL: ClassVar[str]

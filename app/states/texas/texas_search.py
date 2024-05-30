@@ -1,4 +1,4 @@
-from states.texas.database import SessionLocal
+from states.texas.texas_database import SessionLocal
 import pandas as pd
 from states.texas.models import TECFilerRecord, TECExpenseRecord, TECContributionRecord
 from dataclasses import dataclass, field

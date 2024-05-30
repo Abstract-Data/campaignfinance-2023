@@ -1,4 +1,6 @@
 {
     "terminal.integrated.cwd": "app",
-    "python.analysis.autoImportCompletions": true
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.extraPaths": ["${workspaceFolder}"],
+    "python.pythonPath": ".venv/bin/python3"
 }

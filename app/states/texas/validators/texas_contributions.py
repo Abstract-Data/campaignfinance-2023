@@ -4,96 +4,256 @@ from pydantic import field_validator, model_validator
 from sqlmodel import SQLModel, Field
 from pydantic_core import PydanticCustomError
 from states.texas.validators.texas_settings import TECSettings
+import funcs.validator_functions as funcs
+import states.texas.funcs.tx_validation_funcs as tx_funcs
 
 
 class TECContribution(TECSettings, table=True):
     __tablename__ = "tx_contributions"
     __table_args__ = {"schema": "texas"}
-    recordType: str
-    formTypeCd: str
-    schedFormTypeCd: str
-    reportInfoIdent: int
-    receivedDt: date
-    infoOnlyFlag: Optional[bool] = None
-    filerIdent: int
-    filerTypeCd: str
-    filerName: str
-    contributionInfoId: int = Field(primary_key=True)
-    contributionDt: date
-    contributionAmount: float
-    contributionDescr: Optional[str] = None
-    itemizeFlag: Optional[bool] = None
-    travelFlag: Optional[bool] = None
-    contributorPersentTypeCd: str = Field(...,
-        description="Type of contributor name data - INDIVIDUAL or ENTITY"
+    id: Optional[str] = Field(
+        default=None,
+        description="Unique identifier")
+    recordType: str = Field(
+        ...,
+        description="Record type code - always RCPT"
     )
-    contributorNameOrganization: Optional[str] = Field(default=None,
+    formTypeCd: str = Field(
+        ...,
+        description="TEC form used"
+    )
+    schedFormTypeCd: str = Field(
+        ...,
+        description="TEC Schedule Used"
+    )
+    reportInfoIdent: int = Field(
+        ...,
+        description="Unique report #"
+    )
+    receivedDt: date = Field(
+        ...,
+        description="Date report received by TEC"
+    )
+    infoOnlyFlag: Optional[bool] = Field(
+        default=None,
+        description="Superseded by other report"
+    )
+    filerIdent: int = Field(
+        ...,
+        description="Filer account #"
+    )
+    filerTypeCd: str = Field(
+        ...,
+        description="Type of filer"
+    )
+    filerName: str = Field(
+        ...,
+        description="Filer name"
+    )
+    contributionInfoId: int = Field(
+        primary_key=True,
+        description="Contribution unique identifier"
+    )
+    contributionDt: date = Field(
+        ...,
+        description="Contribution date"
+    )
+    contributionAmount: float = Field(
+        ...,
+        description="Contribution amount"
+    )
+    contributionDescr: Optional[str] = Field(
+        default=None,
+        description="Contribution description"
+    )
+    itemizeFlag: Optional[bool] = Field(
+        default=None,
+        description="Y indicates that the contribution is itemized"
+    )
+    travelFlag: Optional[bool] = Field(
+        default=None,
+        description="Y indicates that the contribution has associated travel"
+    )
+    contributorPersentTypeCd: str = Field(...,
+                                          description="Type of contributor name data - INDIVIDUAL or ENTITY"
+                                          )
+    contributorNameOrganization: Optional[str] = Field(
+        default=None,
         description="For ENTITY, the contributor organization name"
     )
-    contributorNameLast: Optional[str] = Field(default=None,
+    contributorNameLast: Optional[str] = Field(
+        default=None,
         description="For INDIVIDUAL, the contributor last name"
     )
-    contributorNameSuffixCd: Optional[str] = Field(default=None,
+    contributorNameSuffixCd: Optional[str] = Field(
+        default=None,
         description="For INDIVIDUAL, the contributor suffix"
     )
-    contributorNameFirst: Optional[str] = Field(default=None,
+    contributorNameFirst: Optional[str] = Field(
+        default=None,
         description="For INDIVIDUAL, the contributor first name"
     )
-    contributorNamePrefixCd: Optional[str] = Field(default=None,
+    contributorNamePrefixCd: Optional[str] = Field(
+        default=None,
         description="For INDIVIDUAL, the contributor prefix"
     )
-    contributorNameShort: Optional[str] = Field(default=None,
+    contributorNameShort: Optional[str] = Field(
+        default=None,
         description="For INDIVIDUAL, the contributor short name (nickname)"
     )
-    contributorStreetCity: Optional[str] = Field(default=None,
+    contributorNameFull: Optional[str] = Field(
+        default=None,
+        description="For INDIVIDUAL, the contributor full name"
+    )
+    contributorStreetCity: Optional[str] = Field(
+        default=None,
         description="The contributor street address city"
     )
-    contributorStreetStateCd: Optional[str] = Field(default=None,
+    contributorStreetStateCd: Optional[str] = Field(
+        default=None,
         description="Contributor street address - state code (e.g. TX, CA) - for  \
-     country=USA/UMI only")
-
-    contributorStreetCountyCd: Optional[str] = None
-    contributorStreetCountryCd: Optional[str] = None
-    contributorStreetPostalCode: Optional[str] = None
-    contributorStreetRegion: Optional[str] = None
-    contributorEmployer: Optional[str] = None
-    contributorOccupation: Optional[str] = None
-    contributorJobTitle: Optional[str] = None
+     country=USA/UMI only"
+    )
+    contributorStreetCountyCd: Optional[str] = Field(
+        default=None,
+        description="Contributor street address - Texas county")
+    contributorStreetCountryCd: Optional[str] = Field(
+        default=None,
+        description="Contributor street address - country (e.g. USA, UMI, MEX, CAN)"
+    )
+    contributorStreetPostalCode: Optional[str] = Field(
+        default=None,
+        description="Contributor street address - postal code - for USA addresses only"
+    )
+    contributorStreetRegion: Optional[str] = Field(
+        default=None,
+        description="Contributor street address - region for country other than USA"
+    )
+    contributorEmployer: Optional[str] = Field(
+        default=None,
+        description="Contributor employer"
+    )
+    contributorOccupation: Optional[str] = Field(
+        default=None,
+        description="Contributor occupation"
+    )
+    contributorJobTitle: Optional[str] = Field(
+        default=None,
+        description="Contributor job title"
+    )
     contributorPacFein: Optional[str] = Field(
-                description="Indicates if contributor is an out-of-state PAC",
-            )
-    contributorOosPacFlag: Optional[bool] = None
-    contributorLawFirmName: Optional[str] = None
-    contributorSpouseLawFirmName: Optional[str] = None
-    contributorParent1LawFirmName: Optional[str] = None
-    contributorParent2LawFirmName: Optional[str] = None
-    file_origin: str
+        description="FEC ID of out-of-state PAC contributor",
+    )
+    contributorOosPacFlag: Optional[bool] = Field(
+        default=None,
+        description="Indicates if contributor is an out-of-state PAC "
+    )
+    contributorLawFirmName: Optional[str] = Field(
+        default=None,
+        description="Contributor law firm name"
+    )
+    contributorSpouseLawFirmName: Optional[str] = Field(
+        default=None,
+        description="Contributor spouse law firm name"
+    )
+    contributorParent1LawFirmName: Optional[str] = Field(
+        default=None,
+        description="Contributor parent #1 law firm name"
+    )
+    contributorParent2LawFirmName: Optional[str] = Field(
+        default=None,
+        description="Contributor parent #2 law firm name"
+    )
+    file_origin: str = Field(
+        ...,
+        description="The file origin of the data"
+    )
+    download_date: date = Field(
+        ...,
+        description="The date the data was downloaded"
+    )
+
     # filer_id: Optional[int]
     # filers: Optional[List]
 
     @model_validator(mode="before")
     @classmethod
-    def _clear_empty_values(cls, values):
-        for key, value in values.items():
-            if value == "":
-                values[key] = None
+    def clear_blank_strings(cls, values):
+        """
+        Clear out all blank strings or ones that contain 'null' from records.
+        :param cls:
+        :param values:
+        :return:
+        """
+        for k, v in values.items():
+            if v in ["", '"', "null"]:
+                values[k] = None
         return values
 
+    # clear_blank_strings = model_validator(mode='before')(funcs.clear_blank_strings)
+    check_dates = model_validator(mode='before')(tx_funcs.validate_dates)
+    check_zipcodes = model_validator(mode='before')(tx_funcs.check_zipcodes)
+    check_phone_numbers = model_validator(mode='before')(tx_funcs.phone_number_validation)
+    check_address_format = model_validator(mode='before')(tx_funcs.address_formatting)
+
+    # @model_validator(mode="before")
+    # @classmethod
+    # def _check_state_code(cls, values):
+    #     if "contributorStreetCountryCd" not in values:
+    #         return values
+    #     if values["contributorStreetCountryCd"] == "USA":
+    #         if not values["contributorStreetPostalCode"]:
+    #             raise PydanticCustomError(
+    #                 'state_code_check',
+    #                 "contributorStreetPostalCode is required for USA contributorStreetCountryCd",
+    #                 {
+    #                     'column': 'contributorStreetPostalCode',
+    #                     'value': values["contributorStreetPostalCode"]
+    #                 }
+    #             )
+    #     elif values["contributorStreetCountryCd"] != "UMI":
+    #         if not values["contributorStreetRegion"]:
+    #             raise PydanticCustomError(
+    #                 'state_code_check',
+    #                 "contributorStreetRegion is required for non-USA country",
+    #                 {
+    #                     'column': 'contributorStreetRegion',
+    #                     'value': values["contributorStreetRegion"]
+    #                 }
+    #             )
+    #     else:
+    #         pass
+    #         # raise PydanticCustomError(
+    #         #     'state_code_check',
+    #         #     "contributorStreetCountryCd not valid",
+    #         #     {
+    #         #         'column': 'contributorStreetCountryCd',
+    #         #         'value': values["contributorStreetCountryCd"]
+    #         #     }
+    #         # )
+    #     return values
+
+    # @model_validator(mode="before")
+    # @classmethod
+    # def copy_sos_fullname_first_and_last(cls, values):
+    #     if values["contributorNameFull"]:
+    #         values["sosContributorNameFull"] = values["contributorNameFull"]
+    #
+    #     if values['contributorNameLast']:
+    #         values['sosContributorNameLast'] = values['contributorNameLast']
+    #
+    #     if values['contributorNameFirst']:
+    #         values['sosContributorNameFirst'] = values['contributorNameFirst']
+    #     return values
+    #
     @model_validator(mode="before")
     @classmethod
-    def add_filer_id(cls, values):
-        values["filer_id"] = values["filerIdent"]
-        # values["expenses_id"] = values["filerIdent"]
-        return values
+    def format_contributor_name(cls, values):
+        if values["contributorPersentTypeCd"] == "INDIVIDUAL":
+            if values["contributorNameLast"] and values["contributorNameFirst"]:
+                values["contributorNameFull"] = f"{values['contributorNameFirst']} {values['contributorNameLast']}"
 
-    @field_validator("contributionDt", "receivedDt", mode="before")
-    @classmethod
-    def _check_expend_date(cls, value):
-        if value:
-            if isinstance(value, str):
-                return date(
-                    int(str(value[:4])), int(str(value[4:6])), int(str(value[6:8]))
-                )
+        return values
 
     @model_validator(mode="before")
     @classmethod
@@ -103,50 +263,34 @@ class TECContribution(TECSettings, table=True):
                 raise PydanticCustomError(
                     'individual_field_check',
                     "contributorNameLast is required for INDIVIDUAL contributorPersentTypeCd",
-                    {'value': values["contributorNameLast"]}
+                    {
+                        'column': 'contributorNameLast',
+                        'value': values["contributorNameLast"]}
                 )
-            if not values["contributorNameFirst"]:
-                raise PydanticCustomError(
-                    'individual_field_check',
-                    "contributorNameFirst is required for INDIVIDUAL contributorPersentTypeCd",
-                    {'value': values["contributorNameFirst"]}
-                )
+            # if not values["contributorNameFirst"]:
+            #     raise PydanticCustomError(
+            #         'individual_field_check',
+            #         "contributorNameFirst is required for INDIVIDUAL contributorPersentTypeCd",
+            #         {
+            #             'column': 'contributorNameFirst',
+            #             'value': values["contributorNameFirst"]}
+            #     )
         elif values["contributorPersentTypeCd"] == "ENTITY":
             if not values["contributorNameOrganization"]:
                 raise PydanticCustomError(
                     'individual_field_check',
                     "contributorNameOrganization is required for ENTITY contributorPersentTypeCd",
-                    {'value': values["contributorNameOrganization"]}
+                    {
+                        'column': 'contributorNameOrganization',
+                        'value': values["contributorNameOrganization"]}
                 )
         else:
-            raise PydanticCustomError(
-                'individual_field_check',
-                "contributorPersentTypeCd must be INDIVIDUAL or ENTITY",
-                {'value': values["contributorPersentTypeCd"]}
-            )
-        return values
-
-    @model_validator(mode="before")
-    @classmethod
-    def _check_state_code(cls, values):
-        if values["contributorStreetCountryCd"] == "USA":
-            if not values["contributorStreetPostalCode"]:
-                raise PydanticCustomError(
-                    'state_code_check',
-                    "contributorStreetPostalCode is required for USA contributorStreetCountryCd",
-                    {'value': values["contributorStreetPostalCode"]}
-                )
-        elif values["contributorStreetCountryCd"] != "UMI":
-            if not values["contributorStreetRegion"]:
-                raise PydanticCustomError(
-                    'state_code_check',
-                    "contributorStreetRegion is required for non-USA country",
-                    {'value': values["contributorStreetRegion"]}
-                )
-        else:
-            raise PydanticCustomError(
-                'state_code_check',
-                "contributorStreetCountryCd not valid",
-                {'value': values["contributorStreetCountryCd"]}
-            )
+            # raise PydanticCustomError(
+            #     'individual_field_check',
+            #     "contributorPersentTypeCd must be INDIVIDUAL or ENTITY",
+            #     {
+            #         'column': 'contributorPersentTypeCd',
+            #         'value': values["contributorPersentTypeCd"]}
+            # )
+            pass
         return values

@@ -13,5 +13,4 @@ class OklahomaSettings(SQLModel):
         populate_by_name=True,
         str_strip_whitespace=True,
         str_to_upper=True,
-        from_attributes=True,
     )
