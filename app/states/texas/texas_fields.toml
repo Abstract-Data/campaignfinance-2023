@@ -1,10 +1,12 @@
 # texas_fields.toml
-
-[filers]
-prefixes = ['filer', 'treas', 'assttreas', 'chair']
-add_on.name = 'Name'
-add_on.organization = 'NameOrganization'
-add_on.address.street = ['StreetAddr1', 'StreetAddr2']
-add_on.address.mailing = ['MailingAddr1', 'MailingAddr2']
-ends_with.address.zipcode = 'PostalCode'
-ends_with.phone = 'PhoneNumber'
+[urls]
+    campaign-finance-zip = "https://ethics.state.tx.us/data/search/cf/TEC_CF_CSV.zip"
+[file-prefixes]
+    expenses="expend"
+    contributions="contrib"
+    filers = "filer"
+    reports = "finals"
+    travel = "travel"
+    candidates = "cand"
+    debts = "debts"
+    loans = "loans"

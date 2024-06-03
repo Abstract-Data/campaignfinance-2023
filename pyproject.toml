@@ -37,6 +37,8 @@ uszipcode = "^1.0.1"
 datamodel-code-generator = "^0.25.6"
 snowflake-snowpark-python = "^1.17.0"
 snowflake-connector-python = "^3.10.1"
+pydantic-settings = "^2.2.1"
+onepassword = {git = "ssh://git@github.com/1Password/onepassword-sdk-python.git", rev = "v0.1.0-beta.9"}
 
 
 [tool.poetry.group.dev.dependencies]

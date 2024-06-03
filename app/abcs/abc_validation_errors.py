@@ -4,6 +4,8 @@ from typing import List, Dict, Optional
 import pandas as pd
 from icecream import ic
 
+ic.configureOutput(prefix='abc_validation_errors|')
+
 
 class RecordValidationError(BaseModel):
     id: int
@@ -41,7 +43,6 @@ class ValidationErrorList(BaseModel):
                     id=self.error_count,
                     err_num=record_errors,
                 )
-                ic(_error_validator)
                 record_error_list.append(
                     _error_validator
                 )
@@ -57,7 +58,7 @@ class ValidationErrorList(BaseModel):
             self.add_record_errors(record)
         return self
 
-    def error_dataframe(self) -> pd.DataFrame | ic:
+    def _error_dataframe(self) -> pd.DataFrame | ic:
         _errors = [dict(error) for error in self.errors]
         if not _errors:
             return
@@ -68,8 +69,8 @@ class ValidationErrorList(BaseModel):
         )
         return df
 
-    def error_summary(self, error_dataframe: pd.DataFrame = None) -> pd.crosstab:
-        df = self.error_dataframe() if not error_dataframe else error_dataframe
+    def _error_summary(self, error_dataframe: pd.DataFrame = None) -> pd.crosstab:
+        df = self._error_dataframe() if not error_dataframe else error_dataframe
         df_counts = pd.crosstab(
             index=[df['validator'], df['column']],
             columns=df['type'],
@@ -82,13 +83,13 @@ class ValidationErrorList(BaseModel):
         return self.summary
 
     def show_errors(self):
-        summary = self.error_summary()
+        summary = self._error_summary()
         if summary is None:
             ic('No errors found')
             return
         validator_list = summary.index.get_level_values(0).unique()
-        print(f'Error Summary for {validator_list[0]}')
-        print(summary)
+        ic(f'Error Summary for {validator_list[0]}')
+        ic(summary)
 
     def to_df(self) -> pd.DataFrame | object:
         return self.summary if self.summary is not None else ic('No errors found')

@@ -6,10 +6,12 @@ from sqlmodel import SQLModel
 import csv
 from tqdm import tqdm
 from pydantic import ValidationError
-from funcs.validation_errors import ValidationErrorList
+from abcs.abc_validation_errors import ValidationErrorList
 from funcs.validator_functions import create_record_id
 from logger import Logger
+from icecream import ic
 
+ic.configureOutput(prefix='abc_validation|')
 
 ValidatorType = Type[SQLModel]
 PassedRecord = Tuple[str, SQLModel]
@@ -21,9 +23,9 @@ PassedFailedRecordList = Tuple[PassedRecordList, FailedRecordList]
 
 
 @dataclass
-class StateFileValidationClass(abc.ABC):
+class StateFileValidation(abc.ABC):
+    validator_to_use: ValidatorType
     _logger: Logger = None
-    validator_used: ValidatorType = None
     passed: PassedRecordList = None
     failed: FailedRecordList = None
     errors: ValidationErrorList = ValidationErrorList()
@@ -35,25 +37,24 @@ class StateFileValidationClass(abc.ABC):
 
     def validate_record(self, record: Dict) -> PassedFailedIndividualRecord:
         try:
-            _record = self.validator_used.model_validate(record)
+            _record = self.validator_to_use.model_validate(record)
             _record.id = create_record_id(_record)
             return 'passed', _record
         except ValidationError as e:
-            record['error'] = e.errors()
-            record['validator'] = self.validator_used.__name__
+            _errors = e.errors()
+            for error in _errors:
+                error['validator'] = self.validator_to_use.__name__
+            record['error'] = _errors
             self.errors.add_record_errors(record)
             return 'failed', record
 
     def validate(self, records: Generator[Dict, None, None]) -> Generator[PassedFailedIndividualRecord, None, None]:
-        validator = self.validator_used
+        validator = self.validator_to_use
 
-        def validate_all() -> Generator[PassedFailedIndividualRecord, None, None]:
-            self.logger.info(f"Started {validator.__name__} validation")
-            for record in records:
-                result = self.validate_record(record)
-                yield result
-
-        return validate_all()
+        self.logger.info(f"Started {validator.__name__} validation")
+        for record in tqdm(records, desc=f"Validating {validator.__name__}", unit='records', leave=True, mininterval=1):
+            result = self.validate_record(record)
+            yield result
 
     def passed_records(self, records: Generator[Dict, None, None]) -> Generator[SQLModel, None, None]:
         for status, record in self.validate(records):
@@ -66,6 +67,8 @@ class StateFileValidationClass(abc.ABC):
                 yield record
 
     def _create_error_report(self) -> ValidationErrorList:
+        if not self.failed:
+            ic("No failed records found")
         if self.failed:
             self.failed, fails = itertools.tee(self.failed, 2)
             self.errors.create_error_list(list(fails))

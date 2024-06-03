@@ -11,7 +11,7 @@ def validate_dates(cls, values):
                     values[key] = datetime.strptime(value, "%Y%m%d").date()
                 except ValueError:
                     raise PydanticCustomError(
-                        'date_check',
+                        'bad_date_format',
                         f"{value} must be in YYYYMMDD format",
                         {
                             'column': key,
@@ -49,6 +49,7 @@ def check_zipcodes(cls, values):
             formatted_zip = funcs.format_zipcode(column=key, zipcode=value)
             values[key] = formatted_zip
     return values
+
 
 def phone_number_validation(cls, values):
     for key, value in values.items():

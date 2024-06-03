@@ -1,26 +1,24 @@
-# from sqlalchemy import create_engine, MetaData
-# from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from sqlmodel import create_engine, Session, SQLModel
-from dotenv import load_dotenv
-import os
-from pathlib import Path
+from sqlmodel import create_engine
+from op import OnePasswordItem
 
 """ Database connection notes:
 - Must use psycopg2-binary for postgresql
 - Must use snowflake.sqlalchemy for snowflake
 """
-path = Path(__file__).parent / "texas.env"
-print(path)
-load_dotenv(path)
-
-LOCAL_POSTGRES_USR = os.environ["LOCAL_POSTGRES_USR"]
-
-LOCAL_POSTGRES_PWD = os.environ["LOCAL_POSTGRES_PWD"]
-
-LOCAL_DATABASE_URL = f"postgresql://{LOCAL_POSTGRES_USR}:{LOCAL_POSTGRES_PWD}@localhost:5432/campaignfinance"
 
 
-engine = create_engine(LOCAL_DATABASE_URL, pool_size=200, echo=True)
+def create_connection():
+    return create_engine(
+        OnePasswordItem(
+            name="Database - Local Postgres")
+        .database_url
+        .get_secret_value(),
+        pool_size=200,
+        echo=True
+    )
+
+
+local_postgres_engine = create_connection()
 
 # SessionLocal: sessionmaker = sessionmaker(
 #     autocommit=False, autoflush=False, bind=engine

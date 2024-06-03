@@ -12,46 +12,23 @@ import ssl
 import urllib.request
 from logger import Logger
 from abcs import (
-    StateCampaignFinanceConfigClass,
-    FileDownloader,
+    FileDownloaderABC, StateConfig
 )
-from .texas_configs import TexasConfigs
-
-
-def download_base_config(binder):
-    binder.bind(StateCampaignFinanceConfigClass, TexasConfigs)
 
 
 @dataclass
-class TECFileDownloader(FileDownloader):
-    _configs: ClassVar[StateCampaignFinanceConfigClass]
-    _folder: Path = TexasConfigs.TEMP_FOLDER
-    __logger: Logger = field(init=False)
-
-    def init(self):
-        inject.configure(download_base_config)
-
-    @property
-    def folder(self) -> StateCampaignFinanceConfigClass.TEMP_FOLDER:
-        return self._folder
-
-    @folder.setter
-    def folder(self, value: Path) -> None:
-        self._folder = value
-
-    @property
-    def _tmp(self) -> Path:
-        return self.folder if self.folder else StateCampaignFinanceConfigClass.TEMP_FOLDER
+class TECDownloader(FileDownloaderABC):
+    config: StateConfig
 
     @classmethod
-    def download_file_with_requests(cls, config: StateCampaignFinanceConfigClass) -> None:
+    def download_file_with_requests(cls) -> None:
         # download files
-        with requests.get(config.ZIPFILE_URL, stream=True) as resp:
+        with requests.get(cls.config.DOWNLOAD_CONFIG.ZIPFILE_URL, stream=True) as resp:
             # check header to get content length, in bytes
             total_length = int(resp.headers.get("Content-Length"))
 
             # Chunk download of zip file and write to temp folder
-            with open(config.TEMP_FILENAME, "wb") as f:
+            with open(cls.config.DOWNLOAD_CONFIG.TEMP_FILENAME, "wb") as f:
                 for chunk in tqdm(
                         resp.iter_content(chunk_size=1024),
                         total=round(total_length / 1024, 2),
@@ -63,38 +40,19 @@ class TECFileDownloader(FileDownloader):
                 print("Download Complete")
             return None
 
-    def check_if_folder_exists(self) -> Path:
-        self.__logger.info(f"Checking if {self.folder} exists...")
-        if self.folder.exists():
-            return self.folder
-
-        self.__logger.debug(f"{self.folder} does not exist...")
-        self.__logger.debug(f"Throwing input prompt...")
-        _create_folder = input("Temp folder does not exist. Create? (y/n): ")
-        self.__logger.debug(f"User input: {_create_folder}")
-        if _create_folder.lower() == "y":
-            self.folder.mkdir()
-            return self.folder
-        else:
-            print("Exiting...")
-            self.__logger.info("User selected 'n'. Exiting...")
-            sys.exit()
-
-    @inject.params(read_from_temp=False, overwrite=True, config=StateCampaignFinanceConfigClass)
     def download(
             self,
-            config: StateCampaignFinanceConfigClass,
-            read_from_temp: bool,
-            overwrite: bool
-    ) -> None:
-        tmp = self._tmp
-        temp_filename = tmp / "TEC_CF_CSV.zip"
+            overwrite: bool,
+            read_from_temp: bool
+    ) -> TECDownloader:
+        tmp = self.config.TEMP_FOLDER
+        temp_filename = self.config.DOWNLOAD_CONFIG.TEMP_FILENAME
 
         self.__logger.info(f"Setting temp filename to {temp_filename} in download func")
 
         def download_file_with_requests() -> None:
             # download files
-            with requests.get(config.ZIPFILE_URL, stream=True) as resp:
+            with requests.get(self.config.DOWNLOAD_CONFIG.ZIPFILE_URL, stream=True) as resp:
                 # check header to get content length, in bytes
                 total_length = int(resp.headers.get("Content-Length"))
 
@@ -113,7 +71,7 @@ class TECFileDownloader(FileDownloader):
 
         def download_file_with_urllib3() -> None:
             self.__logger.info(
-                f"Downloading {config.STATE_CAMPAIGN_FINANCE_AGENCY} Files..."
+                f"Downloading {self.config.STATE_NAME.title()} Campaign Finance Files..."
             )
             ssl_context = ssl.create_default_context()
             ssl_context.options |= ssl.OP_CIPHER_SERVER_PREFERENCE
@@ -122,14 +80,14 @@ class TECFileDownloader(FileDownloader):
             ssl_context.verify_mode = ssl.CERT_NONE
             self.__logger.info(f"SSL Context: {ssl_context}")
             self.__logger.debug(
-                f"Downloading {config.STATE_CAMPAIGN_FINANCE_AGENCY} Files..."
+                f"Downloading {self.config.STATE_NAME.title()} Campaign Finance Files..."
             )
 
             opener = urllib.request.build_opener(
                 urllib.request.HTTPSHandler(context=ssl_context)
             )
             urllib.request.install_opener(opener)
-            urllib.request.urlretrieve(config.ZIPFILE_URL, temp_filename)
+            urllib.request.urlretrieve(self.config.DOWNLOAD_CONFIG.ZIPFILE_URL, temp_filename)
 
         def extract_zipfile() -> None:
             # extract zip file to temp folder
@@ -188,12 +146,10 @@ class TECFileDownloader(FileDownloader):
                 file.unlink()
             tmp.rmdir()
             print("Temp Folder Removed")
-        return None
+        return self
 
     def read(self):
-        self.folder = self._tmp
+        self.folder = self.config.TEMP_FOLDER
 
-    def __post_init__(self):
-        TECFileDownloader.__logger = Logger(self.__class__.__name__)
-        self.init()
-        self.check_if_folder_exists()
+    # def __post_init__(self):
+    #     self.check_if_folder_exists()
