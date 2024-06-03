@@ -1,10 +1,9 @@
-from datetime import date, datetime
-from typing import Optional, Annotated, List
+from datetime import date
+from typing import Optional
 from pydantic import field_validator, model_validator
-from sqlmodel import SQLModel, Field
+from sqlmodel import Field
 from pydantic_core import PydanticCustomError
 from states.texas.validators.texas_settings import TECSettings
-import funcs.validator_functions as funcs
 import states.texas.funcs.tx_validation_funcs as tx_funcs
 
 
@@ -245,7 +244,7 @@ class TECContribution(TECSettings, table=True):
     #     if values['contributorNameFirst']:
     #         values['sosContributorNameFirst'] = values['contributorNameFirst']
     #     return values
-    #
+
     @model_validator(mode="before")
     @classmethod
     def format_contributor_name(cls, values):
@@ -261,20 +260,12 @@ class TECContribution(TECSettings, table=True):
         if values["contributorPersentTypeCd"] == "INDIVIDUAL":
             if not values["contributorNameLast"]:
                 raise PydanticCustomError(
-                    'individual_field_check',
+                    'missing_required_value',
                     "contributorNameLast is required for INDIVIDUAL contributorPersentTypeCd",
                     {
                         'column': 'contributorNameLast',
                         'value': values["contributorNameLast"]}
                 )
-            # if not values["contributorNameFirst"]:
-            #     raise PydanticCustomError(
-            #         'individual_field_check',
-            #         "contributorNameFirst is required for INDIVIDUAL contributorPersentTypeCd",
-            #         {
-            #             'column': 'contributorNameFirst',
-            #             'value': values["contributorNameFirst"]}
-            #     )
         elif values["contributorPersentTypeCd"] == "ENTITY":
             if not values["contributorNameOrganization"]:
                 raise PydanticCustomError(
@@ -285,12 +276,19 @@ class TECContribution(TECSettings, table=True):
                         'value': values["contributorNameOrganization"]}
                 )
         else:
-            # raise PydanticCustomError(
-            #     'individual_field_check',
-            #     "contributorPersentTypeCd must be INDIVIDUAL or ENTITY",
-            #     {
-            #         'column': 'contributorPersentTypeCd',
-            #         'value': values["contributorPersentTypeCd"]}
-            # )
             pass
         return values
+
+    @field_validator('contributorPersentTypeCd', 'receivedDt', 'filerName', mode='before')
+    @classmethod
+    def validate_contributor_type(cls, v):
+        if not v:
+            raise PydanticCustomError(
+                'missing_required_value',
+                "contributorPersentTypeCd must be INDIVIDUAL or ENTITY",
+                {
+                    'column': 'contributorPersentTypeCd',
+                    'value': v
+                }
+            )
+        return v

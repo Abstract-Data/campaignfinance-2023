@@ -1,8 +1,7 @@
-from datetime import date, datetime
-from typing import Optional, List
-from nameparser import HumanName
+from datetime import date
+from typing import Optional
 from pydantic import field_validator, model_validator
-from sqlmodel import SQLModel, Field
+from sqlmodel import Field
 from pydantic_core import PydanticCustomError
 from states.texas.validators.texas_settings import TECSettings
 import funcs.validator_functions as funcs
@@ -66,7 +65,7 @@ class TECExpense(TECSettings, table=True):
         ...,
         description="Expenditure date"
     )
-    expendAmount: float = Field(
+    expendAmount: Optional[float]= Field(
         ...,
         description="Expenditure amount"
     )
@@ -103,7 +102,7 @@ class TECExpense(TECSettings, table=True):
         description="Corporate contribution indicator",
     )
     capitalLivingexpFlag: Optional[bool] = Field(
-        ...,
+        default=None,
         description="Austin living expense indicator",
     )
     payeePersentTypeCd: str = Field(
@@ -200,7 +199,7 @@ class TECExpense(TECSettings, table=True):
         if values["payeePersentTypeCd"] == "INDIVIDUAL":
             if not values["payeeNameLast"]:
                 raise PydanticCustomError(
-                    'payee_field_check',
+                    'missing_required_value',
                     "payeeNameLast is required for INDIVIDUAL payeePersentTypeCd",
                     {
                         'column': 'payeeNameLast',
@@ -209,7 +208,7 @@ class TECExpense(TECSettings, table=True):
                 )
             if not values["payeeNameFirst"]:
                 raise PydanticCustomError(
-                    'payee_field_check',
+                    'missing_required_value',
                     "payeeNameFirst is required for INDIVIDUAL payeePersentTypeCd",
                     {
                         'column': 'payeeNameFirst',
@@ -219,7 +218,7 @@ class TECExpense(TECSettings, table=True):
         elif values["payeePersentTypeCd"] == "ENTITY":
             if not values["payeeNameOrganization"]:
                 raise PydanticCustomError(
-                    'payee_field_check',
+                    'missing_required_value',
                     "payeeNameOrganization is required for ENTITY payeePersentTypeCd",
                     {
                         'column': 'payeeNameOrganization',
@@ -228,7 +227,7 @@ class TECExpense(TECSettings, table=True):
                 )
         else:
             raise PydanticCustomError(
-                'payee_field_check',
+                'incorrect_value',
                 "payeePersentTypeCd must be INDIVIDUAL or ENTITY",
                 {
                     'column': 'payeePersentTypeCd',
@@ -236,17 +235,6 @@ class TECExpense(TECSettings, table=True):
                 }
             )
         return values
-
-
-    # @model_validator(mode="before")
-    # @classmethod
-    # def _check_entity_or_individual(cls, values):
-    #     if not values["payeePersentTypeCd"] == "INDIVIDUAL":
-    #         if values["payeeNameFirst"] and values["payeeNameLast"]:
-    #             values["payeePersentTypeCd"] = "INDIVIDUAL"
-    #         else:
-    #             values["payeePersentTypeCd"] = "ENTITY"
-    #     return values
 
     @model_validator(mode="before")
     @classmethod
@@ -265,3 +253,17 @@ class TECExpense(TECSettings, table=True):
             values["payeeNameFull"] = payee_name.full_name
 
         return values
+
+    @field_validator('filerName', 'expendDescr', 'payeeStreetStateCd', 'expendDt', 'receivedDt', mode='before')
+    @classmethod
+    def validate_required_fields(cls, v):
+        if v == "" or v is None:
+            raise PydanticCustomError(
+                'missing_required_value',
+                "Field is required",
+                {
+                    'column': 'filerName',
+                    'value': v
+                }
+            )
+        return v

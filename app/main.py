@@ -1,12 +1,12 @@
 #! /usr/bin/env python3
 from __future__ import annotations
 from states.texas import (
-    TECFileDownloader,
-    TECCategory,
+    TexasCategory,
+    TexasDownloader,
     texas_validators as validators,
     texas_engine as engine,
 )
-from states.oklahoma import OklahomaCategory, oklahoma_validators, oklahoma_snowpark
+from states.oklahoma import OklahomaCategory, oklahoma_validators, oklahoma_snowpark_session
 
 from sqlmodel import select, SQLModel, text, within_group, Session, any_, col, and_, or_
 import pandas as pd
@@ -58,7 +58,7 @@ def sqlmodel_todict(records: Any) -> map:
 TEXAS CAMPAIGN FINANCE DATA LOADER
 
 
-# download = TECFileDownloader()
+# download = TexasDownloader()
 # download.download()
 # filers = TECCategory("filers")
 # contributions = TECCategory("contributions")
@@ -134,33 +134,53 @@ def upsert_records(category: TECCategory, _engine=engine):
             
 """
 
-ok_expenses = OklahomaCategory('expenses')
-ok_expenses.records = ok_expenses.read()
-expenses_passed_records = list(ok_expenses.validation.passed_records(ok_expenses.records))
-expenses_failed_records = list(ok_expenses.validation.failed_records(ok_expenses.records))
+filers = TexasCategory("filers")
+filers.read()
+filers.validation.passed = filers.validation.passed_records(filers.records)
+filers.validation.failed = list(filers.validation.failed_records(filers.records))
 
-ok_contributions = OklahomaCategory('contributions')
-ok_contributions.records = ok_contributions.read()
-contributions_passed_records = list(ok_contributions.validation.passed_records(ok_contributions.records))
-contributions_failed_records = list(ok_contributions.validation.failed_records(ok_contributions.records))
+contributions = TexasCategory("contributions")
+contributions.read()
+contributions.validation.passed = contributions.validation.passed_records(contributions.records)
+contributions.validation.failed = list(contributions.validation.failed_records(contributions.records))
 
-ok_lobby = OklahomaCategory('lobby')
-ok_lobby.records = ok_lobby.read()
-lobby_passed_records = list(ok_lobby.validation.passed_records(ok_lobby.records))
-lobby_failed_records = list(ok_lobby.validation.failed_records(ok_lobby.records))
-lobby_errors = ok_lobby.validation.show_errors()
+expenses = TexasCategory("expenses")
+expenses.read()
+expenses.validation.passed = expenses.validation.passed_records(expenses.records)
+expenses.validation.failed = list(expenses.validation.failed_records(expenses.records))
+expenses.validation.show_errors()
 
-session = oklahoma_snowpark.create()
+errors = expenses.validation.errors.summary
 
-expenses = list(sqlmodel_todict(expenses_passed_records))
-contributions = list(sqlmodel_todict(contributions_passed_records))
-lobby = list(sqlmodel_todict(lobby_passed_records))
+errors.to_csv(Path.home() / 'Downloads' / 'errors.csv')
+# reports = TexasCategory("reports")
+# travel = TECCategory("travel")
+# candidates = TECCategory("candidates")
+# debt = TECCategory("debt")
 
-# expense_df = session.create_dataframe(expenses)
-# contribution_df = session.create_dataframe(contributions)
-# lobby_df = session.create_dataframe(lobby)
+# ok_expenses = OklahomaCategory('expenses')
+# expense_files = list(ok_expenses.files)
+# ok_expenses.read()
+# expenses_passed_records = list(ok_expenses.validation.passed_records(ok_expenses.records))
+# expenses_failed_records = list(ok_expenses.validation.failed_records(ok_expenses.records))
+
+# ok_contributions = OklahomaCategory('contributions')
+# ok_contributions.records = ok_contributions.read()
+# contributions_passed_records = list(ok_contributions.validation.passed_records(ok_contributions.records))
+# contributions_failed_records = list(ok_contributions.validation.failed_records(ok_contributions.records))
 #
-# # Write to Snowflake
-# session.write_table(expense_df, 'CF_EXPENSES')
-# session.write_table(contribution_df, 'CF_CONTRIBUTIONS')
-# session.write_table(lobby_df, 'CF_LOBBY')
+# ok_lobby = OklahomaCategory('lobby')
+# ok_lobby.records = ok_lobby.read()
+# lobby_passed_records = list(ok_lobby.validation.passed_records(ok_lobby.records))
+# lobby_failed_records = list(ok_lobby.validation.failed_records(ok_lobby.records))
+# lobby_errors = ok_lobby.validation.show_errors()
+#
+# session = oklahoma_snowpark.create()
+#
+# expenses = list(sqlmodel_todict(expenses_passed_records))
+# contributions = list(sqlmodel_todict(contributions_passed_records))
+# lobby = list(sqlmodel_todict(lobby_passed_records))
+#
+# expense_df = session.create_dataframe(expenses).write.mode('overwrite').save_as_table('CF_EXPENSES')
+# contribution_df = session.create_dataframe(contributions).write.mode('overwrite').save_as_table('CF_CONTRIBUTIONS')
+# lobby_df = session.create_dataframe(lobby).write.mode('overwrite').save_as_table('CF_LOBBY')

@@ -1,0 +1,6 @@
+[file-suffixes]
+    expenses="ExpenditureExtract"
+    contributions="ContributionLoanExtract"
+    lobby="LobbyistExpenditures"
+
+
