@@ -1,5 +1,5 @@
 import abc
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Type, Tuple, Iterator, Dict, Generator
 import itertools
 from sqlmodel import SQLModel
@@ -28,7 +28,7 @@ class StateFileValidation(abc.ABC):
     _logger: Logger = None
     passed: PassedRecordList = None
     failed: FailedRecordList = None
-    errors: ValidationErrorList = ValidationErrorList()
+    errors: ValidationErrorList = field(default_factory=ValidationErrorList)
 
     @property
     def logger(self) -> Logger:

@@ -8,10 +8,10 @@ from typing import (
 )
 import funcs
 from logger import Logger
-from states.texas.texas_database import local_postgres_engine as engine
+# from states.texas.texas_database import local_postgres_engine as engine
 import states.texas.validators as validators
 from states.texas.texas_downloader import TECDownloader
-from abcs import StateCategoryClass, StateConfig, CategoryConfig, CSVReaderConfig, StateDownloadConfig
+from abcs import StateCategoryClass, StateConfig, CategoryConfig, CSVReaderConfig
 from functools import partial
 
 logger = Logger(__name__)
@@ -50,12 +50,8 @@ TEXAS_CONFIGURATION = StateConfig(
             PREFIX=fields['file-prefixes']['debts'],
             VALIDATOR=validators.DebtData)
     },
-    DATABASE_ENGINE=engine,
+    # DATABASE_ENGINE=engine,
     CSV_CONFIG=CSVReaderConfig(),
-    DOWNLOAD_CONFIG=StateDownloadConfig(
-        ZIPFILE_URL=fields['urls']['campaign-finance-zip'],
-        TEMP_FILENAME=Path(__file__).parents[2] / "tmp" / "TEC_CF_CSV.zip"
-    )
 )
 
 TexasDownloader = TECDownloader(config=TEXAS_CONFIGURATION)

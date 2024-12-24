@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator, computed_fie
 
 logger = Logger(__name__)
 
-CategoryFileList = Generator[Path, None, None]
+CategoryFileList = List[Path]
 ValidatorType = Type[SQLModel]
 FileRecords = Generator[Dict, None, None]
 
@@ -32,9 +32,14 @@ FileRecords = Generator[Dict, None, None]
 class StateCategoryClass(abc.ABC):
     category: str
     config: StateConfig
-    _files: CategoryFileList = field(init=False)
-    __logger: Logger = field(init=False)
-    _records: FileRecords = field(init=False)
+    files: CategoryFileList = field(init=False)
+    _logger: Logger = field(init=False)
+    _records: FileRecords = None
+
+    def __post_init__(self):
+        _files = map(lambda x: Path(x), self.config.TEMP_FOLDER.glob("*.csv"))
+        self.files = list(x for x in _files if self.category in x.stem)
+        self.read()
 
     @property
     def records(self):
@@ -48,28 +53,28 @@ class StateCategoryClass(abc.ABC):
     def records(self):
         return self._records
 
-    @property
-    def files(self):
-
-        def generate_files(pfx_sfx: str) -> CategoryFileList:
-            for _file in self.config.TEMP_FOLDER.glob("*.csv"):
-                if _file.stem.endswith(pfx_sfx) \
-                        if self.config.CATEGORY_TYPES[self.category].SUFFIX else _file.stem.startswith(pfx_sfx):
-                    yield _file
-
-        if self.category not in self.config.CATEGORY_TYPES:
-            raise ValueError(f"Invalid category: {self.category}")
-
-        _category = self.config.CATEGORY_TYPES[self.category]
-        if _category.SUFFIX:
-            _files = generate_files(_category.SUFFIX)
-        elif _category.PREFIX:
-            _files = generate_files(_category.PREFIX)
-        else:
-            raise ValueError("Either PREFIX or SUFFIX must be defined.")
-
-        self._files = _files
-        return self._files
+    # @property
+    # def files(self):
+    #
+    #     def generate_files(pfx_sfx: str) -> CategoryFileList:
+    #         for _file in self.config.TEMP_FOLDER.glob("*.csv"):
+    #             if _file.stem.endswith(pfx_sfx) \
+    #                     if self.config.CATEGORY_TYPES[self.category].SUFFIX else _file.stem.startswith(pfx_sfx):
+    #                 yield _file
+    #
+    #     if self.category not in self.config.CATEGORY_TYPES:
+    #         raise ValueError(f"Invalid category: {self.category}")
+    #
+    #     _category = self.config.CATEGORY_TYPES[self.category]
+    #     if _category.SUFFIX:
+    #         _files = generate_files(_category.SUFFIX)
+    #     elif _category.PREFIX:
+    #         _files = generate_files(_category.PREFIX)
+    #     else:
+    #         raise ValueError("Either PREFIX or SUFFIX must be defined.")
+    #
+    #     self._files = _files
+    #     return self._files
 
     @property
     def validation(self):
@@ -92,8 +97,8 @@ class StateCategoryClass(abc.ABC):
 
     @property
     def logger(self):
-        self.__logger = Logger(self.__class__.__name__)
-        return self.__logger
+        self._logger = Logger(self.__class__.__name__)
+        return self._logger
 
     def read(self, **kwargs) -> FileRecords:
         """

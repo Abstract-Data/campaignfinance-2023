@@ -1,5 +1,5 @@
 from __future__ import annotations
-from pydantic import BaseModel, ValidationError, model_validator
+from pydantic import BaseModel, ValidationError, model_validator, Field
 from typing import List, Dict, Optional
 import pandas as pd
 from icecream import ic
@@ -27,7 +27,7 @@ class RecordValidationError(BaseModel):
 
 
 class ValidationErrorList(BaseModel):
-    errors: List[RecordValidationError] = []
+    errors: List[RecordValidationError] = Field(default_factory=list)
     error_count: int = 0
     summary: object = None
 

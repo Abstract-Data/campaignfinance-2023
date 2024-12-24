@@ -11,26 +11,30 @@ import sys
 class FileDownloaderABC(abc.ABC):
     config: StateConfig
     folder: Path = field(init=False)
-    __logger: Logger = field(init=False)
+    _logger: Logger = None
+
+    def __post_init__(self):
+        self._logger = Logger(self.__class__.__name__)
+        self.check_if_folder_exists()
 
     def check_if_folder_exists(self) -> Path:
         _temp_folder_name = self.config.TEMP_FOLDER.stem.title()
-        self.__logger.info(f"Checking if {_temp_folder_name} temp folder exists...")
+        self._logger.info(f"Checking if {_temp_folder_name} temp folder exists...")
         if self.config.TEMP_FOLDER.exists():
             self.folder = self.config.TEMP_FOLDER
             return self.folder
 
-        self.__logger.debug(f"{_temp_folder_name} temp folder does not exist...")
-        self.__logger.debug(f"Throwing input prompt...")
+        self._logger.debug(f"{_temp_folder_name} temp folder does not exist...")
+        self._logger.debug(f"Throwing input prompt...")
         _create_folder = input("Temp folder does not exist. Create? (y/n): ")
-        self.__logger.debug(f"User input: {_create_folder}")
+        self._logger.debug(f"User input: {_create_folder}")
         if _create_folder.lower() == "y":
             self.config.TEMP_FOLDER.mkdir()
             self.folder = self.config.TEMP_FOLDER
             return self.folder
         else:
             print("Exiting...")
-            self.__logger.info("User selected 'n'. Exiting...")
+            self._logger.info("User selected 'n'. Exiting...")
             sys.exit()
 
     @abc.abstractmethod
@@ -39,7 +43,3 @@ class FileDownloaderABC(abc.ABC):
 
     def read(self):
         return self.folder
-
-    def __post_init__(self):
-        self.__logger = Logger(self.__class__.__name__)
-        self.check_if_folder_exists()

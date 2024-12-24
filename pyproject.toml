@@ -1,49 +1,32 @@
-[tool.poetry]
-name = "app"
+[project]
+name = "campaignfinance"
 version = "0.1.0"
-description = "Campaign Finance Search Tool"
-authors = ["John R. Eakin <johnreakin@gmail.com>"]
+description = "Add your description here"
 readme = "README.md"
+requires-python = ">=3.12.8"
+dependencies = [
+    "aiocsv>=1.3.2",
+    "aiofiles>=24.1.0",
+    "aiojobs>=1.3.0",
+    "icecream>=2.1.3",
+    "inject>=5.2.1",
+    "nameparser>=1.1.3",
+    "onepassword-sdk>=0.1.5",
+    "pandas>=2.2.3",
+    "phonenumbers>=8.13.52",
+    "probablepeople>=0.5.6",
+    "pydantic>=2.10.4",
+    "pydantic-extra-types>=2.10.1",
+    "pydantic-settings>=2.7.0",
+    "python-dotenv>=1.0.1",
+    "requests>=2.32.3",
+    "selenium>=4.27.1",
+    "sqlmodel>=0.0.22",
+    "tomli>=2.2.1",
+    "tqdm>=4.67.1",
+    "usaddress-scourgify>=0.6.0",
+    "usaddress>=0.5.11",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.10,<3.12"
-pandas = "^2.0.3"
-psycopg2 = "^2.9.6"
-SQLAlchemy = "^2.0.19"
-pydantic = "^2.0.3"
-nameparser = "^1.1.2"
-probablepeople = "^0.5.4"
-python-dotenv = "^1.0.0"
-tqdm = "^4.65.0"
-requests = "^2.31.0"
-urllib3 = "^2.0.4"
-phonenumbers = "^8.13.19"
-pydantic-extra-types = "^2.1.0"
-tabulate = "^0.9.0"
-matplotlib = "^3.8.0"
-jinja2 = "^3.1.2"
-usaddress = "^0.5.10"
-sqlmodel = "^0.0.16"
-joblib = "^1.3.2"
-icecream = "^2.1.3"
-aiofiles = "^23.2.1"
-aiocsv = "^1.3.1"
-aiojobs = "^1.2.1"
-inject = "^5.2.0"
-pytest = "^8.1.1"
-hypothesis = "^6.99.9"
-rich = "^13.7.1"
-uszipcode = "^1.0.1"
-datamodel-code-generator = "^0.25.6"
-snowflake-snowpark-python = "^1.17.0"
-snowflake-connector-python = "^3.10.1"
-pydantic-settings = "^2.2.1"
-onepassword = {git = "ssh://git@github.com/1Password/onepassword-sdk-python.git", rev = "v0.1.0-beta.9"}
-
-
-[tool.poetry.group.dev.dependencies]
-ipykernel = "^6.29.3"
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[tool.uv.workspace]
+members = ["packages/*"]
