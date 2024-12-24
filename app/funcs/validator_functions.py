@@ -34,6 +34,8 @@ def clear_blank_strings(cls, values):
     :param values:
     :return:
     """
+    if not values:
+        return values
     for k, v in values.items():
         if v in ["", '"', "null"]:
             values[k] = None

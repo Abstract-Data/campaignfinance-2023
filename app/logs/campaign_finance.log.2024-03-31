@@ -1,0 +1,556 @@
+2024-03-14 19:49:32  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-14 19:49:33  campaignfinance@TECFileDownloader  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp exists...
+2024-03-14 19:49:33  campaignfinance@TECFileDownloader  INFO: Setting temp filename to /Users/johneakin/PyCharmProjects/campaignfinance/tmp/TEC_CF_CSV.zip in download func
+2024-03-14 19:49:56  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-14 19:49:56  campaignfinance@TECFileDownloader  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp exists...
+2024-03-14 19:49:56  campaignfinance@TECFileDownloader  INFO: Setting temp filename to /Users/johneakin/PyCharmProjects/campaignfinance/tmp/TEC_CF_CSV.zip in download func
+2024-03-14 19:50:09  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-14 19:52:19  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-14 20:01:32  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-14 20:03:54  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-14 20:04:45  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-14 20:04:45  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-14 20:05:08  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-14 20:05:11  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-14 20:05:22  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-14 20:05:22  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-14 20:05:22  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-14 20:05:25  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-14 20:06:11  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-14 20:06:11  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-14 20:06:11  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-14 20:06:13  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-14 20:07:28  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-14 20:07:28  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-14 20:07:28  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-14 20:07:30  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-14 20:07:30  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-14 20:07:30  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-14 20:09:00  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-14 20:10:14  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-14 20:10:14  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-14 20:10:14  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-14 20:10:17  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-14 20:10:17  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-14 20:10:17  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-14 20:11:45  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-14 20:11:47  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-14 20:11:47  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-14 20:31:10  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-14 20:35:59  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-14 20:35:59  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-14 20:36:01  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:16:21  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 17:16:21  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:16:21  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:16:23  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:16:23  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:16:23  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:17:49  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:17:53  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:17:53  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:20:29  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 17:20:29  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:20:29  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:20:31  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:20:31  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:20:31  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:22:14  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 17:22:14  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:22:14  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:22:16  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:22:16  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:22:16  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:23:15  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 17:23:16  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:23:16  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:23:18  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:23:18  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:23:18  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:23:47  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 17:23:47  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:23:47  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:23:53  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:23:53  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:23:53  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:24:18  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 17:24:18  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:24:18  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:24:24  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:24:24  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:24:24  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:24:42  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 17:24:42  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:24:42  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:24:44  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:24:44  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:24:44  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:25:08  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 17:25:08  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:25:08  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:25:10  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:25:10  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:25:10  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:25:45  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 17:25:45  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:25:45  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:25:51  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:25:51  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:25:51  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:28:03  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 17:28:04  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:28:04  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:28:09  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:28:09  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:28:09  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:29:49  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 17:29:49  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:29:49  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:29:55  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:29:55  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:29:55  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:30:54  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 17:30:54  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:30:54  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:31:00  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:31:00  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:31:00  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:36:54  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 17:36:54  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:36:54  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:37:01  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:37:01  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:37:01  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:40:28  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 17:40:28  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:40:28  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 17:40:35  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 17:40:35  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 17:40:35  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 18:05:13  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 18:05:13  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 18:05:13  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 18:05:20  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 18:05:20  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 18:05:20  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 18:05:28  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 18:05:28  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 18:05:28  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 18:05:35  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 18:05:35  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 18:05:35  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 18:08:12  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 18:08:12  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 18:08:12  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 18:08:19  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 18:08:19  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 18:08:19  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 18:15:50  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 18:15:51  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 18:15:51  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 18:15:58  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 18:15:58  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 18:15:58  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 18:21:16  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 18:21:16  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 18:21:16  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 18:21:23  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 18:21:24  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 18:21:24  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 18:24:19  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-15 18:24:20  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 18:24:20  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 18:24:27  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 18:24:27  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 18:24:27  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 18:32:30  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 18:32:39  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 18:32:39  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 21:13:22  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-15 21:20:14  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-15 21:20:14  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-15 21:20:16  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 01:33:56  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:34:24  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:36:17  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:43:33  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:44:03  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:44:14  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:47:56  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:47:57  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:47:57  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:48:12  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:48:13  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:48:13  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:48:20  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 01:48:20  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:48:20  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:50:11  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:50:12  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:50:12  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:50:19  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 01:50:19  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:50:19  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:51:24  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:51:24  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:51:24  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:51:31  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 01:51:31  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:51:31  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:52:33  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:52:34  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:52:34  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:52:41  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 01:52:41  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:52:41  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:55:28  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:55:28  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:55:28  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:55:36  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 01:55:36  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:55:36  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:55:47  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:55:48  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:55:48  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:55:55  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 01:55:55  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:55:55  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:58:19  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:58:19  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:58:19  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:58:23  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:58:24  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:58:24  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:58:30  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:58:30  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:58:30  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:58:37  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 01:59:18  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:59:19  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:59:19  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 01:59:26  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 01:59:57  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 01:59:58  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 01:59:58  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 02:00:05  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 02:00:10  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 02:00:10  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 02:01:16  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 02:01:16  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 02:01:16  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 02:01:23  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 02:01:23  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 02:01:23  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 02:03:24  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 02:03:24  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 02:03:26  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 02:03:26  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 02:03:26  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 02:06:30  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 02:06:30  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 02:06:33  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 02:06:33  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 02:06:33  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 02:08:29  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 02:08:29  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 02:08:55  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 02:08:56  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 02:08:58  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 02:08:58  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 02:08:58  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 02:14:04  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 02:14:04  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 02:25:50  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 03:38:14  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 03:38:17  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 03:38:20  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 03:38:20  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 03:38:20  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 03:48:50  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 03:48:50  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 03:56:46  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 16:14:23  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 16:14:23  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 16:14:25  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 16:14:25  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 16:14:25  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 16:18:18  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 16:18:19  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 16:19:03  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 16:19:04  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 16:19:06  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 16:19:06  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 16:19:06  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 16:37:41  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 16:37:42  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 16:37:44  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 16:37:44  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 16:37:44  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 17:15:41  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 17:16:44  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 17:17:34  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 17:18:44  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 17:19:52  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 17:20:28  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 17:20:28  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 17:20:31  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 17:20:31  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 17:20:31  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 17:22:37  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 17:22:38  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 17:25:10  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 17:26:24  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 17:28:25  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 17:28:26  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 17:28:38  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 17:28:38  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 17:28:40  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 17:28:40  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 17:28:40  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 18:28:41  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-16 18:28:42  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 18:28:42  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-16 18:28:49  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-16 18:28:49  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-16 18:28:49  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 17:23:40  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 17:23:40  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 17:23:40  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 17:23:47  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-17 17:23:47  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 17:27:17  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 17:27:18  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 17:27:18  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 17:27:25  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-17 17:27:25  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 17:27:55  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 17:28:12  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 17:28:12  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 17:28:12  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 17:28:19  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-17 17:28:19  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 17:28:50  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 17:30:50  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 17:30:50  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 17:30:50  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 17:30:57  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-17 17:30:57  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 17:31:55  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 17:31:55  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 17:31:55  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 17:32:02  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-17 17:32:02  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 17:34:17  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 17:34:18  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 17:34:18  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 17:34:24  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-17 17:34:24  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 17:34:56  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 17:39:39  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 17:39:39  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 17:39:39  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 17:39:46  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-17 17:39:46  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 17:40:18  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 18:01:38  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:02:14  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:03:49  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:04:51  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:05:31  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:08:02  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:08:26  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:10:15  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:11:38  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:15:51  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:16:29  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:16:29  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 18:16:29  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 18:16:36  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-17 18:16:36  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 18:17:08  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 18:20:21  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:20:22  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 18:20:22  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 18:20:29  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-17 18:20:29  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 18:21:01  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 18:22:40  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:23:49  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:23:49  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 18:23:49  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 18:23:56  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-17 18:23:56  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 18:24:28  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 18:32:28  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:32:28  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 18:32:28  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 18:32:35  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-17 18:32:35  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 18:33:07  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 18:48:11  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:48:11  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 18:48:11  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 18:48:18  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-17 18:48:18  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 18:48:50  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 18:57:43  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 18:57:43  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 18:57:43  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 18:57:50  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-17 18:57:50  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 18:58:22  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-17 20:59:11  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 20:59:12  campaignfinance@TECFileDownloader  INFO: Checking if None exists...
+2024-03-17 20:59:50  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 20:59:51  campaignfinance@TECFileDownloader  INFO: Checking if None exists...
+2024-03-17 21:00:08  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 21:00:08  campaignfinance@TECFileDownloader  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas exists...
+2024-03-17 21:00:08  campaignfinance@TECFileDownloader  DEBUG: /Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas does not exist...
+2024-03-17 21:00:08  campaignfinance@TECFileDownloader  DEBUG: Throwing input prompt...
+2024-03-17 21:00:30  campaignfinance@TECFileDownloader  DEBUG: User input: y 
+2024-03-17 21:00:30  campaignfinance@TECFileDownloader  INFO: User selected 'n'. Exiting...
+2024-03-17 21:00:45  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 21:00:46  campaignfinance@TECFileDownloader  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas exists...
+2024-03-17 21:00:46  campaignfinance@TECFileDownloader  DEBUG: /Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas does not exist...
+2024-03-17 21:00:46  campaignfinance@TECFileDownloader  DEBUG: Throwing input prompt...
+2024-03-17 21:00:49  campaignfinance@TECFileDownloader  DEBUG: User input: y
+2024-03-17 21:01:09  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 21:01:10  campaignfinance@TECFileDownloader  INFO: Checking if /Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas exists...
+2024-03-17 21:01:10  campaignfinance@TECFileDownloader  INFO: Setting temp filename to /Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas/TEC_CF_CSV.zip in download func
+2024-03-17 21:01:23  campaignfinance@TECFileDownloader  INFO: Downloading TEC Files...
+2024-03-17 21:01:23  campaignfinance@TECFileDownloader  INFO: SSL Context: <ssl.SSLContext object at 0x13d2c5eb0>
+2024-03-17 21:01:23  campaignfinance@TECFileDownloader  DEBUG: Downloading TEC Files...
+2024-03-17 21:07:15  campaignfinance@TECFileDownloader  DEBUG: Extracting /Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas/TEC_CF_CSV.zip to /Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas...
+2024-03-17 21:22:54  campaignfinance@TECFileDownloader  DEBUG: Extracted /Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas/TEC_CF_CSV.zip to /Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas, set folder to /Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas
+2024-03-17 21:43:38  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-17 21:43:39  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-17 21:44:13  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-18 00:56:27  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-18 00:56:27  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-18 00:57:08  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-18 00:57:08  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-18 00:57:40  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-18 01:01:05  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-18 01:01:05  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-18 03:50:21  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-18 03:50:21  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-19 22:38:56  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-19 22:38:57  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-19 23:51:43  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-19 23:51:44  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-20 14:20:02  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-20 14:20:02  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-20 14:24:37  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-20 14:24:38  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-20 14:24:38  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-20 14:24:38  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-20 14:25:59  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-20 14:25:59  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-20 14:26:00  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-20 14:26:00  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-20 14:26:54  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-20 14:26:54  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-20 17:29:01  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-20 17:29:01  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-20 17:30:25  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-20 17:30:26  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-20 22:34:23  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-20 22:34:23  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-20 22:34:23  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-20 22:34:23  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-20 22:34:38  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-20 22:34:39  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-21 01:56:20  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 01:56:21  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-21 16:14:40  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 16:14:44  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-21 16:14:44  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-21 16:14:44  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-21 16:20:58  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 16:20:58  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-21 16:20:58  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-21 16:20:58  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-21 16:21:35  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 16:21:36  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-21 16:21:36  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-21 16:21:36  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-21 16:22:58  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 16:22:59  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-21 20:11:49  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 20:13:43  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 20:13:43  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-21 20:13:43  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-21 20:13:43  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-21 20:16:26  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 20:16:26  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-21 20:16:26  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-21 20:16:26  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-21 20:17:02  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 20:17:02  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-21 20:17:02  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-21 20:17:02  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-21 20:18:13  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 20:20:22  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 20:20:43  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 20:21:05  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 20:21:05  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-21 20:22:55  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 20:22:55  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-21 20:23:44  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 20:23:45  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-21 20:25:22  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 20:25:22  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-21 20:26:00  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-21 20:26:00  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-23 12:52:44  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-23 12:52:45  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-23 12:59:46  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-23 12:59:46  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-23 13:30:37  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-23 13:30:37  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-25 19:25:43  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-25 19:25:44  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-25 19:31:31  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-25 19:31:31  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-25 19:33:11  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-25 19:33:12  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-25 19:53:55  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-25 19:53:55  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-25 19:54:21  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-25 19:54:22  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-25 20:00:26  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-25 20:00:26  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-25 21:47:37  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-25 21:47:37  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-25 21:47:37  campaignfinance@TECCategory  INFO: Read 0 records from contributions
+2024-03-26 00:30:23  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-26 00:30:23  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-26 00:36:36  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-26 00:37:01  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-26 00:37:02  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-26 00:37:02  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-26 00:37:02  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-26 00:38:33  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-26 00:38:33  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-26 00:38:33  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-26 00:38:33  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-26 00:39:34  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-26 00:39:34  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-26 00:39:34  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-26 00:39:34  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-26 00:40:31  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-26 00:40:31  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-26 00:40:31  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-26 00:40:31  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-26 00:40:44  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-26 00:40:44  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-26 00:40:44  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-26 00:40:44  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-26 00:40:54  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-26 00:40:55  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-26 02:43:54  campaignfinance@StateFileValidation  INFO: Finished validation
+2024-03-26 02:43:54  campaignfinance@StateFileValidation  INFO: Created validation generators
+2024-03-27 15:57:36  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-27 15:57:37  campaignfinance@StateFileValidation  INFO: Started validation
+2024-03-31 16:45:25  campaignfinance@states.texas  INFO: Logger initialized in states.texas.texas
+2024-03-31 16:45:26  campaignfinance@StateFileValidation  INFO: Started validation

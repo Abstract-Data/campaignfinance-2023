@@ -54,7 +54,11 @@ def include_download_date(func: Callable) -> Callable:
 @dataclass
 class FileReader:
     record_count: int = 0
-    logger: Logger = Logger("FileReader")
+    logger: Logger = None
+
+    def __init__(self):
+        super().__init__()
+        self.logger = Logger("FileReader")
 
     @include_file_origin
     @include_download_date

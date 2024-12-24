@@ -4,6 +4,8 @@ from datetime import datetime
 
 
 def validate_dates(cls, values):
+    if not values:
+        return values
     for key, value in values.items():
         if key.endswith("Dt") and value:
             if isinstance(value, str):
@@ -43,6 +45,8 @@ def address_formatting(cls, values):
 
 
 def check_zipcodes(cls, values):
+    if not values:
+        return values
     for key, value in values.items():
         if key.endswith("PostalCode") and value:
             original_zip = value
@@ -52,6 +56,8 @@ def check_zipcodes(cls, values):
 
 
 def phone_number_validation(cls, values):
+    if not values:
+        return values
     for key, value in values.items():
         if key.endswith("PhoneNumber") and value:
             formatted_phone = funcs.validate_phone_number(column=key, phone_number=value)

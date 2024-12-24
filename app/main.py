@@ -3,57 +3,62 @@ from __future__ import annotations
 from states.texas import (
     TexasCategory,
     TexasDownloader,
-    texas_validators as validators,
-    texas_engine as engine,
+    # texas_validators as validators,
+    # texas_engine as engine,
 )
-from states.oklahoma import OklahomaCategory, oklahoma_validators, oklahoma_snowpark_session
+# from states.oklahoma import OklahomaCategory, oklahoma_validators, oklahoma_snowpark_session
 
-from sqlmodel import select, SQLModel, text, within_group, Session, any_, col, and_, or_
-import pandas as pd
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-from sqlalchemy.exc import SQLAlchemyError
-import itertools
-from joblib import Parallel, delayed
-import pydantic.dataclasses as pydantic_
-from pydantic import Field
-from pydantic import BaseModel
-from typing import List, Dict, Tuple, Iterator, Optional, Sequence, Type, Any, overload
-from collections import Counter
-from icecream import ic
-from collections import namedtuple
-from enum import Enum
-import matplotlib.pyplot as plt
-from pathlib import Path
-from functools import singledispatch
+# from sqlmodel import select, SQLModel, text, within_group, Session, any_, col, and_, or_
+# import pandas as pd
+# from tqdm import tqdm
+# import matplotlib.pyplot as plt
+# from sqlalchemy.exc import SQLAlchemyError
+# import itertools
+# from joblib import Parallel, delayed
+# import pydantic.dataclasses as pydantic_
+# from pydantic import Field
+# from pydantic import BaseModel
+# from typing import List, Dict, Tuple, Iterator, Optional, Sequence, Type, Any, overload
+# from collections import Counter
+# from icecream import ic
+# from collections import namedtuple
+# from enum import Enum
+# import matplotlib.pyplot as plt
+# from pathlib import Path
+# from functools import singledispatch
 
 """ Update the model order of imports. Break out each model to a 
 separate script so they're created in the correct order."""
 # Pandas Display Options
-pd.options.display.max_columns = None
-pd.options.display.max_rows = None
-pd.set_option('display.float_format', '{:.2f}'.format)
+# pd.options.display.max_columns = None
+# pd.options.display.max_rows = None
+# pd.set_option('display.float_format', '{:.2f}'.format)
 
 """ FUNCTIONS """
 
 
-@overload
-def sqlmodel_todict(records: Iterator[SQLModel]) -> map:
-    ...
+# @overload
+# def sqlmodel_todict(records: Iterator[SQLModel]) -> map:
+#     ...
 
 
-@overload
-def sqlmodel_todict(records: List[SQLModel]) -> map:
-    ...
+# @overload
+# def sqlmodel_todict(records: List[SQLModel]) -> map:
+#     ...
 
 
-def sqlmodel_todict(records: Any) -> map:
-    for record in records:
-        yield record.dict()
+# def sqlmodel_todict(records: Any) -> map:
+#     for record in records:
+#         yield record.dict()
 
 
 # SQLModel.metadata.create_all(engine)
+# download = TexasDownloader
+# download.download(overwrite=True)
 
+texas = TexasCategory('filers')
+texas.validate()
+passed = list(texas.validation.passed_records(texas.records))
 """ 
 TEXAS CAMPAIGN FINANCE DATA LOADER
 
@@ -134,25 +139,25 @@ def upsert_records(category: TECCategory, _engine=engine):
             
 """
 
-filers = TexasCategory("filers")
-filers.read()
-filers.validation.passed = filers.validation.passed_records(filers.records)
-filers.validation.failed = list(filers.validation.failed_records(filers.records))
+# filers = TexasCategory("filers")
+# filers.read()
+# filers.validation.passed = filers.validation.passed_records(filers.records)
+# filers.validation.failed = list(filers.validation.failed_records(filers.records))
 
-contributions = TexasCategory("contributions")
-contributions.read()
-contributions.validation.passed = contributions.validation.passed_records(contributions.records)
-contributions.validation.failed = list(contributions.validation.failed_records(contributions.records))
+# contributions = TexasCategory("contributions")
+# contributions.read()
+# contributions.validation.passed = contributions.validation.passed_records(contributions.records)
+# contributions.validation.failed = list(contributions.validation.failed_records(contributions.records))
 
-expenses = TexasCategory("expenses")
-expenses.read()
-expenses.validation.passed = expenses.validation.passed_records(expenses.records)
-expenses.validation.failed = list(expenses.validation.failed_records(expenses.records))
-expenses.validation.show_errors()
+# expenses = TexasCategory("expenses")
+# expenses.read()
+# expenses.validation.passed = expenses.validation.passed_records(expenses.records)
+# expenses.validation.failed = list(expenses.validation.failed_records(expenses.records))
+# expenses.validation.show_errors()
 
-errors = expenses.validation.errors.summary
+# errors = expenses.validation.errors.summary
 
-errors.to_csv(Path.home() / 'Downloads' / 'errors.csv')
+# errors.to_csv(Path.home() / 'Downloads' / 'errors.csv')
 # reports = TexasCategory("reports")
 # travel = TECCategory("travel")
 # candidates = TECCategory("candidates")
