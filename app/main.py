@@ -1,7 +1,6 @@
 #! /usr/bin/env python3
 from __future__ import annotations
 from states.texas import (
-    TexasCategory,
     TexasDownloader,
     # texas_validators as validators,
     # texas_engine as engine,
@@ -53,12 +52,16 @@ separate script so they're created in the correct order."""
 
 
 # SQLModel.metadata.create_all(engine)
-# download = TexasDownloader
-# download.download(overwrite=True)
+download = TexasDownloader()
+# download.download()
+download.read()
+download.sort_categories()
+data = download.data
 
-texas = TexasCategory('filers')
-texas.validate()
-passed = list(texas.validation.passed_records(texas.records))
+travel = next(data.travel)
+# texas = TexasCategory('filers')
+# texas.validate()
+# passed = list(texas.validation.passed_records(texas.records))
 """ 
 TEXAS CAMPAIGN FINANCE DATA LOADER
 

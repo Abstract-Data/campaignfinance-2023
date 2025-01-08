@@ -1,6 +1,15 @@
 {
-    "terminal.integrated.cwd": "app",
     "python.analysis.autoImportCompletions": true,
     "python.analysis.extraPaths": ["${workspaceFolder}"],
-    "python.pythonPath": ".venv/bin/python3"
+    // "python.envFile": "${workspaceFolder}/.env",
+    "python.pythonPath": ".venv/bin/python3",
+    "terminal.integrated.cwd": "app",
+    "terminal.external.osxExec": "Warp",
+    "terminal.integrated.defaultProfile.osx": "Warp",
+    "terminal.integrated.profiles.osx": {
+        "Warp": {
+            "path": "/Applications/Warp.app/Contents/MacOS/warp",
+            "args": ["--single-instance"]
+        }
+    },
 }

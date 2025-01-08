@@ -1,15 +1,17 @@
+
 import csv
+from importlib.metadata import files
 from pathlib import Path
 from typing import Callable, Dict, Generator
 import datetime
 from dataclasses import dataclass
 from logger import Logger
-from typing import AsyncGenerator, Iterator
+from typing import AsyncGenerator, Iterator, Tuple
 import aiofiles
 import asyncio
 from io import StringIO
-from tqdm import tqdm
 from icecream import ic
+from rich.progress import Progress
 
 
 def async_include_file_origin(func):
@@ -81,4 +83,17 @@ class FileReader:
                     if kwargs.get('change_space_in_headers'):
                         _record = {k.replace(' ', '_'): v for k, v in _record.items() if k is not None}
                     yield _record
+
+    def read_folder(self, folder: Path, file_counts: dict, **kwargs) -> Generator[Dict[int, Dict], None, None]:
+        def read_looper(file: Path, **kwargs) -> Generator[Dict[int, Dict], None, None]:
+                _task = progress.add_task(f"├─ Reading File: {file.stem}", total=file_counts[file.stem], parent=folder_task)
+                for record in self.read_csv(file, **kwargs):
+                    progress.update(_task, advance=1)
+                    yield record
+        with Progress() as progress:
+            _files = list(folder.glob("*.csv"))
+            folder_task = progress.add_task(f"Reading Folder: {folder.name.title()}", total=len(_files))
+            for f in _files:
+                yield from read_looper(f, **kwargs)
+            progress.update(folder_task, advance=1)
 
