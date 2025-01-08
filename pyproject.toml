@@ -26,6 +26,9 @@ dependencies = [
     "tqdm>=4.67.1",
     "usaddress-scourgify>=0.6.0",
     "usaddress>=0.5.11",
+    "jupyter>=1.1.1",
+    "rich>=13.9.4",
+    "polars>=1.19.0",
 ]
 
 [tool.uv.workspace]

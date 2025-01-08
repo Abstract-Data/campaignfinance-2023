@@ -11,8 +11,6 @@ from funcs.validator_functions import create_record_id
 from logger import Logger
 from icecream import ic
 
-ic.configureOutput(prefix='abc_validation|')
-
 ValidatorType = Type[SQLModel]
 PassedRecord = Tuple[str, SQLModel]
 FailedRecord = Tuple[str, Dict]

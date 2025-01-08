@@ -18,6 +18,9 @@ class TECSettings(SQLModel):
         from_attributes=True,
     )
 
+    def __repr__(self):
+        return self.__class__.__name__
+
     clear_blank_strings = model_validator(mode='before')(funcs.clear_blank_strings)
     check_dates = model_validator(mode='before')(tx_funcs.validate_dates)
     # check_zipcodes = model_validator(mode='before')(tx_funcs.check_zipcodes)
