@@ -1,23 +1,26 @@
 from __future__ import annotations
 from datetime import date
 from typing import Optional, Annotated, Any
-from sqlmodel import Field
+from sqlmodel import Field, Relationship
 from pydantic import field_validator, model_validator, ValidatorFunctionWrapHandler, WrapValidator, BeforeValidator
 from pydantic_extra_types.phone_numbers import PhoneNumber
 from pydantic_core import PydanticCustomError
-from .texas_settings import TECSettings
+
+from . import TECSettings
 import funcs.validator_functions as funcs
 import states.texas.funcs.tx_validation_funcs as tx_funcs
 from scourgify import NormalizeAddress
 from scourgify.exceptions import AddressNormalizationError
 import usaddress
+from icecream import ic
 from funcs.record_keygen import RecordKeyGenerator
 
+ADDRESS_LIST = {}
 
 class TECAddress(TECSettings):
     __tablename__ = "tx_addresses"
     __table_args__ = {"schema": "texas"}
-    id: Optional[str] = Field(default=None, description="Unique record ID")
+    id: Optional[str] = Field(default=None, description="Unique record ID", primary_key=True)
     address1: Optional[str] = Field(default=None, description="Address line 1")
     address2: Optional[str] = Field(default=None, description="Address line 2")
     city: Optional[str] = Field(default=None, description="City")
@@ -26,21 +29,28 @@ class TECAddress(TECSettings):
     county: Optional[str] = Field(default=None, description="County")
     country: Optional[str] = Field(default=None, description="Country")
     region: Optional[str] = Field(default=None, description="Region")
-    standardized: Optional[dict[str, str] | str] = Field(default=None, description="Address standardized")
+    standardized: str = Field(default=None, description="Address standardized")
+    person_name_id: Optional[str] = Field(default=None, foreign_key="tx_person_names.id")
+    person_name: list['TECPersonName'] = Field(default=None)
 
     @model_validator(mode='before')
     @classmethod
     def fill_fields(cls, values):
         if not values:
             return values
-        values['address1'] = next((values.get(x) for x in values.keys() if x.endswith('Addr1')), None)
-        values['address2'] = next((values.get(x) for x in values.keys() if x.endswith('Addr2')), None)
-        values['city'] = next((values.get(x) for x in values.keys() if x.endswith('City')), None)
-        values['state'] = next((values.get(x) for x in values.keys() if x.endswith('StateCd')), None)
-        values['postalCode'] = next((values.get(x) for x in values.keys() if x.endswith('PostalCode')), None)
-        values['county'] = next((values.get(x) for x in values.keys() if x.endswith('CountyCd')), None)
-        values['country'] = next((values.get(x) for x in values.keys() if x.endswith('CountryCd')), None)
-        values['region'] = next((values.get(x) for x in values.keys() if x.endswith('Region')), None)
+        mappings = {
+            'address1': 'Addr1',
+            'address2': 'Addr2',
+            'city': 'City',
+            'state': 'StateCd',
+            'postalCode': 'PostalCode',
+            'county': 'CountyCd',
+            'country': 'CountryCd',
+            'region': 'Region'
+        }
+
+        for field, key_part in mappings.items():
+            values[field] = next((values.get(x) for x in values.keys() if key_part in x), None)
         return values
 
     @model_validator(mode='after')
@@ -68,6 +78,8 @@ class TECAddress(TECSettings):
 
 
         _new_address = {}
+        _has_full_zip = False
+        _standardized = None
         if "PO" or "PO BOX" in _address:
             _address = _address.replace(',', ' ')
             print("PO BOX FOUND", _address)
@@ -99,6 +111,32 @@ class TECAddress(TECSettings):
                             _new_address['postalCode'] += f" {part}".strip()
                         else:
                             _new_address['postalCode'] = part
-            self.standardized = ", ".join([v.strip() for k, v in _new_address.items() if v])
-            self.id = self.generate_key(self.standardized)
+            if _pc :=_new_address.get('postalCode'):
+                if '-' in _pc:
+                    _has_full_zip = True
+
+
+            has_address_lines = all(
+                [
+                    _new_address.get('address1'),
+                    _new_address.get('city'),
+                    _new_address.get('state'),
+                    _new_address.get('postalCode')
+                ]
+            )
+            if has_address_lines:
+                std = ", ".join(
+                    [
+                        v.strip() for k, v in _new_address.items() if v
+                    ]
+                )
+                if _has_full_zip:
+                    ADDRESS_LIST[_pc] = std
+                    _standardized = std
+                else:
+                    _search_for_address = ADDRESS_LIST.get(_pc)
+                    if _search_for_address:
+                        _standardized = _search_for_address
+                self.standardized = _standardized
+                self.id = self.generate_key(self.standardized)
             return self

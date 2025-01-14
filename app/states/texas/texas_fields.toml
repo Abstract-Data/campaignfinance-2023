@@ -3,7 +3,7 @@
     campaign-finance-zip = "https://ethics.state.tx.us/data/search/cf/TEC_CF_CSV.zip"
 [file-prefixes]
 expenses= "expend"
-contributions= "contrib"
+contributions= "contribs"
 filers = "filers"
 reports = "finals"
 travel = "travel"

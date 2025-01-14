@@ -1,7 +1,7 @@
 from __future__ import annotations
 from logger import Logger
 # from states.texas.texas_database import local_postgres_engine as engine
-from . import validators
+import states.texas.validators as validators
 from .texas_downloader import TECDownloader
 from abcs import StateCategoryClass, StateConfig, CategoryConfig, CSVReaderConfig, CategoryTypes
 from functools import partial
@@ -15,31 +15,33 @@ TEXAS_CONFIGURATION = StateConfig(
     STATE_ABBREVIATION="TX",
     # DATABASE_ENGINE=engine,
     CSV_CONFIG=CSVReaderConfig(),
+    
 )
 
-FIELDS = TEXAS_CONFIGURATION.FIELD_DATA['file-prefixes']
+TX_FIELDS = TEXAS_CONFIGURATION.FIELD_DATA
+TexasCategoryConfig = partial(CategoryConfig, FIELDS=TX_FIELDS)
 TEXAS_CONFIGURATION.CATEGORY_TYPES = CategoryTypes(
     **{
-        'expenses': CategoryConfig(
-            PREFIX=FIELDS['expenses'],
+        'expenses': TexasCategoryConfig(
+            DESC="expenses",
             VALIDATOR=validators.TECExpense),
-        'contributions': CategoryConfig(
-            PREFIX=FIELDS['contributions'],
+        'contributions': TexasCategoryConfig(
+            DESC="contributions",
             VALIDATOR=validators.TECContribution),
-        'filers': CategoryConfig(
-            PREFIX=FIELDS['filers'],
+        'filers': TexasCategoryConfig(
+            DESC="filers",
             VALIDATOR=validators.TECFiler),
-        'reports': CategoryConfig(
-            PREFIX=FIELDS['reports'],
+        'reports': TexasCategoryConfig(
+            DESC='reports',
             VALIDATOR=validators.TECFinalReport),
-        'travel': CategoryConfig(
-            PREFIX=FIELDS['travel'],
+        'travel': TexasCategoryConfig(
+            DESC="travel",
             VALIDATOR=validators.TECTravelData),
-        'candidates': CategoryConfig(
-            PREFIX=FIELDS['candidates'],
+        'candidates': TexasCategoryConfig(
+            DESC="candidates",
             VALIDATOR=validators.CandidateData),
-        'debts': CategoryConfig(
-            PREFIX=FIELDS['debts'],
+        'debts': TexasCategoryConfig(
+            DESC="debts",
             VALIDATOR=validators.DebtData),
     }
 )
