@@ -1,48 +1,22 @@
 from __future__ import annotations
-from dataclasses import field, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
 import zipfile
-from click import File
-from numpy import record
 from tqdm import tqdm
 import time
 from icecream import ic
 from funcs.csv_reader import FileReader
-import functools
 
-import selenium.common.exceptions
 from selenium import webdriver
-from selenium.webdriver.support.ui import Select, WebDriverWait
+from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.wait import WebDriverWait
 
 from abcs import (
-    FileDownloaderABC, StateConfig, CategoryConfig, CSVReaderConfig, CategoryTypes, RecordGen)
-import states.texas.validators as validators
+    FileDownloaderABC, StateConfig, CategoryTypes, RecordGen)
 
-
-# class TECFileTypeList(FileTypeListABC):
-        
-#     def filter(self, fields: CategoryTypes) -> FileTypeListABC:
-#         _filter = self._filter_by
-#         self.contributions = _filter(fields.contributions)
-#         self.expenses = _filter(fields.expenses)
-#         self.filers = _filter(fields.filers)
-#         self.reports = _filter(fields.reports)
-#         # self.loans = _filter(fields.loans)
-#         self.debts = _filter(fields.debts)
-#         # self.notices = _filter(fields.notices)
-#         # self.credits = _filter(fields.credits)
-#         # self.spacs = _filter(fields.spacs)
-#         self.candidates = _filter(fields.candidates)
-#         self.travel = _filter(fields.travel)
-#         return self
     
 @dataclass
 class TECDownloader(FileDownloaderABC):
@@ -116,7 +90,7 @@ class TECDownloader(FileDownloaderABC):
 
         return self
 
-    def read(self) -> CategoryTypes:
+    def read(self) -> RecordGen:
         _reader = FileReader()
         self.data = _reader.read_folder(self.folder, file_counts=self.config.FILE_COUNTS)
-        return self.data
+        return iter(self.data)

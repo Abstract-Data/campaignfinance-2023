@@ -3,7 +3,7 @@ from typing import Optional
 from pydantic import field_validator, model_validator
 from sqlmodel import Field
 from pydantic_core import PydanticCustomError
-from states.texas.validators.texas_settings import TECSettings
+from .texas_settings import TECSettings
 import funcs.validator_functions as funcs
 import states.texas.funcs.tx_validation_funcs as tx_funcs
 

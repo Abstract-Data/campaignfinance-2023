@@ -1,10 +1,10 @@
 #! /usr/bin/env python3
 from __future__ import annotations
 from states.texas import (
-    TexasDownloader,
-    # texas_validators as validators,
+    TexasDownloader
     # texas_engine as engine,
 )
+from states.texas.validators.texas_personname import TECPersonName
 # from states.oklahoma import OklahomaCategory, oklahoma_validators, oklahoma_snowpark_session
 
 # from sqlmodel import select, SQLModel, text, within_group, Session, any_, col, and_, or_
@@ -55,10 +55,31 @@ separate script so they're created in the correct order."""
 download = TexasDownloader()
 # download.download()
 download.read()
-download.sort_categories()
+cats = download.sort_categories()
 data = download.data
 
-travel = next(data.travel)
+
+fields = [data.travel,
+          data.contributions,
+          data.expenses,
+          data.filers,
+          data.reports,
+          data.candidates,
+          data.debts
+          ]
+prefix_to_remove = ['guarantor', 'payee', 'candidate', 'treas', 'filer', 'chair', 'contributor', 'expend', 'assttreas', ]
+unique_fields = set()
+for field in fields:
+    if field.DATA:
+        for record in field.DATA:
+            for key in record.keys():
+                unique_fields.add(key)
+                if key.endswith('3'):
+                    print(key, record['file_origin'])
+unique_fields_rm_prefix = set([x.replace(prefix, "") for x in unique_fields for prefix in prefix_to_remove if x.startswith(prefix) and x != prefix])
+unique_fields_wo_prefix = set([x for x in unique_fields if not any([x.startswith(prefix) for prefix in prefix_to_remove])])
+unique_fields = unique_fields_rm_prefix.union(unique_fields_wo_prefix)
+# set_of_fields = list(next(x) for x in data_generators)
 # texas = TexasCategory('filers')
 # texas.validate()
 # passed = list(texas.validation.passed_records(texas.records))

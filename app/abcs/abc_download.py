@@ -2,65 +2,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import abc
-from abcs.abc_state_config import CategoryConfig, StateConfig, CategoryTypes
-from logger import Logger
+from abcs.abc_state_config import StateConfig, CategoryTypes
 import sys
-from typing import Any, Optional, Generator, Dict, Annotated, Type
+from typing import Optional, Generator, Dict, Annotated
 from icecream import ic
-from pydantic.dataclasses import dataclass as pydantic_dataclass
-from pydantic import BaseModel, Field as PydanticField
+from pydantic import Field as PydanticField
 import itertools
 
 
 RecordGen = Annotated[Optional[Generator[Dict, None, None]], PydanticField(default=None)]
 FilteredRecordGen = RecordGen
 
-# @pydantic_dataclass
-# class FileTypeListABC(abc.ABC):
-#     data: Generator[Dict, None, None]
-#     contributions: FilteredRecordGen
-#     expenses: FilteredRecordGen
-#     filers: FilteredRecordGen
-#     reports: FilteredRecordGen
-#     loans: FilteredRecordGen
-#     debts: FilteredRecordGen
-#     notices: FilteredRecordGen
-#     credits: FilteredRecordGen
-#     candidates: FilteredRecordGen
-#     spacs: FilteredRecordGen
-#     travel: FilteredRecordGen
 
-#     @classmethod
-#     def _is_generator_empty(cls, gen: Generator) -> bool:
-#         """Check if generator is empty without consuming it"""
-#         gen1, gen2 = itertools.tee(gen)
-#         try:
-#             next(gen1)
-#             return False
-#         except StopIteration:
-#             return True
-#         finally:
-#             del gen1
-#             return gen2
-
-#     def _filter_by(self, category: CategoryConfig) -> RecordGen | None:
-#         """Filter data generator by file_origin prefix or suffix"""
-#         if all([category.PREFIX, category.SUFFIX]):
-#             raise ValueError("Exactly one of PREFIX or SUFFIX must be defined")
-#         elif not any([category.PREFIX, category.SUFFIX]):
-#             raise ValueError("Either PREFIX or SUFFIX must be defined")
-        
-
-#         pattern = category.SUFFIX or category.PREFIX
-#         is_suffix = bool(category.SUFFIX)
-
-#         def _filter(x: Dict) -> bool:
-#             return x["file_origin"].endswith(pattern) if is_suffix else x["file_origin"].startswith(pattern)
-
-#         filtered = (record for record in self.data if _filter(record))
-#         # if self._is_generator_empty(filtered):
-#         #     return None
-#         return filtered
 
 @dataclass
 class FileDownloaderABC(abc.ABC):
@@ -102,6 +55,23 @@ class FileDownloaderABC(abc.ABC):
         ...
 
     def sort_categories(self) -> CategoryTypes:
-        if self.data:
-            self.data = self.config.filter_categories(self.data)
+        """Filter data into respective categories"""
+        categories = self.config.CATEGORY_TYPES
+        ic(f"Sorting categories: {categories.__dataclass_fields__}")
+        source_data = itertools.tee(self.data, len(categories.__dataclass_fields__))
+        
+        ic("Filtering data into categories...")
+        for category_name, data_gen in zip(categories.__dataclass_fields__, source_data):
+            ic(f"Filtering {category_name}...")
+            category = getattr(categories, category_name, None)
+            if category:
+                try:
+                    # Get filtered data and explicitly set to DATA
+                    category.filter_category(data_gen)
+                    ic(f"Added data to {category_name}")
+                    setattr(categories, category_name, category)
+                except Exception as e:
+                    ic(f"Error filtering {category_name}: {e}")
+                    continue
+        self.data = categories
         return self.data
