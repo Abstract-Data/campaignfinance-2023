@@ -69,13 +69,14 @@ fields = [data.travel,
           ]
 prefix_to_remove = ['guarantor', 'payee', 'candidate', 'treas', 'filer', 'chair', 'contributor', 'expend', 'assttreas', ]
 unique_fields = set()
+numerical_field_dict = {}
 for field in fields:
     if field.DATA:
         for record in field.DATA:
             for key in record.keys():
                 unique_fields.add(key)
-                if key.endswith('3'):
-                    print(key, record['file_origin'])
+                if key[-1].isdigit():
+                    numerical_field_dict.setdefault(record['file_origin'], []).append(key)
 unique_fields_rm_prefix = set([x.replace(prefix, "") for x in unique_fields for prefix in prefix_to_remove if x.startswith(prefix) and x != prefix])
 unique_fields_wo_prefix = set([x for x in unique_fields if not any([x.startswith(prefix) for prefix in prefix_to_remove])])
 unique_fields = unique_fields_rm_prefix.union(unique_fields_wo_prefix)
