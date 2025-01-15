@@ -4,7 +4,7 @@ from states.texas import (
     TexasDownloader
     # texas_engine as engine,
 )
-from states.texas.validators.texas_personname import TECPersonName
+from states.texas.validators.texas_filers import TECFilerName
 # from states.oklahoma import OklahomaCategory, oklahoma_validators, oklahoma_snowpark_session
 
 # from sqlmodel import select, SQLModel, text, within_group, Session, any_, col, and_, or_
@@ -58,28 +58,61 @@ download.read()
 cats = download.sort_categories()
 data = download.data
 
+test = TECFilerName(**next(data.filers))
 
-fields = [data.travel,
-          data.contributions,
-          data.expenses,
-          data.filers,
-          data.reports,
-          data.candidates,
-          data.debts
-          ]
-prefix_to_remove = ['guarantor', 'payee', 'candidate', 'treas', 'filer', 'chair', 'contributor', 'expend', 'assttreas', ]
-unique_fields = set()
-numerical_field_dict = {}
-for field in fields:
-    if field.DATA:
-        for record in field.DATA:
-            for key in record.keys():
-                unique_fields.add(key)
-                if key[-1].isdigit():
-                    numerical_field_dict.setdefault(record['file_origin'], []).append(key)
-unique_fields_rm_prefix = set([x.replace(prefix, "") for x in unique_fields for prefix in prefix_to_remove if x.startswith(prefix) and x != prefix])
-unique_fields_wo_prefix = set([x for x in unique_fields if not any([x.startswith(prefix) for prefix in prefix_to_remove])])
-unique_fields = unique_fields_rm_prefix.union(unique_fields_wo_prefix)
+# filers = (x['filerIdent'] for x in data if 'filers' in x['file_origin'])
+# reports = (x['reportInfoIdent'] for x in data if 'reports' in x['file_origin'])
+# contributions = (x for x in data.contributions if x['filerIdent'] in reports and x['filderIdent'] == test.filerIdent)
+# expenses = (x for x in data.expenses if x['filerIdent'] in reports and x['filderIdent'] == test.filerIdent)
+
+# contrib = next(data.contributions)
+# filers = next(data.filers)
+# reports = next(data.reports)
+# expenses = next(data.expenses)
+# travel = next(data.travel)
+# candidates = next(data.candidates)
+# debts = next(data.debts)
+#
+# fields = [data.travel,
+#           data.contributions,
+#           data.expenses,
+#           data.filers,
+#           data.reports,
+#           data.candidates,
+#           data.debts
+#           ]
+# prefix_to_remove = ['lender', 'guarantor', 'payee', 'candidate', 'treas', 'chair', 'contributor', 'expend', 'assttreas', ]
+# unique_fields = set()
+# numerical_field_dict = {}
+# all_field_dict = {}
+# for field in fields:
+#     if field.DATA:
+#         record = next(field.DATA)
+#         for key in record.keys():
+#             unique_fields.add(key)
+#             all_field_dict.setdefault(record['file_origin'], []).append(key)
+#             if key[-1].isdigit():
+#                 numerical_field_dict.setdefault(record['file_origin'], []).append(key)
+#
+# all_field_dict_rm_prefix = set(
+#     key.replace(prefix, "")
+#     for v in all_field_dict.values()
+#     for key in v
+#     for prefix in prefix_to_remove
+#     if key.startswith(prefix) and key != prefix
+# )
+#
+# all_field_dict_after_prefix_removed = {}
+# for file, fields in all_field_dict.items():
+#     remove_pfx = [x.replace(prefix, "") for x in fields for prefix in prefix_to_remove if x.startswith(prefix) and x != prefix]
+#     all_field_dict_after_prefix_removed[file] = remove_pfx
+#
+# common_fields = set.intersection(*[set(v) for v in all_field_dict_after_prefix_removed.values()])
+# unique_fields_rm_prefix = set([x.replace(prefix, "") for x in unique_fields for prefix in prefix_to_remove if x.startswith(prefix) and x != prefix])
+# unique_fields_wo_prefix = set([x for x in unique_fields if not any([x.startswith(prefix) for prefix in prefix_to_remove])])
+# unique_fields_reduced = unique_fields_rm_prefix.union(unique_fields_wo_prefix)
+#
+# flags = set([key for v in all_field_dict.values() for key in v if 'Flag' in key])
 # set_of_fields = list(next(x) for x in data_generators)
 # texas = TexasCategory('filers')
 # texas.validate()
