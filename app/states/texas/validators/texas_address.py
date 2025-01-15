@@ -6,7 +6,7 @@ from pydantic import field_validator, model_validator, ValidatorFunctionWrapHand
 from pydantic_extra_types.phone_numbers import PhoneNumber
 from pydantic_core import PydanticCustomError
 
-from . import TECSettings
+from . import TECBaseModel
 import funcs.validator_functions as funcs
 import states.texas.funcs.tx_validation_funcs as tx_funcs
 from scourgify import NormalizeAddress
@@ -17,9 +17,9 @@ from funcs.record_keygen import RecordKeyGenerator
 
 ADDRESS_LIST = {}
 
-class TECAddress(TECSettings):
-    __tablename__ = "tx_addresses"
-    __table_args__ = {"schema": "texas"}
+class TECAddressBase(TECBaseModel):
+    # __tablename__ = "tx_addresses"
+    # __table_args__ = {"schema": "texas"}
     id: Optional[str] = Field(default=None, description="Unique record ID", primary_key=True)
     address1: Optional[str] = Field(default=None, description="Address line 1")
     address2: Optional[str] = Field(default=None, description="Address line 2")
@@ -31,7 +31,7 @@ class TECAddress(TECSettings):
     region: Optional[str] = Field(default=None, description="Region")
     standardized: str = Field(default=None, description="Address standardized")
     person_name_id: Optional[str] = Field(default=None, foreign_key="tx_person_names.id")
-    person_name: list['TECPersonName'] = Field(default=None)
+    # person_name: list['TECPersonName'] = Relationship(back_populates="addresses")
 
     @model_validator(mode='before')
     @classmethod
@@ -140,3 +140,13 @@ class TECAddress(TECSettings):
                 self.standardized = _standardized
                 self.id = self.generate_key(self.standardized)
             return self
+
+
+class TECPersonAddressLinkModel(TECBaseModel, table=True):
+    __tablename__ = "tx_person_address_link"
+    __table_args__ = {"schema": "texas"}
+    address_id: str = Field(foreign_key="texas.tx_addresses.id", primary_key=True)
+    person_id: Optional[str] = Field(default=None, foreign_key="texas.tx_person_names.id", primary_key=True)
+    treasurer_id: Optional[str] = Field(default=None, foreign_key="texas.tx_treasurers.id", primary_key=True)
+    assistant_treasurer_id: Optional[str] = Field(default=None, foreign_key="texas.tx_assistant_treasurers.id", primary_key=True)
+

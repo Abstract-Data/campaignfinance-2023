@@ -163,6 +163,13 @@ def format_zipcode(column, zipcode: str) -> str:
             }
         )
 
+def check_contains_factory(match_string: str):
+    def check_contains(value: str) -> str:
+        if value and match_string not in value:
+            raise ValueError(f"Value must contain '{match_string}'")
+        return value
+    return check_contains
+
 
 @singledispatch
 def person_name_parser(name: str) -> HumanName:

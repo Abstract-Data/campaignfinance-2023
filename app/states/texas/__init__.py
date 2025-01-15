@@ -30,7 +30,7 @@ TEXAS_CONFIGURATION.CATEGORY_TYPES = CategoryTypes(
             VALIDATOR=validators.TECContribution),
         'filers': TexasCategoryConfig(
             DESC="filers",
-            VALIDATOR=validators.TECFiler),
+            VALIDATOR=validators.TECFilerName),
         'reports': TexasCategoryConfig(
             DESC='reports',
             VALIDATOR=validators.TECFinalReport),
