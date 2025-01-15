@@ -16,6 +16,7 @@ from funcs.record_keygen import RecordKeyGenerator
 # TODO: Create a 'Corrections' variable to hold the corrections for
 #  the data as a list to add each correction to the list.
 
+# TODO: Setup Filer Name as its Own Name, Then Create a Link Model of the Names and ID.
 
 class TECAddress(TECAddressBase, table=True):
     __tablename__ = "tx_addresses"
@@ -28,12 +29,12 @@ class TECFilerIDNameLink(TECBaseModel, table=True):
     __tablename__ = "tx_filer_id_name_link"
     __table_args__ = {"schema": "texas"}
     filer_id: int = Field(foreign_key="texas.tx_filer.filerIdent", primary_key=True)
-    filer_name_id: Optional[str] = Field(foreign_key="texas.tx_filer_name.filerIdent", primary_key=True)
-    person_name_id: Optional[str] = Field(foreign_key="texas.tx_person_names.id", primary_key=True)
-    office_id: Optional[str] = Field(foreign_key="texas.tx_cta.id", primary_key=True)
-    treasurer_id: Optional[str] = Field(foreign_key="texas.tx_treasurer.id", primary_key=True)
-    assttreas_id: Optional[str] = Field(foreign_key="texas.tx_assistant_treasurer.id", primary_key=True)
-    chair_id: Optional[str] = Field(foreign_key="texas.tx_chair.id", primary_key=True)
+    filer_name_id: Optional[str] = Field(default=None, foreign_key="texas.tx_filer_name.filerIdent", primary_key=True)
+    person_name_id: Optional[str] = Field(default=None, foreign_key="texas.tx_person_names.id", primary_key=True)
+    office_id: Optional[str] = Field(default=None, foreign_key="texas.tx_cta.id", primary_key=True)
+    treasurer_id: Optional[str] = Field(default=None, foreign_key="texas.tx_treasurer.id", primary_key=True)
+    assttreas_id: Optional[str] = Field(default=None, foreign_key="texas.tx_assistant_treasurer.id", primary_key=True)
+    chair_id: Optional[str] = Field(default=None, foreign_key="texas.tx_chair.id", primary_key=True)
 
 
 class TECFlags(TECFlagsBase, table=True):
@@ -44,7 +45,7 @@ class TECPersonName(TECPersonNameBase, table=True):
     __tablename__ = "tx_person_names"
     __table_args__ = {"schema": "texas"}
     addresses: list["TECAddress"] = Relationship(back_populates="person_name", link_model=TECPersonAddressLinkModel)
-    filer_name: list["TECFilerName"] = Relationship(back_populates="filer_name", link_model=TECFilerIDNameLink)
+    # filer_name: list["TECFilerName"] = Relationship(back_populates="filer_name", link_model=TECFilerIDNameLink)
 
 
 class TECFilerID(TECBaseModel, table=True):
@@ -106,7 +107,7 @@ class TECTreasurer(TECPersonNameBase, table=True):
         default=None, description="Treasurer effective start date", sa_type=Date)
     treasEffStopDt: Optional[date] = Field(
         default=None, description="Treasurer effective stop date", sa_type=Date)
-    campaign: "TECFilerName" = Relationship(back_populates="treasurer", link_model=TECFilerIDNameLink)
+    # campaign: "TECFilerName" = Relationship(back_populates="treasurer", link_model=TECFilerIDNameLink)
 
 class TECAssistantTreasurer(TECPersonNameBase, table=True):
     __tablename__ = "tx_assistant_treasurer"
@@ -115,12 +116,12 @@ class TECAssistantTreasurer(TECPersonNameBase, table=True):
         default=None, description="Assistant treasurer appointor last name")
     assttreasAppointorNameFirst: Optional[str] = Field(
         default=None, description="Assistant treasurer appointor first name")
-    campaign: "TECFilerName" = Relationship(back_populates="asstTreasurer", link_model=TECFilerIDNameLink)
+    # campaign: "TECFilerName" = Relationship(back_populates="asstTreasurer", link_model=TECFilerIDNameLink)
 
 class TECCampaignChair(TECPersonNameBase, table=True):
     __tablename__ = "tx_chair"
     __table_args__ = {"schema": "texas"}
-    campaign: "TECFilerName" = Relationship(back_populates="chair", link_model=TECFilerIDNameLink)
+    # campaign: "TECFilerName" = Relationship(back_populates="chair", link_model=TECFilerIDNameLink)
 
 class TECFilerName(TECBaseModel, table=True):
     __tablename__ = "tx_filer_name"
