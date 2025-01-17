@@ -4,8 +4,10 @@
 *.zip
 *.DS_Store
 *.env
+*.parquet
 *.__pycache__/
 /logs/
+/tmp/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
