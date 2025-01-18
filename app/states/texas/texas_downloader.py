@@ -34,18 +34,6 @@ class TECDownloader(FileDownloaderABC):
             read_from_temp: bool = True,
             headless: bool = True
     ) -> TECDownloader:
-        # tmp = self.config.TEMP_FOLDER
-        # options = Options()
-        # _prefs = {'download.default_directory': str(tmp)}
-        # options.add_experimental_option('prefs', _prefs)
-        # options.add_argument("--window-size=1920,1080")  # set window size to native GUI size
-        # options.add_argument("start-maximized")  # ensure window is full-screen
-        # options.page_load_strategy = "none"  # Load the page as soon as possible
-        # if headless:
-        #     options.add_argument("--headless=True") # hide GUI
-        #
-        # if not tmp.is_dir():
-        #     tmp.mkdir()
         tmp = self.config.TEMP_FOLDER
         _existing_files = itertools.chain(*map(lambda x: tmp.glob(x), ["*.csv", "*.parquet", "*.txt"]))
         _safe_to_delete = False
@@ -142,20 +130,41 @@ class TECDownloader(FileDownloaderABC):
                 _files = iter(v)
                 # Start with scanning the first file instead of empty DataFrame
                 _first_file = next(_files)
-                df = pl.read_parquet(_first_file).with_columns(
-                    pl.lit(_first_file.stem).alias('file_origin')
+                df = (
+                    pl.read_parquet(_first_file)
+                    .with_columns(
+                        pl.lit(_first_file.stem)
+                        .alias('file_origin')
+                    )
                 )
                 for _file in _files:
-                    _fdf = pl.read_parquet(_file).with_columns(
-                        pl.lit(_file.stem).alias('file_origin')
+                    _fdf = (
+                        pl.read_parquet(_file)
+                        .with_columns(
+                            pl.lit(_file.stem)
+                            .alias('file_origin')
+                        )
                     )
                     df = df.vstack(_fdf)
                     ic(f"Added {_file.stem} to DataFrame {k}")
             else:
-                df = pl.read_parquet(v[0]).with_columns(
-                    pl.lit(v[0].stem).alias('file_origin')
+                df = (
+                    pl.read_parquet(v[0])
+                    .with_columns(
+                        pl.lit(v[0].stem)
+                        .alias('file_origin')
+                    )
                 )
-            df = df.with_columns([pl.col(col).cast(pl.String) for col in df.columns])
+
+            df = (
+                df
+                .with_columns(
+                    [
+                        pl.col(col)
+                        .cast(pl.String) for col in df.columns
+                    ]
+                )
+            )
 
             df.write_parquet(
                 file=self.config.TEMP_FOLDER / f"{k}_{datetime.now():%Y%m%d}w.parquet",
@@ -179,7 +188,16 @@ class TECDownloader(FileDownloaderABC):
             for file in parquet_files:
                 _type = file.stem.rsplit('_', 1)[0]
                 _data.setdefault(_type, []).append(file)
-            _data = {k: (pl.scan_parquet(v).collect().to_dicts()) for k, v in _data.items()}
+
+            _data = (
+                {
+                    k: (
+                        pl.scan_parquet(v)
+                        .collect()
+                        .to_dicts()
+                    ) for k, v in _data.items()
+                }
+            )
             self.data = _data
         return self.data
 

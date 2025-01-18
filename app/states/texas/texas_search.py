@@ -58,11 +58,21 @@ class TexasSearchSetup:
         return self.COLS
 
     def _recast_sorted_field_types(self):
-        self.DATA = self.DATA.with_columns(
-            [pl.col(col).str.strptime(pl.Date, '%Y%m%d', strict=False).alias(col) for col in self.COLS['date']]
-            + [pl.col(col).cast(pl.Int32).alias(col) for col in self.COLS['identity']]
-            + [pl.col(col).cast(pl.Float64).alias(col) for col in self.COLS['amount']],
+        self.DATA = (
+            self.DATA
+            .with_columns(
+                [pl.col(col)
+                .str
+                .strptime(pl.Date, '%Y%m%d', strict=False)
+                .alias(col) for col in self.COLS['date']] +
+                [pl.col(col)
+                .cast(pl.Int32)
+                .alias(col) for col in self.COLS['identity']] +
+                [pl.col(col)
+                .cast(pl.Float64)
+                .alias(col) for col in self.COLS['amount']],
             )
+        )
         _pfx = self.DATA.first().collect().get_column('file_origin')[0]
         if TexasExpenseFields.PFX in _pfx:
             self.type_ = TexasExpenseFields
@@ -113,6 +123,7 @@ class TexasSearch:
                 .str
                 .contains(search_term))
            .collect())
+
         _unique_filers = (
             _result
             .group_by(
@@ -125,7 +136,6 @@ class TexasSearch:
 
         self.results['origin'] = _result
         self.results['unique_filers'] = _unique_filers
-
         return self
 
     def group_by_year(self) -> DataFrame:
@@ -135,10 +145,18 @@ class TexasSearch:
             .group_by(
                 pl.col('filerIdent'),
                 self.config.NAME_ORG,
-                pl.col(self.config.type_.DATE).dt.year().cast(pl.String).alias('year'))
+                pl.col(self.config.type_.DATE)
+                .dt.year()
+                .cast(pl.String)
+                .alias('year'))
             .agg(
-                pl.col(self.config.type_.AMOUNT).cast(pl.Float64).alias('total').sum().round())
-            .to_pandas())
+                pl.col(self.config.type_.AMOUNT)
+                .cast(pl.Float64)
+                .alias('total')
+                .sum()
+                .round())
+            .to_pandas()
+        )
 
         _merge_uniques = (
             self.results['unique_filers']

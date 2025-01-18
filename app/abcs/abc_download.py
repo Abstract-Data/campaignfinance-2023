@@ -75,10 +75,21 @@ class FileDownloaderABC(abc.ABC):
         
         rename = f"{file_name.stem}_{datetime.now():%Y%m%d}dl"
         pl_file = pl.scan_csv(tmp / file_name, low_memory=False, infer_schema=False)
-        pl_file = pl_file.with_columns(
-            pl.lit(file_name.stem).alias('file_origin')
-        )
-        pl_file = pl_file.with_columns([pl.col(col).cast(pl.String) for col in pl_file.collect_schema().names()])
+        pl_file = (
+            pl_file
+            .with_columns(
+                pl.lit(file_name.stem)
+                .alias('file_origin')
+            ))
+
+        pl_file = (
+            pl_file
+            .with_columns([
+                pl.col(col)
+                .cast(pl.String)
+                for col in pl_file.collect_schema().names()
+                ]))
+
         pl_file.collect().write_parquet(tmp / f"{rename}.parquet", compression='lz4')
         progress.update_task(_csv_task, "Complete")
         # Clean up original CSV file

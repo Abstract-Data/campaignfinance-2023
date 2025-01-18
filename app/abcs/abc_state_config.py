@@ -151,7 +151,11 @@ class StateConfig:
     
     @property
     def FIELD_DATA(self) -> dict:
-        return funcs.read_toml(Path(__file__).parents[1] / 'states'/ (_state := self.STATE_NAME.lower()) / f"{_state}_fields.toml")
+        return (
+            funcs
+            .read_toml(
+                Path(__file__)
+                .parents[1] / 'states'/ (_state := self.STATE_NAME.lower()) / f"{_state}_fields.toml"))
     
     @staticmethod
     @lru_cache
