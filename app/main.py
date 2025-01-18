@@ -4,7 +4,8 @@ from __future__ import annotations
 import re
 
 from states.texas import (
-    TexasDownloader
+    TexasDownloader,
+    TexasSearch
     # texas_engine as engine,
 )
 from states.texas.validators.texas_filers import TECFilerName
@@ -58,213 +59,217 @@ separate script so they're created in the correct order."""
 
 # SQLModel.metadata.create_all(engine)
 download = TexasDownloader()
-download.download()
+# download.download()
 dfs = download.dataframes()
 
+df = dfs['expend']
+search = TexasSearch(dfs['expend'])
+test = search.search("Macias Strategies")
+grouped = test.group_by_year()
 
-df = dfs['contribs']
-cols = df.collect_schema().names()
-date_cols = [x for x in cols if x.endswith('Dt')]
-identity_cols = [x for x in cols if x.endswith('Ident')]
-amount_cols = [x for x in cols if x.endswith('Amount')]
-df = df.with_columns(
-    [pl.col(col).str.strptime(pl.Date, '%Y%m%d', strict=False).alias(col) for col in date_cols]
-    + [pl.col(col).cast(pl.Int32).alias(col) for col in identity_cols]
-    + [pl.col(col).cast(pl.Float64).alias(col) for col in amount_cols],
-)
-
-wilks = df.sql(
-    """SELECT * FROM self WHERE
-    STARTS_WITH(contributorNameLast, 'Wilks')
-    AND (contributorNameFirst LIKE '%JoAnn%' OR contributorNameFirst LIKE '%Farris%' OR contributorNameFirst LIKE '%Dan%')"""
-)
-w_ = wilks.select(pl.col('contributionAmount')).collect().to_series()
-w_min, w_max, w_median = w_.min(), w_.max(), w_.median()
-
-CONTRIB_FIRST_AND_LAST = pl.format("{} {}", pl.col('contributorNameFirst'), pl.col('contributorNameLast'))
-CONTRIB_NAME_ORG = pl.coalesce(CONTRIB_FIRST_AND_LAST, pl.col('contributorNameOrganization')).alias('contributorName')
-
-VENDOR_FIRST_AND_LAST = pl.format("{} {}", pl.col('payeeNameFirst'), pl.col('payeeNameLast'))
-VENDOR_NAME_AND_ORG = pl.coalesce(VENDOR_FIRST_AND_LAST, pl.col('payeeNameOrganization')).alias('payeeName')
-
-group_by = wilks.group_by(
-        pl.col('filerIdent'),
-        pl.col('filerName'),
-        CONTRIB_NAME_ORG,
-        pl.col('contributionDt').dt.year().alias('year'),
-    ).agg(
-        pl.col('contributionAmount').cast(pl.Float64).alias('amount').sum()
-    ).collect().to_pandas()
-
-unique_filers = group_by[['filerIdent', 'filerName']].drop_duplicates(subset='filerIdent')
-filer_ids = unique_filers['filerIdent'].unique()
-filer_ids_count = len(filer_ids)
-
-all_donors_matching_ids = (df.filter(
-    pl.col('filerIdent')
-    .is_in(filer_ids))
-    .with_columns(
-        pl.col('contributionDt').dt.year().alias('year')
-    )
-)
-
-count_by_contributor = all_donors_matching_ids.group_by(
-    CONTRIB_NAME_ORG,
-).agg(
-    pl.col('filerIdent').n_unique().alias('num_same_as_wilks'),
-).collect().to_pandas()
-
-all_donors_to_same = all_donors_matching_ids.group_by(
-    [CONTRIB_NAME_ORG, 'year', 'filerIdent',]).agg(
-        pl.col('contributionAmount').cast(pl.Float64).alias('total').sum(),
-    ).collect().to_pandas()
-
-all_donors_to_same = unique_filers.merge(all_donors_to_same, on='filerIdent', how='left')
-df1 = all_donors_to_same.groupby(
-    ['contributorName', 'filerIdent', 'year']
-).agg({
-    'filerName': 'first',
-    'total': 'sum'
-}).reset_index()
-
-df2 = (
-    pd.crosstab(
-        index=[
-            all_donors_to_same['contributorName'],
-            all_donors_to_same['filerIdent'],
-            all_donors_to_same['filerName'].astype(str),
-        ],
-        columns=all_donors_to_same['year'],
-        values=all_donors_to_same['total'],
-        aggfunc='sum',
-        margins=True,
-        margins_name='total',
-        dropna=True
-    ).reset_index()
-    .merge(count_by_contributor, on='contributorName', how='left')
-    .fillna(pd.NA)
-    .assign(num_same_as_wilks=lambda x: x['num_same_as_wilks'].round().astype(pd.Int64Dtype()))
-    .query(f'num_same_as_wilks >= {filer_ids_count / 5} and total >= {w_median}')
-    .set_index(['contributorName', 'filerIdent'])
-)
-
-exdf = dfs['expend']
-
-ex_cols = exdf.collect_schema().names()
-ex_date_cols = [x for x in ex_cols if x.endswith('Dt')]
-ex_identity_cols = [x for x in ex_cols if x.endswith('Ident')]
-ex_amount_cols = [x for x in ex_cols if x.endswith('Amount')]
-exdf = exdf.with_columns(
-    [pl.col(col).str.strptime(pl.Date, '%Y%m%d', strict=False).alias(col) for col in ex_date_cols]
-    + [pl.col(col).cast(pl.Int32).alias(col) for col in ex_identity_cols]
-    + [pl.col(col).cast(pl.Float64).alias(col) for col in ex_amount_cols]
-)
-
-
-exdf = (exdf
-        .filter(
-            pl.col('filerIdent')
-            .is_in(filer_ids))
-        .with_columns(
-            pl.col('expendDt').dt.year().alias('year'))
-)
-categories = (exdf
-              .select(
-                pl.col('expendCatCd')
-                .unique()
-                .alias('expenditure_categories'))
-              .collect())
-
-count_by_vendor = exdf.group_by(
-    VENDOR_NAME_AND_ORG,
-).agg(
-    pl.col('filerIdent').n_unique().alias('num_same_as_wilks'),
-).collect().to_pandas()
-
-all_vendors_to_same = exdf.group_by([
-    VENDOR_NAME_AND_ORG, 'filerIdent', 'year']).agg(
-    pl.col('expendAmount').cast(pl.Float64).sum().round().alias('total'),
-    pl.col('expendCatCd').unique().alias('expenditure_categories').cast(pl.String),
-).collect().to_pandas()
-all_vendors_to_same['year'] = all_vendors_to_same['year'].astype(pd.Int64Dtype())
-
-merge_filer_data = unique_filers.merge(all_vendors_to_same, on='filerIdent', how='left')
-
-ex_ct = (
-          pd.crosstab(
-              index=[
-                  merge_filer_data['payeeName'],
-                  merge_filer_data['filerIdent'],
-                  merge_filer_data['filerName'].astype(str),
-              ],
-              columns=merge_filer_data['year'],
-              values=merge_filer_data['total'],
-              aggfunc='sum',
-              margins=True,
-              margins_name='total',
-              dropna=True
-          ).reset_index()
-    .merge(count_by_vendor, on='payeeName', how='left')
-    .fillna(pd.NA)
-    .assign(num_same_as_wilks=lambda x: x['num_same_as_wilks'].round().astype(pd.Int64Dtype()))
-    .query(f'num_same_as_wilks >= {filer_ids_count / 5} and total >= {w_median}')
-    .set_index(['payeeName'])
-    .sort_values(by='total', ascending=False)
-)
-
-
-vendor_total_ct = (
-    pd.crosstab(
-        index=merge_filer_data['payeeName'],
-        columns=merge_filer_data['year'],
-        values=merge_filer_data['total'],
-        aggfunc='sum',
-        margins=True,
-        margins_name='total',
-        dropna=True
-    ).reset_index()
-    .merge(count_by_vendor, on='payeeName', how='left')
-    .fillna(pd.NA)
-    .assign(num_same_as_wilks=lambda x: x['num_same_as_wilks'].round().astype(pd.Int64Dtype()))
-    .query(f'num_same_as_wilks >= {filer_ids_count / 5} and total >= {w_median}')
-    .set_index(['payeeName'])
-    .sort_values(by=['total', 'payeeName'], ascending=False)
-)
-vendor_total_ct.to_csv(Path.home() / 'Downloads' / 'vendor_totals.csv')
-ex_ct.to_csv(Path.home() / 'Downloads' / 'vendor_totals_by_filer.csv')
-same_as_wilks_vendors = all_vendors_to_same.filter(
-    pl.col('num_same_as_wilks') >= (filer_ids_count / 5))
-
-
-top_donors = df.with_columns(
-    CONTRIB_NAME_ORG,
-    pl.col('contributionDt').dt.year().alias('year').cast(pl.String)
-).select(
-    CONTRIB_NAME_ORG, pl.col('filerIdent'), pl.col('filerName'), pl.col('contributionAmount'), 'year').collect()
-
-top_donors_group = top_donors.group_by([
-    'contributorName', 'filerIdent', 'filerName', 'year']).agg(
-    pl.col('contributionAmount').sum().round().alias('total')
-)
-
-top_ct_by_filer = pd.crosstab(
-    index=[
-        top_donors_group['contributorName'],
-        top_donors_group['filerName']],
-    columns=top_donors_group['year'],
-    values=top_donors_group['total'],
-    aggfunc='sum',
-    margins=True,
-    margins_name='total',
-).query(f'total >= {w_median}')
-top_ct_total = pd.crosstab(
-    index=top_donors_group['contributorName'],
-    columns=top_donors_group['year'],
-    values=top_donors_group['total'],
-    aggfunc='sum',
-    margins=True,
-    margins_name='total',
-).query(f'total >= 3e6')
+# df = dfs['contribs']
+# cols = df.collect_schema().names()
+# date_cols = [x for x in cols if x.endswith('Dt')]
+# identity_cols = [x for x in cols if x.endswith('Ident')]
+# amount_cols = [x for x in cols if x.endswith('Amount')]
+# df = df.with_columns(
+#     [pl.col(col).str.strptime(pl.Date, '%Y%m%d', strict=False).alias(col) for col in date_cols]
+#     + [pl.col(col).cast(pl.Int32).alias(col) for col in identity_cols]
+#     + [pl.col(col).cast(pl.Float64).alias(col) for col in amount_cols],
+# )
+#
+# wilks = df.sql(
+#     """SELECT * FROM self WHERE
+#     STARTS_WITH(contributorNameLast, 'Wilks')
+#     AND (contributorNameFirst LIKE '%JoAnn%' OR contributorNameFirst LIKE '%Farris%' OR contributorNameFirst LIKE '%Dan%')"""
+# )
+# w_ = wilks.select(pl.col('contributionAmount')).collect().to_series()
+# w_min, w_max, w_median = w_.min(), w_.max(), w_.median()
+#
+# CONTRIB_FIRST_AND_LAST = pl.format("{} {}", pl.col('contributorNameFirst'), pl.col('contributorNameLast'))
+# CONTRIB_NAME_ORG = pl.coalesce(CONTRIB_FIRST_AND_LAST, pl.col('contributorNameOrganization')).alias('contributorName')
+#
+# VENDOR_FIRST_AND_LAST = pl.format("{} {}", pl.col('payeeNameFirst'), pl.col('payeeNameLast'))
+# VENDOR_NAME_AND_ORG = pl.coalesce(VENDOR_FIRST_AND_LAST, pl.col('payeeNameOrganization')).alias('payeeName')
+#
+# group_by = wilks.group_by(
+#         pl.col('filerIdent'),
+#         pl.col('filerName'),
+#         CONTRIB_NAME_ORG,
+#         pl.col('contributionDt').dt.year().alias('year'),
+#     ).agg(
+#         pl.col('contributionAmount').cast(pl.Float64).alias('amount').sum()
+#     ).collect().to_pandas()
+#
+# unique_filers = group_by[['filerIdent', 'filerName']].drop_duplicates(subset='filerIdent')
+# filer_ids = unique_filers['filerIdent'].unique()
+# filer_ids_count = len(filer_ids)
+#
+# all_donors_matching_ids = (df.filter(
+#     pl.col('filerIdent')
+#     .is_in(filer_ids))
+#     .with_columns(
+#         pl.col('contributionDt').dt.year().alias('year')
+#     )
+# )
+#
+# count_by_contributor = all_donors_matching_ids.group_by(
+#     CONTRIB_NAME_ORG,
+# ).agg(
+#     pl.col('filerIdent').n_unique().alias('num_same_as_wilks'),
+# ).collect().to_pandas()
+#
+# all_donors_to_same = all_donors_matching_ids.group_by(
+#     [CONTRIB_NAME_ORG, 'year', 'filerIdent',]).agg(
+#         pl.col('contributionAmount').cast(pl.Float64).alias('total').sum(),
+#     ).collect().to_pandas()
+#
+# all_donors_to_same = unique_filers.merge(all_donors_to_same, on='filerIdent', how='left')
+# df1 = all_donors_to_same.groupby(
+#     ['contributorName', 'filerIdent', 'year']
+# ).agg({
+#     'filerName': 'first',
+#     'total': 'sum'
+# }).reset_index()
+#
+# df2 = (
+#     pd.crosstab(
+#         index=[
+#             all_donors_to_same['contributorName'],
+#             all_donors_to_same['filerIdent'],
+#             all_donors_to_same['filerName'].astype(str),
+#         ],
+#         columns=all_donors_to_same['year'],
+#         values=all_donors_to_same['total'],
+#         aggfunc='sum',
+#         margins=True,
+#         margins_name='total',
+#         dropna=True
+#     ).reset_index()
+#     .merge(count_by_contributor, on='contributorName', how='left')
+#     .fillna(pd.NA)
+#     .assign(num_same_as_wilks=lambda x: x['num_same_as_wilks'].round().astype(pd.Int64Dtype()))
+#     .query(f'num_same_as_wilks >= {filer_ids_count / 5} and total >= {w_median}')
+#     .set_index(['contributorName', 'filerIdent'])
+# )
+#
+# exdf = dfs['expend']
+#
+# ex_cols = exdf.collect_schema().names()
+# ex_date_cols = [x for x in ex_cols if x.endswith('Dt')]
+# ex_identity_cols = [x for x in ex_cols if x.endswith('Ident')]
+# ex_amount_cols = [x for x in ex_cols if x.endswith('Amount')]
+# exdf = exdf.with_columns(
+#     [pl.col(col).str.strptime(pl.Date, '%Y%m%d', strict=False).alias(col) for col in ex_date_cols]
+#     + [pl.col(col).cast(pl.Int32).alias(col) for col in ex_identity_cols]
+#     + [pl.col(col).cast(pl.Float64).alias(col) for col in ex_amount_cols]
+# )
+#
+#
+# exdf = (exdf
+#         .filter(
+#             pl.col('filerIdent')
+#             .is_in(filer_ids))
+#         .with_columns(
+#             pl.col('expendDt').dt.year().alias('year'))
+# )
+# categories = (exdf
+#               .select(
+#                 pl.col('expendCatCd')
+#                 .unique()
+#                 .alias('expenditure_categories'))
+#               .collect())
+#
+# count_by_vendor = exdf.group_by(
+#     VENDOR_NAME_AND_ORG,
+# ).agg(
+#     pl.col('filerIdent').n_unique().alias('num_same_as_wilks'),
+# ).collect().to_pandas()
+#
+# all_vendors_to_same = exdf.group_by([
+#     VENDOR_NAME_AND_ORG, 'filerIdent', 'year']).agg(
+#     pl.col('expendAmount').cast(pl.Float64).sum().round().alias('total'),
+#     pl.col('expendCatCd').unique().alias('expenditure_categories').cast(pl.String),
+# ).collect().to_pandas()
+# all_vendors_to_same['year'] = all_vendors_to_same['year'].astype(pd.Int64Dtype())
+#
+# merge_filer_data = unique_filers.merge(all_vendors_to_same, on='filerIdent', how='left')
+#
+# ex_ct = (
+#           pd.crosstab(
+#               index=[
+#                   merge_filer_data['payeeName'],
+#                   merge_filer_data['filerIdent'],
+#                   merge_filer_data['filerName'].astype(str),
+#               ],
+#               columns=merge_filer_data['year'],
+#               values=merge_filer_data['total'],
+#               aggfunc='sum',
+#               margins=True,
+#               margins_name='total',
+#               dropna=True
+#           ).reset_index()
+#     .merge(count_by_vendor, on='payeeName', how='left')
+#     .fillna(pd.NA)
+#     .assign(num_same_as_wilks=lambda x: x['num_same_as_wilks'].round().astype(pd.Int64Dtype()))
+#     .query(f'num_same_as_wilks >= {filer_ids_count / 5} and total >= {w_median}')
+#     .set_index(['payeeName'])
+#     .sort_values(by='total', ascending=False)
+# )
+#
+#
+# vendor_total_ct = (
+#     pd.crosstab(
+#         index=merge_filer_data['payeeName'],
+#         columns=merge_filer_data['year'],
+#         values=merge_filer_data['total'],
+#         aggfunc='sum',
+#         margins=True,
+#         margins_name='total',
+#         dropna=True
+#     ).reset_index()
+#     .merge(count_by_vendor, on='payeeName', how='left')
+#     .fillna(pd.NA)
+#     .assign(num_same_as_wilks=lambda x: x['num_same_as_wilks'].round().astype(pd.Int64Dtype()))
+#     .query(f'num_same_as_wilks >= {filer_ids_count / 5} and total >= {w_median}')
+#     .set_index(['payeeName'])
+#     .sort_values(by=['total', 'payeeName'], ascending=False)
+# )
+# vendor_total_ct.to_csv(Path.home() / 'Downloads' / 'vendor_totals.csv')
+# ex_ct.to_csv(Path.home() / 'Downloads' / 'vendor_totals_by_filer.csv')
+# same_as_wilks_vendors = all_vendors_to_same.filter(
+#     pl.col('num_same_as_wilks') >= (filer_ids_count / 5))
+#
+#
+# top_donors = df.with_columns(
+#     CONTRIB_NAME_ORG,
+#     pl.col('contributionDt').dt.year().alias('year').cast(pl.String)
+# ).select(
+#     CONTRIB_NAME_ORG, pl.col('filerIdent'), pl.col('filerName'), pl.col('contributionAmount'), 'year').collect()
+#
+# top_donors_group = top_donors.group_by([
+#     'contributorName', 'filerIdent', 'filerName', 'year']).agg(
+#     pl.col('contributionAmount').sum().round().alias('total')
+# )
+#
+# top_ct_by_filer = pd.crosstab(
+#     index=[
+#         top_donors_group['contributorName'],
+#         top_donors_group['filerName']],
+#     columns=top_donors_group['year'],
+#     values=top_donors_group['total'],
+#     aggfunc='sum',
+#     margins=True,
+#     margins_name='total',
+# ).query(f'total >= {w_median}')
+# top_ct_total = pd.crosstab(
+#     index=top_donors_group['contributorName'],
+#     columns=top_donors_group['year'],
+#     values=top_donors_group['total'],
+#     aggfunc='sum',
+#     margins=True,
+#     margins_name='total',
+# ).query(f'total >= 3e6')
 
 # all_donors_to_same = dfs['contributions'].sql(
 #     f"""
