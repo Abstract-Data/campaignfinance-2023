@@ -58,7 +58,7 @@ separate script so they're created in the correct order."""
 
 # SQLModel.metadata.create_all(engine)
 download = TexasDownloader()
-# download.download()
+download.download()
 dfs = download.dataframes()
 
 
