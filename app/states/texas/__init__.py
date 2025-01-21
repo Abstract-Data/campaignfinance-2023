@@ -3,6 +3,7 @@ from logger import Logger
 # from states.texas.texas_database import local_postgres_engine as engine
 import states.texas.validators as validators
 from .texas_downloader import TECDownloader
+from .texas_search import TexasSearch
 from abcs import StateCategoryClass, StateConfig, CategoryConfig, CSVReaderConfig, CategoryTypes
 from functools import partial
 
@@ -30,7 +31,7 @@ TEXAS_CONFIGURATION.CATEGORY_TYPES = CategoryTypes(
             VALIDATOR=validators.TECContribution),
         'filers': TexasCategoryConfig(
             DESC="filers",
-            VALIDATOR=validators.TECFiler),
+            VALIDATOR=validators.TECFilerName),
         'reports': TexasCategoryConfig(
             DESC='reports',
             VALIDATOR=validators.TECFinalReport),

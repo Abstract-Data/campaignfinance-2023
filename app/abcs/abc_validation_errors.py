@@ -4,7 +4,7 @@ from typing import List, Dict, Optional
 import pandas as pd
 from icecream import ic
 
-ic.configureOutput(prefix='abc_validation_errors|')
+ic.configureOutput(prefix='campaignfinance|')
 
 
 class RecordValidationError(BaseModel):
