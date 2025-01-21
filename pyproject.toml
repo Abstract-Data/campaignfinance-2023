@@ -29,7 +29,11 @@ dependencies = [
     "jupyter>=1.1.1",
     "rich>=13.9.4",
     "polars>=1.19.0",
+    "web-scrape-utils",
 ]
 
 [tool.uv.workspace]
 members = ["packages/*"]
+
+[tool.uv.sources]
+web-scrape-utils = { git = "https://github.com/jreakin/jre-web-scrape-utils.git" }

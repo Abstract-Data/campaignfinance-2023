@@ -14,7 +14,7 @@ import itertools
 
 from abcs import (
     FileDownloaderABC, StateConfig, CategoryTypes, RecordGen, CategoryConfig, progress)
-from web_driver import CreateWebDriver
+from web_scrape_utils import CreateWebDriver
 
     
 @dataclass
@@ -45,7 +45,7 @@ class TECDownloader(FileDownloaderABC):
         ic()
         self.driver.create_driver()
         driver = self.driver.chrome_driver
-        wait = self.driver
+        wait = self.driver.wait
 
 
         driver.get("https://ethics.state.tx.us/")

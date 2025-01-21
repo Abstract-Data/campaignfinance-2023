@@ -11,7 +11,7 @@ from datetime import datetime
 import polars as pl
 
 from abcs.abc_state_config import StateConfig, CategoryTypes
-from app.live_display import ProgressTracker
+from live_display import ProgressTracker
 RecordGen = Annotated[Optional[Generator[Dict, None, None]], PydanticField(default=None)]
 FilteredRecordGen = RecordGen
 

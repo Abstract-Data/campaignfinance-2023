@@ -59,13 +59,13 @@ separate script so they're created in the correct order."""
 
 # SQLModel.metadata.create_all(engine)
 download = TexasDownloader()
-# download.download()
+download.download()
 dfs = download.dataframes()
 
-df = dfs['expend']
-search = TexasSearch(dfs['expend'])
-test = search.search("Macias Strategies")
-grouped = test.group_by_year()
+# df = dfs['expend']
+# search = TexasSearch(dfs['expend'])
+# test = search.search("Macias Strategies")
+# grouped = test.group_by_year()
 
 # df = dfs['contribs']
 # cols = df.collect_schema().names()
