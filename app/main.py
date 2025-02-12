@@ -8,7 +8,7 @@ from states.texas import (
     TexasSearch
     # texas_engine as engine,
 )
-from states.texas.validators.texas_filers import TECFilerName
+# from states.texas.validators.texas_filers import TECFilerName
 # from states.oklahoma import OklahomaCategory, oklahoma_validators, oklahoma_snowpark_session
 
 # from sqlmodel import select, SQLModel, text, within_group, Session, any_, col, and_, or_
@@ -59,13 +59,61 @@ separate script so they're created in the correct order."""
 
 # SQLModel.metadata.create_all(engine)
 download = TexasDownloader()
-download.download()
+# download.download()
 dfs = download.dataframes()
+# sprague = pl.scan_csv(Path.home() / 'Downloads' / 'CAC_EXP_MSTRKEY_13504.CSV', infer_schema_length=None)
+# FIRST_AND_LAST = pl.format(
+#     "{} {}", pl.col("FIRST_NAME"), pl.col("LAST_NAME"))
+# NAME_AND_ORG = pl.coalesce(FIRST_AND_LAST, pl.col("NON_INDIVIDUAL")).alias('NAME_ORG')
+# sprauge = sprague.with_columns(NAME_AND_ORG)
+# by_year = sprague.group_by(pl.col('RPT_YEAR'), pl.col('FIRST_NAME'), pl.col('LAST_NAME'), pl.col("NON_INDIVIDUAL"), NAME_AND_ORG, pl.col('PURPOSE')).agg(pl.col('AMOUNT').sum().round(2))
+# by_year = by_year.filter(pl.col('AMOUNT') > 1000).collect().to_pandas()
+#
+# by_year2 = sprague.group_by(pl.col('RPT_YEAR'), pl.col('FIRST_NAME'), pl.col('LAST_NAME'), pl.col("NON_INDIVIDUAL"), NAME_AND_ORG).agg(pl.col('AMOUNT').sum().round(2))
+# ct = pd.crosstab(
+#     index=[by_year['NAME_ORG'], by_year['PURPOSE']],
+#     columns=by_year['RPT_YEAR'],
+#     values=by_year['AMOUNT'],
+#     aggfunc='sum',
+#     margins=True,
+#     margins_name='total',
+# )
+#
+# ct2 = pd.crosstab(
+#     index=by_year['NAME_ORG'],
+#     columns=by_year['RPT_YEAR'],
+#     values=by_year['AMOUNT'],
+#     aggfunc='sum',
+#     margins=True,
+#     margins_name='total',
+# )
+#
+# ct.to_csv(Path.home() / 'Downloads' / 'sprague_by_purpose.csv')
+search_expenditures = TexasSearch(dfs['expend'])
+search_contributions = TexasSearch(dfs['contribs'])
+macias = search_expenditures.search(
+    "Luke Macias",
+    "Macias Strategies",
+    "Pale Horse Strategies",
+    "Influencable",
+)
+parscale = search_expenditures.search(
+    "Brad Parscale", "Campaign Nucleus", "Parscale Strategy"
+)
 
-# df = dfs['expend']
-# search = TexasSearch(dfs['expend'])
-# test = search.search("Macias Strategies")
-# grouped = test.group_by_year()
+berry = search_expenditures.search(
+    "Jordan Berry", "Berry Communications")
+
+macias_grouped = macias.group_by_year()
+parscale_grouped = parscale.group_by_year()
+berry_grouped = berry.group_by_year()
+
+# grouped.to_csv(Path.home() / 'Downloads' / 'macias.csv')
+
+grouped_filers = tuple(macias_grouped.reset_index()['filerName'].to_list())
+
+donors = search_contributions.search(*grouped_filers, by_filer=True)
+donors_grouped = donors.group_by_year()
 
 # df = dfs['contribs']
 # cols = df.collect_schema().names()

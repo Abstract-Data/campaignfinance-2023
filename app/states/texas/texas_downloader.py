@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Self, ClassVar, Optional
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,45 +15,42 @@ import itertools
 
 from abcs import (
     FileDownloaderABC, StateConfig, CategoryTypes, RecordGen, CategoryConfig, progress)
-from web_scrape_utils import CreateWebDriver
+from web_scrape_utils import CreateWebDriver, By
 
     
 @dataclass
 class TECDownloader(FileDownloaderABC):
-    config: StateConfig
-    driver: CreateWebDriver = None
-    
-    def __post_init__(self):
-        self.folder = self.config.TEMP_FOLDER
-        self.driver = CreateWebDriver(download_folder=self.folder)
+    config: ClassVar[StateConfig]
 
-    def not_headless(self):
-        self.driver.headless = False
-        return self
+    def __init__(self, config: StateConfig):
+        super().__init__(config=config)
+        TECDownloader.config = config
+
+    @classmethod
     def download(
-            self,
+            cls,
             read_from_temp: bool = True,
             headless: bool = True
-    ) -> TECDownloader:
-        tmp = self.config.TEMP_FOLDER
+    ) -> Self:
+        tmp = cls.config.TEMP_FOLDER
         _existing_files = itertools.chain(*map(lambda x: tmp.glob(x), ["*.csv", "*.parquet", "*.txt"]))
         _safe_to_delete = False
 
-        if not headless or not self.driver.headless:
-            self.not_headless()
+        if not headless or not cls.driver.headless:
+            cls.not_headless()
 
         _task2 = progress.add_task("T2", "Downloading TEC Zipfile...", "In Progress")
         ic()
-        self.driver.create_driver()
-        driver = self.driver.chrome_driver
-        wait = self.driver.wait
+        cls.driver.create_driver()
+        driver = cls.driver.chrome_driver
+        wait = cls.driver
 
 
         driver.get("https://ethics.state.tx.us/")
-        wait.for_clickable_link_text("Search")
-        wait.for_clickable_link_text("Campaign Finance Reports")
-        wait.for_clickable_link_text("Database of Campaign Finance Reports")
-        wait.for_clickable_partial_link_text("Campaign Finance CSV Database")
+        wait.wait_until_clickable(By.LINK_TEXT, "Search")
+        wait.wait_until_clickable(By.LINK_TEXT, "Campaign Finance Reports")
+        wait.wait_until_clickable(By.LINK_TEXT, "Database of Campaign Finance Reports")
+        wait.wait_until_clickable(By.PARTIAL_LINK_TEXT, "Campaign Finance CSV Database")
         time.sleep(5)
 
         attempts = 0
@@ -95,12 +93,13 @@ class TECDownloader(FileDownloaderABC):
             TECDownloader.extract_zipfile(zip_ref, tmp)
 
         list(map(lambda x: x.unlink(), _zip_files))
-        self.consolidate_files()
+        cls.consolidate_files()
         progress.stop()
-        return self
+        return cls
 
-    def _create_file_type_dict(self) -> dict:
-        _folder = self.config.TEMP_FOLDER
+    @classmethod
+    def _create_file_type_dict(cls) -> dict:
+        _folder = cls.config.TEMP_FOLDER
         _file_count = len(list(_folder.glob("*.parquet")))
         _file_type_dict = {}
         digit_pattern = re.compile(r'^[a-zA-Z]+_\d{2}')
@@ -113,12 +112,13 @@ class TECDownloader(FileDownloaderABC):
             else:
                 raise ValueError(f"File {file} does not match the expected pattern")
             _file_type_dict.setdefault(parts, []).append(file)
+            _file_type_dict[parts] = sorted(_file_type_dict[parts])
 
         return _file_type_dict
 
-
-    def consolidate_files(self):
-        _file_types = self._create_file_type_dict()
+    @classmethod
+    def consolidate_files(cls):
+        _file_types = cls._create_file_type_dict()
         _file_count = len(_file_types)
         ic(_file_types)
 
@@ -167,21 +167,21 @@ class TECDownloader(FileDownloaderABC):
             )
 
             df.write_parquet(
-                file=self.config.TEMP_FOLDER / f"{k}_{datetime.now():%Y%m%d}w.parquet",
+                file=cls.config.TEMP_FOLDER / f"{k}_{datetime.now():%Y%m%d}w.parquet",
                 compression='lz4')
             progress.update_task(_task, "In Progress")
         list(map(lambda x: x.unlink(), itertools.chain(*_file_types.values())))
         progress.update_task(_task, "Complete")
-        return self
+        return cls
 
-
-    def read(self, parquet: bool = True) -> RecordGen:
+    @classmethod
+    def read(cls, parquet: bool = True) -> RecordGen:
 
         if not parquet:
             _reader = FileReader()
-            self.data = _reader.read_folder(self.folder, file_counts=self.config.FILE_COUNTS)
+            cls.data = _reader.read_folder(cls.folder, file_counts=cls.config.FILE_COUNTS)
         else:
-            parquet_files = list(self.config.TEMP_FOLDER.glob("*.parquet"))
+            parquet_files = list(cls.config.TEMP_FOLDER.glob("*.parquet"))
             if not parquet_files:
                 raise FileNotFoundError("No parquet files found in folder")
             _data = {}
@@ -198,9 +198,10 @@ class TECDownloader(FileDownloaderABC):
                     ) for k, v in _data.items()
                 }
             )
-            self.data = _data
-        return self.data
+            cls.data = _data
+        return cls.data
 
-    def dataframes(self):
-        _files = self._create_file_type_dict()
+    @classmethod
+    def dataframes(cls):
+        _files = cls._create_file_type_dict()
         return {k: pl.scan_parquet(v) for k, v in _files.items()}

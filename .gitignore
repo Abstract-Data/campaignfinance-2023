@@ -4,10 +4,10 @@
 *.zip
 *.DS_Store
 *.env
-*.parquet
+# *.parquet
 *.__pycache__/
 /logs/
-/tmp/
+# /tmp/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -175,3 +175,5 @@ cython_debug/
 
 *.csv
 *.txt
+*.parquet
+/tmp

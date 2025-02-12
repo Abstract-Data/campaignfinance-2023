@@ -5,6 +5,7 @@ import polars as pl
 from polars import DataFrame
 from dataclasses import dataclass, field
 from icecream import ic
+import time
 
 
 class TexasFieldsBase(NamedTuple):
@@ -103,43 +104,22 @@ class TexasSearchSetup:
         self.DATA = self.DATA.with_columns(self.NAME_ORG)
         return self
 
-
 @dataclass
-class TexasSearch:
-    data: Optional[pl.LazyFrame] = None
-    config: TexasSearchSetup = None
-    results: dict = field(default_factory=dict)
+class TexasSearchResult:
+    input_terms: tuple
+    config: TexasSearchSetup
+    data: pd.DataFrame | DataFrame = None
+    unique_filers: pd.DataFrame = None
+    unique_filters: dict = field(default_factory=dict)
+    selected_choices: set = field(default_factory=set)
+    filtered: Optional[pd.DataFrame] = None
+    grouped: Optional[pd.DataFrame] = None
 
-    def __post_init__(self):
-        self.config = TexasSearchSetup(self.data)
-        self.data = self.config.DATA
+    def __repr__(self):
+        return f"TexasSearchResult({', '.join(self.input_terms)})"
 
-
-    def search(self, search_term: str) -> Self:
-        _result = (
-            self.data
-            .filter(
-                pl.col(self.config.search_field_)
-                .str
-                .contains(search_term))
-           .collect())
-
-        _unique_filers = (
-            _result
-            .group_by(
-                pl.col(self.config.filer_id_))
-            .agg(
-                pl.col(self.config.type_.FILER_NAME)
-                .first()
-                .alias(self.config.type_.FILER_NAME)
-            ))
-
-        self.results['origin'] = _result
-        self.results['unique_filers'] = _unique_filers
-        return self
-
-    def group_by_year(self) -> DataFrame:
-        _df = self.results['origin']
+    def group_by_year(self) -> pd.DataFrame:
+        _df = self.data if self.filtered is None else self.filtered
         _result = (
             _df
             .group_by(
@@ -159,7 +139,7 @@ class TexasSearch:
         )
 
         _merge_uniques = (
-            self.results['unique_filers']
+            self.unique_filers
             .to_pandas()
             .merge(_result, on='filerIdent', how='left'))
 
@@ -175,5 +155,111 @@ class TexasSearch:
             margins_name='total',
             dropna=True
         )
-        self.results['grouped'] = _ct
+        self.grouped = _ct
         return _ct
+
+
+@dataclass
+class TexasSearch:
+    data: Optional[pl.LazyFrame] = None
+    config: TexasSearchSetup = None
+
+    def __repr__(self):
+        return f"TexasSearch({self.config.DATA})"
+
+    def __post_init__(self):
+        self.config = TexasSearchSetup(self.data)
+        self.data = self.config.DATA
+
+
+    def search(self, *args, by_filer=False) -> TexasSearchResult:
+        result = TexasSearchResult(input_terms=args, config=self.config)
+        # self.params.extend(args)
+        _result = []
+        _unique_filers = []
+        _unique_filters = dict()
+        _still_running, _message_printed = True, False
+        _start_time = time.time()
+        while _still_running:
+            for p in result.input_terms:
+                _param_df = (
+                    self.data
+                    .filter(
+                        pl.col(self.config.search_field_ if not by_filer else self.config.filer_name_)
+                        .str
+                        .contains(p)
+                    )
+                   .collect()
+                )
+                _result.append(_param_df)
+
+                _param_unique_filers = (
+                    _param_df
+                    .group_by(
+                        pl.col(self.config.filer_id_))
+                    .agg(
+                        pl.col(self.config.type_.FILER_NAME)
+                        .first()
+                        .alias(self.config.type_.FILER_NAME)
+                    ))
+                _unique_filers.append(_param_unique_filers)
+
+                _unique_filters[p] = {
+                    x[0]: x[1] for x in enumerate(
+                        set(
+                            _param_df.to_pandas()[self.config.search_field_].to_list()
+                        ), 1
+                    )
+                }
+                if time.time() - _start_time > 5 and not _message_printed:
+                    print("Still searching...")
+                    _message_printed = True
+            _result = pl.concat(_result)
+            _unique_filers = pl.concat(_unique_filers)
+            _still_running = False
+
+        result.data = _result
+        result.unique_filers = _unique_filers
+        result.unique_filters = _unique_filters
+        if by_filer:
+            return result
+        result = self.choose_options(result)
+        if not result.selected_choices:
+            return result
+        result.selected_choices = result.selected_choices
+        _filtered_result = (
+            _result
+            .filter(
+                pl.col(
+                    self.config.search_field_
+                )
+                .str
+                .contains(
+                    '|'.join(
+                        result.selected_choices
+                    )
+                )
+            )
+        )
+        result.filtered = _filtered_result
+        return result
+
+    @staticmethod
+    def choose_options(_result: TexasSearchResult) -> TexasSearchResult:
+        _selections = set()
+        for term, options in _result.unique_filters.items():
+            if len(options) == 1 and options[1] == term:
+                print(f"{term} found. Added to selection list")
+                _selections.add(term)
+                continue
+            for k, v in options.items():
+                if v:
+                    print(f"{k}: {v}")
+            if options:
+                _select = input(f"Select which options you'd like for {term.upper()} by number(s) or hit 'enter' to select all: ")
+                if not _select:
+                    _result.selected_choices.update(options.values())
+                else:
+                    _choices = list(map(int, _select.split(',')))
+                    _result.selected_choices.update(_choices)
+        return _result
