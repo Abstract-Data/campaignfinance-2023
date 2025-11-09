@@ -1,0 +1,1467 @@
+"""
+Unified SQLModels for Campaign Finance Data
+
+These SQLModel-based models provide database relationships and ORM capabilities
+for campaign finance data from any state.
+"""
+
+from typing import Optional, List, Dict, Any
+from datetime import date, datetime
+from decimal import Decimal
+from enum import Enum
+import re
+import json
+import uuid
+import hashlib
+from sqlmodel import SQLModel, Field, Relationship, select
+from sqlalchemy import Column, String, Numeric, Text, Integer, ForeignKey, Index
+from sqlalchemy.orm import selectinload
+
+from .unified_field_library import field_library
+
+
+class TransactionType(str, Enum):
+    """Types of campaign finance transactions"""
+    CONTRIBUTION = "contribution"
+    EXPENDITURE = "expenditure"
+    LOAN = "loan"
+    PLEDGE = "pledge"
+    REFUND = "refund"
+    TRANSFER = "transfer"
+    OTHER = "other"
+
+
+class PersonType(str, Enum):
+    """Types of persons in campaign finance data"""
+    INDIVIDUAL = "individual"
+    ORGANIZATION = "organization"
+    COMMITTEE = "committee"
+    CANDIDATE = "candidate"
+    UNKNOWN = "unknown"
+
+
+class PersonRole(str, Enum):
+    """Roles of persons in transactions"""
+    CONTRIBUTOR = "contributor"
+    RECIPIENT = "recipient"
+    PAYEE = "payee"
+    CANDIDATE = "candidate"
+    TREASURER = "treasurer"
+    CHAIR = "chair"
+
+
+class CommitteeRole(str, Enum):
+    """Roles that people can have within committees"""
+    TREASURER = "treasurer"
+    ASSISTANT_TREASURER = "assistant_treasurer"
+    CHAIR = "chair"
+    VICE_CHAIR = "vice_chair"
+    SECRETARY = "secretary"
+    ASSISTANT_SECRETARY = "assistant_secretary"
+    CANDIDATE = "candidate"
+    DEPUTY_TREASURER = "deputy_treasurer"
+    OTHER = "other"
+
+
+class EntityType(str, Enum):
+    """Types of unified entities used for deduplication"""
+    PERSON = "person"
+    ORGANIZATION = "organization"
+    COMMITTEE = "committee"
+    CAMPAIGN = "campaign"
+    VENDOR = "vendor"
+    OTHER = "other"
+
+
+class AssociationType(str, Enum):
+    """Association types between unified entities"""
+    TREASURER_OF = "treasurer_of"
+    DONOR_TO = "donor_to"
+    VENDOR_FOR = "vendor_for"
+    OFFICER_OF = "officer_of"
+    AFFILIATED_WITH = "affiliated_with"
+    EMPLOYED_BY = "employed_by"
+    OTHER = "other"
+
+
+class CampaignRole(str, Enum):
+    """Roles that entities can have within a campaign context"""
+    CANDIDATE = "candidate"
+    TREASURER = "treasurer"
+    CHAIR = "chair"
+    DONOR = "donor"
+    VENDOR = "vendor"
+    CONSULTANT = "consultant"
+    STAFF = "staff"
+    SUPPORTER = "supporter"
+    COMMITTEE = "committee"
+    OTHER = "other"
+
+
+class State(SQLModel, table=True):
+    """Reference table containing US states."""
+    __tablename__ = "states"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    code: str = Field(sa_column=Column(String(2), unique=True, nullable=False))
+    name: str = Field(sa_column=Column(String(100), unique=True, nullable=False))
+
+    transactions: List["UnifiedTransaction"] = Relationship(back_populates="state")
+    persons: List["UnifiedPerson"] = Relationship(back_populates="state")
+    committees: List["UnifiedCommittee"] = Relationship(back_populates="state")
+    entities: List["UnifiedEntity"] = Relationship(back_populates="state")
+    campaigns: List["UnifiedCampaign"] = Relationship(back_populates="state")
+    contributions: List["UnifiedContribution"] = Relationship(back_populates="state")
+    loans: List["UnifiedLoan"] = Relationship(back_populates="state")
+    campaign_entities: List["UnifiedCampaignEntity"] = Relationship(back_populates="state")
+    transaction_persons: List["UnifiedTransactionPerson"] = Relationship(back_populates="state")
+    committee_persons: List["UnifiedCommitteePerson"] = Relationship(back_populates="state")
+    file_origins: List["FileOrigin"] = Relationship(back_populates="state")
+
+
+class FileOrigin(SQLModel, table=True):
+    """Normalized file origin references for ingested data."""
+    __tablename__ = "file_origins"
+
+    id: str = Field(default=None, primary_key=True, max_length=64)
+    state_id: int = Field(foreign_key="states.id")
+    filename: str = Field(sa_column=Column(String(500), nullable=False))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    state: State = Relationship(back_populates="file_origins")
+    transactions: List["UnifiedTransaction"] = Relationship(back_populates="file_origin")
+
+    @staticmethod
+    def build_key(state_id: int, filename: str) -> str:
+        base = f"{state_id}:{filename}".encode("utf-8")
+        return hashlib.sha256(base).hexdigest()
+
+
+class UnifiedAddress(SQLModel, table=True):
+    """Unified address model with database table"""
+    __tablename__ = "unified_addresses"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    
+    # Address fields
+    street_1: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    street_2: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    city: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    state: Optional[str] = Field(default=None, sa_column=Column(String(50)))
+    zip_code: Optional[str] = Field(default=None, sa_column=Column(String(50)))
+    country: Optional[str] = Field(default=None, sa_column=Column(String(100)))
+    county: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    
+    # Metadata
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    persons: List["UnifiedPerson"] = Relationship(back_populates="address")
+    entities: List["UnifiedEntity"] = Relationship(back_populates="address")
+    
+    def __post_init__(self):
+        """Normalize address data after initialization"""
+        if self.state:
+            self.state = self.state.upper().strip()
+        if self.city:
+            self.city = self.city.strip()
+        if self.zip_code:
+            self.zip_code = str(self.zip_code).strip()
+    
+    @property
+    def full_address(self) -> str:
+        """Get the full formatted address"""
+        parts = []
+        if self.street_1:
+            parts.append(self.street_1)
+        if self.street_2:
+            parts.append(self.street_2)
+        if self.city:
+            parts.append(self.city)
+        if self.state:
+            parts.append(self.state)
+        if self.zip_code:
+            parts.append(self.zip_code)
+        
+        return ", ".join(parts) if parts else "No address"
+
+
+class UnifiedPerson(SQLModel, table=True):
+    """Unified person model with database table"""
+    __tablename__ = "unified_persons"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    
+    # Person fields
+    first_name: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    last_name: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    middle_name: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    suffix: Optional[str] = Field(default=None, sa_column=Column(String(50)))
+    organization: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    employer: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    occupation: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    job_title: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    person_type: PersonType = Field(default=PersonType.UNKNOWN)
+    
+    # Foreign keys
+    address_id: Optional[int] = Field(default=None, foreign_key="unified_addresses.id")
+    state_id: Optional[int] = Field(default=None, foreign_key="states.id")
+    
+    # Metadata
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    address: Optional[UnifiedAddress] = Relationship(back_populates="persons")
+    entity: Optional["UnifiedEntity"] = Relationship(back_populates="person")
+    state: Optional[State] = Relationship(back_populates="persons")
+    campaigns: List["UnifiedCampaign"] = Relationship(back_populates="candidate")
+    transaction_contributions: List["UnifiedTransactionPerson"] = Relationship(
+        back_populates="person",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedTransactionPerson.person_id"}
+    )
+    
+    def __post_init__(self):
+        """Normalize person data after initialization"""
+        if self.first_name:
+            self.first_name = self.first_name.strip()
+        if self.last_name:
+            self.last_name = self.last_name.strip()
+        if self.organization:
+            self.organization = self.organization.strip()
+        if self.employer:
+            self.employer = self.employer.strip()
+        if self.occupation:
+            self.occupation = self.occupation.strip()
+    
+    @property
+    def full_name(self) -> str:
+        """Get the full name of the person"""
+        parts = []
+        if self.first_name:
+            parts.append(self.first_name)
+        if self.middle_name:
+            parts.append(self.middle_name)
+        if self.last_name:
+            parts.append(self.last_name)
+        if self.suffix:
+            parts.append(self.suffix)
+        
+        if parts:
+            return " ".join(parts)
+        elif self.organization:
+            return self.organization
+        else:
+            return "Unknown"
+
+
+class UnifiedCommittee(SQLModel, table=True):
+    """Unified committee model with database table"""
+    __tablename__ = "unified_committees"
+    
+    # Use filer_id as primary key since it's the unique identifier from state systems
+    filer_id: str = Field(sa_column=Column(String(200), primary_key=True))
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    
+    # Committee fields
+    name: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    committee_type: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    
+    # Foreign keys
+    address_id: Optional[int] = Field(default=None, foreign_key="unified_addresses.id")
+    state_id: Optional[int] = Field(default=None, foreign_key="states.id")
+    
+    # Metadata
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    address: Optional[UnifiedAddress] = Relationship()
+    transactions: List["UnifiedTransaction"] = Relationship(back_populates="committee")
+    entity: Optional["UnifiedEntity"] = Relationship(back_populates="committee")
+    campaigns: List["UnifiedCampaign"] = Relationship(back_populates="primary_committee")
+    state: Optional[State] = Relationship(back_populates="committees")
+    
+    def __post_init__(self):
+        """Normalize committee data after initialization"""
+        if self.name:
+            self.name = self.name.strip()
+        if self.committee_type:
+            self.committee_type = self.committee_type.strip()
+
+
+class UnifiedEntity(SQLModel, table=True):
+    """Unified entity representing people, committees, vendors, and campaigns."""
+    __tablename__ = "unified_entities"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    entity_type: EntityType = Field(default=EntityType.PERSON, index=True)
+    name: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    normalized_name: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    person_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("unified_persons.id"), unique=True))
+    committee_id: Optional[str] = Field(default=None, sa_column=Column(String(200), ForeignKey("unified_committees.filer_id"), unique=True))
+    address_id: Optional[int] = Field(default=None, foreign_key="unified_addresses.id")
+    state_id: Optional[int] = Field(default=None, foreign_key="states.id")
+    notes: Optional[str] = Field(default=None, sa_column=Column(Text))
+    metadata_json: Optional[str] = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    address: Optional[UnifiedAddress] = Relationship(back_populates="entities")
+    person: Optional[UnifiedPerson] = Relationship(back_populates="entity")
+    committee: Optional[UnifiedCommittee] = Relationship(back_populates="entity")
+    campaign_memberships: List["UnifiedCampaignEntity"] = Relationship(back_populates="entity")
+    association_sources: List["UnifiedEntityAssociation"] = Relationship(
+        back_populates="source_entity",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedEntityAssociation.source_entity_id"}
+    )
+    association_targets: List["UnifiedEntityAssociation"] = Relationship(
+        back_populates="target_entity",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedEntityAssociation.target_entity_id"}
+    )
+    contributions_given: List["UnifiedContribution"] = Relationship(
+        back_populates="contributor",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedContribution.contributor_entity_id"}
+    )
+    contributions_received: List["UnifiedContribution"] = Relationship(
+        back_populates="recipient",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedContribution.recipient_entity_id"}
+    )
+    loans_lent: List["UnifiedLoan"] = Relationship(
+        back_populates="lender",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedLoan.lender_entity_id"}
+    )
+    loans_borrowed: List["UnifiedLoan"] = Relationship(
+        back_populates="borrower",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedLoan.borrower_entity_id"}
+    )
+    state: Optional[State] = Relationship(back_populates="entities")
+
+
+class UnifiedTransaction(SQLModel, table=True):
+    """Unified transaction model with database table and change tracking"""
+    __tablename__ = "unified_transactions"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    
+    # Core transaction fields
+    transaction_id: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    amount: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    transaction_date: Optional[date] = Field(default=None, index=True)
+    description: Optional[str] = Field(default=None, sa_column=Column(Text))
+    transaction_type: TransactionType = Field(default=TransactionType.OTHER, index=True)
+    
+    # Foreign keys
+    committee_id: Optional[str] = Field(default=None, foreign_key="unified_committees.filer_id")
+    campaign_id: Optional[int] = Field(default=None, foreign_key="unified_campaigns.id")
+    state_id: Optional[int] = Field(default=None, foreign_key="states.id")
+    file_origin_id: Optional[str] = Field(default=None, foreign_key="file_origins.id")
+    
+    # Administrative fields
+    filed_date: Optional[date] = Field(default=None, index=True)
+    amended: bool = Field(default=False, index=True)
+    
+    # Metadata fields
+    download_date: Optional[str] = Field(default=None, sa_column=Column(String(100)))
+    
+    # Raw data for debugging (stored as JSON string)
+    raw_data: Optional[str] = Field(default=None, sa_column=Column(Text))
+    
+    # Change tracking fields
+    last_modified_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    last_modified_by: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    change_reason: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    amendment_details: Optional[str] = Field(default=None, sa_column=Column(Text))
+    
+    # Metadata
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    committee: Optional[UnifiedCommittee] = Relationship(back_populates="transactions")
+    campaign: Optional["UnifiedCampaign"] = Relationship(back_populates="transactions")
+    persons: List["UnifiedTransactionPerson"] = Relationship(back_populates="transaction")
+    contribution: Optional["UnifiedContribution"] = Relationship(
+        back_populates="transaction",
+        sa_relationship_kwargs={"uselist": False}
+    )
+    loan: Optional["UnifiedLoan"] = Relationship(
+        back_populates="transaction",
+        sa_relationship_kwargs={"uselist": False}
+    )
+    state: Optional[State] = Relationship(back_populates="transactions")
+    file_origin: Optional[FileOrigin] = Relationship(back_populates="transactions")
+
+
+class UnifiedTransactionPerson(SQLModel, table=True):
+    """Junction table for transaction-person relationships with roles"""
+    __tablename__ = "unified_transaction_persons"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    
+    # Foreign keys
+    transaction_id: int = Field(foreign_key="unified_transactions.id")
+    person_id: int = Field(foreign_key="unified_persons.id")
+    entity_id: Optional[int] = Field(default=None, foreign_key="unified_entities.id")
+    state_id: Optional[int] = Field(default=None, foreign_key="states.id")
+    state_id: Optional[int] = Field(default=None, foreign_key="states.id")
+    
+    # Link to committee role (optional - for tracking officer activities)
+    committee_person_id: Optional[int] = Field(default=None, foreign_key="unified_committee_persons.id")
+    
+    # Role in the transaction
+    role: PersonRole = Field(index=True)
+    
+    # Additional metadata for the relationship
+    amount: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    notes: Optional[str] = Field(default=None, sa_column=Column(Text))
+    
+    # Metadata
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    transaction: UnifiedTransaction = Relationship(back_populates="persons")
+    person: UnifiedPerson = Relationship(back_populates="transaction_contributions")
+    entity: Optional[UnifiedEntity] = Relationship()
+    state: Optional[State] = Relationship(back_populates="transaction_persons")
+    committee_person: Optional["UnifiedCommitteePerson"] = Relationship()
+
+
+class UnifiedTransactionVersion(SQLModel, table=True):
+    """Versioning/history table for UnifiedTransaction"""
+    __tablename__ = "unified_transaction_versions"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    transaction_id: int = Field(foreign_key="unified_transactions.id")
+    version_number: int = Field(index=True)
+    data: str = Field(sa_column=Column(Text))  # JSON snapshot of the transaction
+    changed_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    changed_by: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    change_reason: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    amendment_details: Optional[str] = Field(default=None, sa_column=Column(Text))
+
+    # Relationships
+    transaction: Optional[UnifiedTransaction] = Relationship()
+
+
+class UnifiedPersonVersion(SQLModel, table=True):
+    """Versioning/history table for UnifiedPerson"""
+    __tablename__ = "unified_person_versions"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    person_id: int = Field(foreign_key="unified_persons.id")
+    version_number: int = Field(index=True)
+    data: str = Field(sa_column=Column(Text))  # JSON snapshot of the person
+    changed_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    changed_by: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    change_reason: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    amendment_details: Optional[str] = Field(default=None, sa_column=Column(Text))
+    person: Optional[UnifiedPerson] = Relationship()
+
+class UnifiedCommitteeVersion(SQLModel, table=True):
+    """Versioning/history table for UnifiedCommittee"""
+    __tablename__ = "unified_committee_versions"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    committee_id: str = Field(foreign_key="unified_committees.filer_id")
+    version_number: int = Field(index=True)
+    data: str = Field(sa_column=Column(Text))  # JSON snapshot of the committee
+    changed_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    changed_by: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    change_reason: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    amendment_details: Optional[str] = Field(default=None, sa_column=Column(Text))
+    committee: Optional[UnifiedCommittee] = Relationship()
+
+class UnifiedAddressVersion(SQLModel, table=True):
+    """Versioning/history table for UnifiedAddress"""
+    __tablename__ = "unified_address_versions"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    address_id: int = Field(foreign_key="unified_addresses.id")
+    version_number: int = Field(index=True)
+    data: str = Field(sa_column=Column(Text))  # JSON snapshot of the address
+    changed_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    changed_by: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    change_reason: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    amendment_details: Optional[str] = Field(default=None, sa_column=Column(Text))
+    address: Optional[UnifiedAddress] = Relationship()
+
+class UnifiedCommitteePerson(SQLModel, table=True):
+    """Junction table for committee-person relationships with roles"""
+    __tablename__ = "unified_committee_persons"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    
+    # Foreign keys
+    committee_id: str = Field(foreign_key="unified_committees.filer_id")
+    person_id: int = Field(foreign_key="unified_persons.id")
+    entity_id: Optional[int] = Field(default=None, foreign_key="unified_entities.id")
+    state_id: Optional[int] = Field(default=None, foreign_key="states.id")
+    
+    # Role information
+    role: CommitteeRole = Field(index=True)
+    start_date: Optional[date] = Field(default=None, index=True)
+    end_date: Optional[date] = Field(default=None, index=True)
+    is_active: bool = Field(default=True, index=True)
+    
+    # Additional metadata
+    notes: Optional[str] = Field(default=None, sa_column=Column(Text))
+    
+    # Change tracking fields
+    last_modified_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    last_modified_by: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    change_reason: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    
+    # Metadata
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    committee: UnifiedCommittee = Relationship()
+    person: UnifiedPerson = Relationship()
+    entity: Optional[UnifiedEntity] = Relationship()
+    state: Optional[State] = Relationship(back_populates="committee_persons")
+
+class UnifiedCommitteePersonVersion(SQLModel, table=True):
+    """Versioning/history table for UnifiedCommitteePerson"""
+    __tablename__ = "unified_committee_person_versions"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    committee_person_id: int = Field(foreign_key="unified_committee_persons.id")
+    version_number: int = Field(index=True)
+    data: str = Field(sa_column=Column(Text))  # JSON snapshot
+    changed_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    changed_by: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    change_reason: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    amendment_details: Optional[str] = Field(default=None, sa_column=Column(Text))
+    
+    # Relationships
+    committee_person: Optional[UnifiedCommitteePerson] = Relationship()
+
+class UnifiedEntityAssociation(SQLModel, table=True):
+    """Associations between unified entities (e.g., treasurer-of, vendor-for)."""
+    __tablename__ = "unified_entity_associations"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    source_entity_id: int = Field(foreign_key="unified_entities.id")
+    target_entity_id: int = Field(foreign_key="unified_entities.id")
+    association_type: AssociationType = Field(index=True)
+    start_date: Optional[date] = Field(default=None, index=True)
+    end_date: Optional[date] = Field(default=None, index=True)
+    description: Optional[str] = Field(default=None, sa_column=Column(Text))
+    metadata_json: Optional[str] = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    source_entity: UnifiedEntity = Relationship(
+        back_populates="association_sources",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedEntityAssociation.source_entity_id"}
+    )
+    target_entity: UnifiedEntity = Relationship(
+        back_populates="association_targets",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedEntityAssociation.target_entity_id"}
+    )
+
+
+class UnifiedCampaign(SQLModel, table=True):
+    """Unified campaign metadata allowing cross-committee associations."""
+    __tablename__ = "unified_campaigns"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    name: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    normalized_name: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    election_year: Optional[int] = Field(default=None, index=True)
+    office_sought: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    district: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    candidate_person_id: Optional[int] = Field(default=None, foreign_key="unified_persons.id")
+    primary_committee_id: Optional[str] = Field(default=None, foreign_key="unified_committees.filer_id")
+    state_id: Optional[int] = Field(default=None, foreign_key="states.id")
+    metadata_json: Optional[str] = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    candidate: Optional["UnifiedPerson"] = Relationship(back_populates="campaigns")
+    primary_committee: Optional["UnifiedCommittee"] = Relationship(back_populates="campaigns")
+    entities: List["UnifiedCampaignEntity"] = Relationship(back_populates="campaign")
+    transactions: List["UnifiedTransaction"] = Relationship(back_populates="campaign")
+    state: Optional[State] = Relationship(back_populates="campaigns")
+
+
+class UnifiedCampaignEntity(SQLModel, table=True):
+    """Links unified entities to campaigns with specific roles."""
+    __tablename__ = "unified_campaign_entities"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    campaign_id: int = Field(foreign_key="unified_campaigns.id")
+    entity_id: int = Field(foreign_key="unified_entities.id")
+    state_id: Optional[int] = Field(default=None, foreign_key="states.id")
+    role: CampaignRole = Field(index=True)
+    is_primary: bool = Field(default=False, index=True)
+    start_date: Optional[date] = Field(default=None, index=True)
+    end_date: Optional[date] = Field(default=None, index=True)
+    notes: Optional[str] = Field(default=None, sa_column=Column(Text))
+    metadata_json: Optional[str] = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    campaign: "UnifiedCampaign" = Relationship(back_populates="entities")
+    entity: "UnifiedEntity" = Relationship(back_populates="campaign_memberships")
+    state: Optional[State] = Relationship(back_populates="campaign_entities")
+
+
+class UnifiedContribution(SQLModel, table=True):
+    """Normalized contribution detail extracted from transactions."""
+    __tablename__ = "unified_contributions"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    transaction_id: int = Field(sa_column=Column(Integer, ForeignKey("unified_transactions.id"), unique=True))
+    contributor_entity_id: int = Field(foreign_key="unified_entities.id")
+    recipient_entity_id: int = Field(foreign_key="unified_entities.id")
+    state_id: Optional[int] = Field(default=None, foreign_key="states.id")
+    amount: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    receipt_date: Optional[date] = Field(default=None, index=True)
+    contribution_type: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    is_anonymous: bool = Field(default=False, index=True)
+    description: Optional[str] = Field(default=None, sa_column=Column(Text))
+    metadata_json: Optional[str] = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    transaction: "UnifiedTransaction" = Relationship(back_populates="contribution")
+    contributor: "UnifiedEntity" = Relationship(
+        back_populates="contributions_given",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedContribution.contributor_entity_id"}
+    )
+    recipient: "UnifiedEntity" = Relationship(
+        back_populates="contributions_received",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedContribution.recipient_entity_id"}
+    )
+    state: Optional[State] = Relationship(back_populates="contributions")
+
+
+class UnifiedLoan(SQLModel, table=True):
+    """Normalized loan detail extracted from transactions."""
+    __tablename__ = "unified_loans"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    transaction_id: int = Field(sa_column=Column(Integer, ForeignKey("unified_transactions.id"), unique=True))
+    lender_entity_id: int = Field(foreign_key="unified_entities.id")
+    borrower_entity_id: int = Field(foreign_key="unified_entities.id")
+    state_id: Optional[int] = Field(default=None, foreign_key="states.id")
+    amount: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    loan_date: Optional[date] = Field(default=None, index=True)
+    due_date: Optional[date] = Field(default=None, index=True)
+    interest_rate: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(9, 4)))
+    is_forgiven: bool = Field(default=False, index=True)
+    collateral: Optional[str] = Field(default=None, sa_column=Column(Text))
+    metadata_json: Optional[str] = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    transaction: "UnifiedTransaction" = Relationship(back_populates="loan")
+    lender: "UnifiedEntity" = Relationship(
+        back_populates="loans_lent",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedLoan.lender_entity_id"}
+    )
+    borrower: "UnifiedEntity" = Relationship(
+        back_populates="loans_borrowed",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedLoan.borrower_entity_id"}
+    )
+    state: Optional[State] = Relationship(back_populates="loans")
+
+
+# Database indexes for performance
+class UnifiedTransactionIndexes:
+    """Database indexes for the unified transaction system"""
+    
+    # Transaction indexes
+    idx_transactions_state = Index("idx_transactions_state", UnifiedTransaction.state_id)
+    idx_transactions_type = Index("idx_transactions_type", UnifiedTransaction.transaction_type)
+    idx_transactions_date = Index("idx_transactions_date", UnifiedTransaction.transaction_date)
+    idx_transactions_amount = Index("idx_transactions_amount", UnifiedTransaction.amount)
+    idx_transactions_committee = Index("idx_transactions_committee", UnifiedTransaction.committee_id)
+    idx_transactions_id = Index("idx_transactions_id", UnifiedTransaction.transaction_id)
+    idx_transactions_file_origin = Index("idx_transactions_file_origin", UnifiedTransaction.file_origin_id)
+    
+    # Person indexes
+    idx_persons_name = Index("idx_persons_name", UnifiedPerson.last_name, UnifiedPerson.first_name)
+    idx_persons_organization = Index("idx_persons_organization", UnifiedPerson.organization)
+    idx_persons_type = Index("idx_persons_type", UnifiedPerson.person_type)
+    
+    # Transaction-Person relationship indexes
+    idx_transaction_persons_role = Index("idx_transaction_persons_role", UnifiedTransactionPerson.role)
+    idx_transaction_persons_transaction = Index("idx_transaction_persons_transaction", UnifiedTransactionPerson.transaction_id)
+    idx_transaction_persons_person = Index("idx_transaction_persons_person", UnifiedTransactionPerson.person_id)
+    
+    # Address indexes
+    idx_addresses_state = Index("idx_addresses_state", UnifiedAddress.state)
+    idx_addresses_city = Index("idx_addresses_city", UnifiedAddress.city)
+    
+    # Committee indexes
+    idx_committees_name = Index("idx_committees_name", UnifiedCommittee.name)
+    idx_committees_type = Index("idx_committees_type", UnifiedCommittee.committee_type)
+    # Note: filer_id is already indexed as primary key
+    
+    # Entity indexes
+    idx_entities_type = Index("idx_entities_type", UnifiedEntity.entity_type)
+    idx_entities_name = Index("idx_entities_name", UnifiedEntity.normalized_name)
+    
+    # Campaign indexes
+    idx_campaigns_year = Index("idx_campaigns_year", UnifiedCampaign.election_year)
+    idx_campaigns_office = Index("idx_campaigns_office", UnifiedCampaign.office_sought)
+    idx_campaigns_name = Index("idx_campaigns_name", UnifiedCampaign.normalized_name)
+    idx_campaign_entity_role = Index("idx_campaign_entity_role", UnifiedCampaignEntity.role)
+    
+    # Contribution indexes
+    idx_contributions_date = Index("idx_contributions_date", UnifiedContribution.receipt_date)
+    idx_contributions_amount = Index("idx_contributions_amount", UnifiedContribution.amount)
+    
+    # Loan indexes
+    idx_loans_date = Index("idx_loans_date", UnifiedLoan.loan_date)
+    idx_loans_due_date = Index("idx_loans_due_date", UnifiedLoan.due_date)
+
+
+class UnifiedSQLModelBuilder:
+    """
+    Builder class that creates SQLModel instances from state-specific data
+    by automatically mapping fields using the field library.
+    """
+    
+    def __init__(self, state: str, state_id: Optional[int], state_code: Optional[str] = None):
+        self.state_slug = state
+        self.state_id = state_id
+        self.state_code = state_code
+        self.field_mappings = {
+            mapping.state_field: mapping.unified_field
+            for mapping in field_library.get_state_mappings(state)
+        }
+    
+    def build_transaction(self, raw_data: Dict[str, Any]) -> UnifiedTransaction:
+        """
+        Build a unified transaction from raw state-specific data.
+        
+        Args:
+            raw_data: Dictionary containing state-specific field data
+            
+        Returns:
+            UnifiedTransaction object with normalized data
+        """
+        # Initialize the transaction
+        transaction = UnifiedTransaction(
+            state_id=self.state_id,
+            raw_data=json.dumps(raw_data.copy(), default=self._json_default)
+        )
+        
+        # Map core transaction fields
+        transaction.transaction_id = self._get_field_value(raw_data, "transaction_id")
+        transaction.amount = self._parse_amount(self._get_field_value(raw_data, "amount"))
+        transaction.transaction_date = self._parse_date(self._get_field_value(raw_data, "transaction_date"))
+        transaction.description = self._get_field_value(raw_data, "description")
+        transaction.transaction_type = self._determine_transaction_type(raw_data)
+        
+        # Map administrative fields
+        transaction.filed_date = self._parse_date(self._get_field_value(raw_data, "filed_date"))
+        transaction.amended = self._parse_boolean(self._get_field_value(raw_data, "amended"))
+        
+        # Map metadata fields
+        transaction.download_date = raw_data.get("download_date")
+        
+        return transaction
+    
+    def build_person(self, raw_data: Dict[str, Any], role: PersonRole) -> Optional[UnifiedPerson]:
+        """Build a unified person from raw data"""
+        person_data = {}
+        
+        # Map person fields using the unified field names from the field library
+        person_fields = {
+            "first_name": "person_first_name",
+            "last_name": "person_last_name", 
+            "middle_name": "person_middle_name",
+            "suffix": "person_suffix",
+            "organization": "person_organization",
+            "employer": "person_employer",
+            "occupation": "person_occupation"
+        }
+        
+        for unified_field, field_name in person_fields.items():
+            value = self._get_field_value(raw_data, field_name)
+            if value:
+                person_data[unified_field] = value
+        
+        # If we found any person data, create the person
+        if person_data:
+            # Determine person type
+            person_type = PersonType.UNKNOWN
+            
+            # Check for special cases first
+            last_name = person_data.get("last_name", "").strip()
+            first_name = person_data.get("first_name", "").strip()
+            
+            # Handle special placeholder cases
+            if last_name.upper() in ["NON-ITEMIZED CONTRIBUTOR", "NON-ITEMIZED", "UNKNOWN", "ANONYMOUS"]:
+                person_type = PersonType.UNKNOWN
+            elif person_data.get("organization"):
+                person_type = PersonType.ORGANIZATION
+            elif first_name and last_name:
+                person_type = PersonType.INDIVIDUAL
+            elif last_name and not first_name:
+                # Only last name - could be organization or incomplete individual
+                person_type = PersonType.UNKNOWN
+            
+            # Build address
+            address = self.build_address(raw_data, role.value)
+            
+            person = UnifiedPerson(
+                **person_data,
+                person_type=person_type,
+                state_id=self.state_id,
+                address=address
+            )
+            
+            entity_type = EntityType.ORGANIZATION if person_type == PersonType.ORGANIZATION else EntityType.PERSON
+            entity_name = person.organization if person.organization else person.full_name
+            entity = self._get_or_create_entity(
+                entity_type=entity_type,
+                name=entity_name,
+                address=address,
+                person=person
+            )
+            if entity:
+                person.entity = entity
+            
+            return person
+        
+        return None
+    
+    def build_address(self, raw_data: Dict[str, Any], entity_role: str) -> Optional[UnifiedAddress]:
+        """Build a unified address from raw data"""
+        address_data = {}
+        
+        # Map address fields using the unified field names from the field library
+        address_fields = {
+            "street_1": "address_street_1",
+            "street_2": "address_street_2", 
+            "city": "address_city",
+            "state": "address_state",
+            "zip_code": "address_zip",
+            "country": "address_country",
+            "county": "address_county"
+        }
+        
+        for unified_field, field_name in address_fields.items():
+            value = self._get_field_value(raw_data, field_name)
+            if value:
+                address_data[unified_field] = value
+        
+        # If we found any address data, create or find the address
+        if address_data:
+            # Check if address already exists
+            existing_address = self._find_address_by_fields(address_data)
+            if existing_address:
+                return existing_address
+            
+            # Create new address
+            return UnifiedAddress(**address_data)
+        
+        return None
+    
+    def build_committee(self, raw_data: Dict[str, Any]) -> Optional[UnifiedCommittee]:
+        """Build a unified committee from raw data"""
+        committee_data = {}
+        
+        # Map committee fields
+        committee_fields = {
+            "name": "committee_name",
+            "committee_type": "committee_type",
+            "filer_id": "committee_filer_id"
+        }
+        
+        for unified_field, field_name in committee_fields.items():
+            value = self._get_field_value(raw_data, field_name)
+            if value:
+                committee_data[unified_field] = value
+        
+        # Handle missing committee name - for candidate committees, use candidate name
+        if not committee_data.get("name"):
+            committee_type = committee_data.get("committee_type", "").lower()
+            candidate_name = raw_data.get("Candidate Name", "")
+            
+            if "candidate" in committee_type and candidate_name:
+                # For candidate committees, use candidate name as committee name
+                committee_data["name"] = f"Candidate Committee - {candidate_name}"
+            else:
+                # Use filer_id as fallback name if no committee name is available
+                filer_id = committee_data.get("filer_id", "UNKNOWN")
+                committee_data["name"] = f"Committee {filer_id}"
+        
+        committee_address = self.build_address(raw_data, "committee")
+        
+        # If we found any committee data, create or find the committee
+        if committee_data:
+            # Check if committee already exists by filer_id
+            existing_committee = self._find_committee_by_filer_id(committee_data.get("filer_id"))
+            if existing_committee:
+                if self.state_id and not existing_committee.state_id:
+                    existing_committee.state_id = self.state_id
+                if committee_address and not existing_committee.address:
+                    existing_committee.address = committee_address
+                if not existing_committee.entity:
+                    entity = self._get_or_create_entity(
+                        entity_type=EntityType.COMMITTEE,
+                        name=existing_committee.name,
+                        address=existing_committee.address,
+                        committee=existing_committee
+                    )
+                    if entity:
+                        existing_committee.entity = entity
+                return existing_committee
+            
+            committee = UnifiedCommittee(**committee_data)
+            committee.state_id = self.state_id
+            if committee_address:
+                committee.address = committee_address
+            entity = self._get_or_create_entity(
+                entity_type=EntityType.COMMITTEE,
+                name=committee.name,
+                address=committee.address,
+                committee=committee
+            )
+            if entity:
+                committee.entity = entity
+            
+            return committee
+        
+        return None
+    
+    def _get_field_value(self, raw_data: Dict[str, Any], unified_field: str) -> Optional[Any]:
+        """Get the value for a unified field from raw data"""
+        # Handle None unified_field
+        if unified_field is None:
+            return None
+            
+        # First try direct mapping
+        for state_field, mapped_field in self.field_mappings.items():
+            if mapped_field == unified_field and state_field in raw_data:
+                return raw_data[state_field]
+        
+        # If no direct mapping, try fuzzy matching
+        for field_name, value in raw_data.items():
+            if field_name is not None and self._fuzzy_match(field_name, unified_field):
+                return value
+        
+        return None
+    
+    def _fuzzy_match(self, state_field: str, unified_field: str) -> bool:
+        """Check if a state field roughly matches a unified field"""
+        try:
+            state_normalized = self._normalize_field_name(state_field)
+            unified_normalized = self._normalize_field_name(unified_field)
+            
+            # Exact match after normalization
+            if state_normalized == unified_normalized:
+                return True
+            
+            # Check for exact word matches (more precise)
+            state_words = set(state_normalized.split('_'))
+            unified_words = set(unified_normalized.split('_'))
+            
+            if state_words and unified_words:
+                # Require at least 2 words to match for better precision
+                overlap = len(state_words.intersection(unified_words))
+                return overlap >= 2
+            
+            return False
+        except Exception:
+            return False
+    
+    def _find_committee_by_filer_id(self, filer_id: str) -> Optional[UnifiedCommittee]:
+        """Find an existing committee by filer_id"""
+        if not filer_id:
+            return None
+        
+        try:
+            from app.states.unified_database import db_manager
+            with db_manager.get_session() as session:
+                stmt = select(UnifiedCommittee).options(
+                    selectinload(UnifiedCommittee.address),
+                    selectinload(UnifiedCommittee.entity).selectinload(UnifiedEntity.address)
+                ).where(UnifiedCommittee.filer_id == filer_id)
+                return session.exec(stmt).first()
+        except Exception:
+            return None
+    
+    def _normalize_entity_name(self, value: Optional[str]) -> str:
+        if not value:
+            return ""
+        normalized = value.strip().lower()
+        normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized)
+        return normalized.strip()
+    
+    def _find_entity(
+        self,
+        entity_type: EntityType,
+        normalized_name: str,
+        address: Optional[UnifiedAddress]
+    ) -> Optional[UnifiedEntity]:
+        if not normalized_name:
+            return None
+        try:
+            from app.states.unified_database import db_manager
+            with db_manager.get_session() as session:
+                query = select(UnifiedEntity).where(
+                    UnifiedEntity.entity_type == entity_type,
+                    UnifiedEntity.normalized_name == normalized_name
+                )
+                if address and getattr(address, "id", None):
+                    query = query.where(UnifiedEntity.address_id == address.id)
+                return session.exec(query).first()
+        except Exception:
+            return None
+    
+    def _get_or_create_entity(
+        self,
+        entity_type: EntityType,
+        name: Optional[str],
+        address: Optional[UnifiedAddress],
+        person: Optional[UnifiedPerson] = None,
+        committee: Optional[UnifiedCommittee] = None
+    ) -> Optional[UnifiedEntity]:
+        normalized_name = self._normalize_entity_name(name)
+        existing = self._find_entity(entity_type, normalized_name, address)
+        if existing:
+            if person and not existing.person:
+                existing.person = person
+            if committee and not existing.committee:
+                existing.committee = committee
+            if address and not existing.address:
+                existing.address = address
+            if self.state_id and not existing.state_id:
+                existing.state_id = self.state_id
+            return existing
+        if not normalized_name and not name:
+            return None
+        entity = UnifiedEntity(
+            entity_type=entity_type,
+            name=name or normalized_name or None,
+            normalized_name=normalized_name or None,
+            address=address,
+            person=person,
+            committee=committee,
+            state_id=self.state_id
+        )
+        return entity
+    
+    def _find_campaign(
+        self,
+        normalized_name: str,
+        committee: Optional[UnifiedCommittee],
+        candidate: Optional[UnifiedPerson],
+        election_year: Optional[int]
+    ) -> Optional[UnifiedCampaign]:
+        if not normalized_name:
+            return None
+        try:
+            from app.states.unified_database import db_manager
+            with db_manager.get_session() as session:
+                query = select(UnifiedCampaign).where(
+                    UnifiedCampaign.normalized_name == normalized_name
+                )
+                if committee and committee.filer_id:
+                    query = query.where(UnifiedCampaign.primary_committee_id == committee.filer_id)
+                if candidate and getattr(candidate, "id", None):
+                    query = query.where(UnifiedCampaign.candidate_person_id == candidate.id)
+                if election_year:
+                    query = query.where(UnifiedCampaign.election_year == election_year)
+                return session.exec(query).first()
+        except Exception:
+            return None
+    
+    def build_campaign(
+        self,
+        raw_data: Dict[str, Any],
+        committee: Optional[UnifiedCommittee],
+        candidate: Optional[UnifiedPerson],
+        transaction: Optional[UnifiedTransaction]
+    ) -> Optional[UnifiedCampaign]:
+        campaign_name = self._get_field_value(raw_data, "campaign_name")
+        if not campaign_name:
+            campaign_name = candidate.full_name if candidate else None
+        if not campaign_name and committee:
+            campaign_name = committee.name
+        normalized_name = self._normalize_entity_name(campaign_name)
+        if not normalized_name:
+            return None
+        transaction_date = transaction.transaction_date if transaction else None
+        if not transaction_date:
+            transaction_date = self._parse_date(self._get_field_value(raw_data, "transaction_date"))
+        election_year = transaction_date.year if isinstance(transaction_date, date) else None
+        campaign = self._find_campaign(normalized_name, committee, candidate, election_year)
+        if campaign:
+            return campaign
+        campaign = UnifiedCampaign(
+            name=campaign_name,
+            normalized_name=normalized_name,
+            election_year=election_year,
+            office_sought=self._get_field_value(raw_data, "office_sought"),
+            district=self._get_field_value(raw_data, "district_info"),
+            candidate=candidate,
+            primary_committee=committee,
+            state_id=self.state_id
+        )
+        if candidate and candidate.entity:
+            campaign.entities.append(
+                UnifiedCampaignEntity(
+                    campaign=campaign,
+                    entity=candidate.entity,
+                    state_id=self.state_id,
+                    role=CampaignRole.CANDIDATE,
+                    is_primary=True
+                )
+            )
+        if committee and committee.entity:
+            campaign.entities.append(
+                UnifiedCampaignEntity(
+                    campaign=campaign,
+                    entity=committee.entity,
+                    state_id=self.state_id,
+                    role=CampaignRole.COMMITTEE,
+                    is_primary=True
+                )
+            )
+        return campaign
+    
+    def _find_address_by_fields(self, address_data: Dict[str, Any]) -> Optional[UnifiedAddress]:
+        """Find an existing address by key fields"""
+        if not address_data:
+            return None
+        
+        try:
+            from app.states.unified_database import db_manager
+            with db_manager.get_session() as session:
+                from sqlalchemy import text
+                
+                # Build query based on available fields
+                conditions = []
+                params = {}
+                
+                if address_data.get("street_1"):
+                    conditions.append("street_1 = :street_1")
+                    params["street_1"] = address_data["street_1"]
+                
+                if address_data.get("city"):
+                    conditions.append("city = :city")
+                    params["city"] = address_data["city"]
+                
+                if address_data.get("state"):
+                    conditions.append("state = :state")
+                    params["state"] = address_data["state"]
+                
+                if address_data.get("zip_code"):
+                    conditions.append("zip_code = :zip_code")
+                    params["zip_code"] = address_data["zip_code"]
+                
+                # Need at least street_1 and city to find a match
+                if len(conditions) >= 2:
+                    query = f"SELECT * FROM unified_addresses WHERE {' AND '.join(conditions)} LIMIT 1"
+                    result = session.exec(text(query), params).first()
+                    if result:
+                        return UnifiedAddress(**dict(result))
+                
+                return None
+        except Exception:
+            return None
+    
+    def _normalize_field_name(self, field_name: str) -> str:
+        """Normalize a field name for comparison"""
+        if field_name is None:
+            return ""
+        try:
+            normalized = str(field_name).lower()
+            normalized = re.sub(r'[^a-z0-9]', '_', normalized)
+            normalized = re.sub(r'_+', '_', normalized)
+            return normalized.strip('_')
+        except Exception:
+            return ""
+    
+    def _parse_amount(self, value: Any) -> Optional[Decimal]:
+        """Parse an amount value to Decimal"""
+        if value is None:
+            return None
+        
+        try:
+            # Remove currency symbols and commas
+            if isinstance(value, str):
+                value = re.sub(r'[^\d.-]', '', value)
+            
+            return Decimal(str(value))
+        except (ValueError, TypeError):
+            return None
+    
+    def _parse_date(self, value: Any) -> Optional[date]:
+        """Parse a date value"""
+        if value is None:
+            return None
+        
+        try:
+            if isinstance(value, str):
+                # Try common date formats
+                for fmt in ['%Y-%m-%d', '%m/%d/%Y', '%m-%d-%Y', '%Y/%m/%d']:
+                    try:
+                        return datetime.strptime(value, fmt).date()
+                    except ValueError:
+                        continue
+            elif isinstance(value, (date, datetime)):
+                return value.date() if isinstance(value, datetime) else value
+            
+            return None
+        except (ValueError, TypeError):
+            return None
+    
+    def _parse_boolean(self, value: Any) -> bool:
+        """Parse a boolean value"""
+        if value is None:
+            return False
+        
+        if isinstance(value, bool):
+            return value
+        
+        if isinstance(value, str):
+            return value.lower() in ['true', 'yes', 'y', '1', 't']
+        
+        if isinstance(value, (int, float)):
+            return bool(value)
+        
+        return False
+    
+    def _determine_transaction_type(self, raw_data: Dict[str, Any]) -> TransactionType:
+        """Determine the transaction type from raw data"""
+        # Check for explicit transaction type
+        type_value = self._get_field_value(raw_data, "transaction_type")
+        if type_value:
+            type_str = str(type_value).lower()
+            type_synonyms = {
+                "monetary": TransactionType.CONTRIBUTION,
+                "money": TransactionType.CONTRIBUTION,
+                "in-kind": TransactionType.CONTRIBUTION,
+                "inkind": TransactionType.CONTRIBUTION,
+                "loan": TransactionType.LOAN,
+                "expenditure": TransactionType.EXPENDITURE,
+                "expense": TransactionType.EXPENDITURE,
+            }
+            if type_str in type_synonyms:
+                return type_synonyms[type_str]
+            for transaction_type in TransactionType:
+                if transaction_type.value in type_str:
+                    return transaction_type
+        
+        # Infer from field names
+        field_names = [k.lower() for k in raw_data.keys()]
+        
+        if any('contribution' in name for name in field_names):
+            return TransactionType.CONTRIBUTION
+        elif any('expenditure' in name for name in field_names):
+            return TransactionType.EXPENDITURE
+        elif any('loan' in name for name in field_names):
+            return TransactionType.LOAN
+        elif any('pledge' in name for name in field_names):
+            return TransactionType.PLEDGE
+        elif any('refund' in name for name in field_names):
+            return TransactionType.REFUND
+        elif any('transfer' in name for name in field_names):
+            return TransactionType.TRANSFER
+        
+        return TransactionType.OTHER
+
+    def _json_default(self, obj: Any) -> Any:
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        return str(obj)
+
+
+class UnifiedSQLDataProcessor:
+    """
+    High-level processor for converting state-specific data to SQLModel instances.
+    """
+    
+    def __init__(self):
+        self.builders = {}
+    
+    def get_builder(
+        self,
+        state: str,
+        state_id: Optional[int] = None,
+        state_code: Optional[str] = None
+    ) -> UnifiedSQLModelBuilder:
+        """Get or create a model builder for a specific state"""
+        if state not in self.builders:
+            self.builders[state] = UnifiedSQLModelBuilder(state, state_id, state_code)
+        builder = self.builders[state]
+        builder.state_id = state_id
+        builder.state_code = state_code
+        return builder
+    
+    def process_record(
+        self,
+        raw_data: Dict[str, Any],
+        state: str,
+        state_id: Optional[int] = None,
+        state_code: Optional[str] = None
+    ) -> UnifiedTransaction:
+        """
+        Process a single record from any state into a unified transaction.
+        
+        Args:
+            raw_data: Raw data dictionary from the state
+            state: State identifier (e.g., 'texas', 'oklahoma')
+            
+        Returns:
+            UnifiedTransaction object
+        """
+        builder = self.get_builder(state, state_id=state_id, state_code=state_code)
+        
+        # Build related entities first (committee, persons, addresses)
+        contributor = builder.build_person(raw_data, PersonRole.CONTRIBUTOR)
+        recipient = builder.build_person(raw_data, PersonRole.RECIPIENT)
+        payee = builder.build_person(raw_data, PersonRole.PAYEE)
+        candidate = builder.build_person(raw_data, PersonRole.CANDIDATE)
+        committee = builder.build_committee(raw_data)
+        
+        # Build the transaction
+        transaction = builder.build_transaction(raw_data)
+        
+        # Build campaign if possible
+        campaign = builder.build_campaign(raw_data, committee, candidate, transaction)
+        if campaign:
+            transaction.campaign = campaign
+        
+        # Set committee relationship
+        if committee:
+            transaction.committee_id = committee.filer_id
+            transaction.committee = committee
+        
+        # Create transaction-person relationships
+        if contributor:
+            tx_person = UnifiedTransactionPerson(
+                transaction=transaction,
+                person=contributor,
+                entity=contributor.entity,
+                state_id=builder.state_id,
+                role=PersonRole.CONTRIBUTOR
+            )
+            transaction.persons.append(tx_person)
+        
+        if recipient:
+            tx_person = UnifiedTransactionPerson(
+                transaction=transaction,
+                person=recipient,
+                entity=recipient.entity,
+                state_id=builder.state_id,
+                role=PersonRole.RECIPIENT
+            )
+            transaction.persons.append(tx_person)
+        
+        if payee:
+            tx_person = UnifiedTransactionPerson(
+                transaction=transaction,
+                person=payee,
+                entity=payee.entity,
+                state_id=builder.state_id,
+                role=PersonRole.PAYEE
+            )
+            transaction.persons.append(tx_person)
+        
+        if candidate:
+            tx_person = UnifiedTransactionPerson(
+                transaction=transaction,
+                person=candidate,
+                entity=candidate.entity,
+                state_id=builder.state_id,
+                role=PersonRole.CANDIDATE
+            )
+            transaction.persons.append(tx_person)
+        
+        # Create specialized financial records
+        contributor_entity = contributor.entity if contributor and contributor.entity else None
+        recipient_entity = None
+        if committee and committee.entity:
+            recipient_entity = committee.entity
+        elif recipient and recipient.entity:
+            recipient_entity = recipient.entity
+        
+        if transaction.transaction_type == TransactionType.CONTRIBUTION:
+            if not contributor_entity and committee and committee.entity:
+                contributor_entity = committee.entity
+            if not recipient_entity and recipient and recipient.entity:
+                recipient_entity = recipient.entity
+            if contributor_entity and recipient_entity:
+                contribution = UnifiedContribution(
+                    transaction=transaction,
+                    contributor=contributor_entity,
+                    recipient=recipient_entity,
+                    amount=transaction.amount,
+                    receipt_date=transaction.transaction_date,
+                    contribution_type=builder._get_field_value(raw_data, "contribution_type"),
+                    description=transaction.description,
+                    state_id=builder.state_id
+                )
+                transaction.contribution = contribution
+        
+        if transaction.transaction_type == TransactionType.LOAN:
+            if not contributor_entity and recipient_entity:
+                contributor_entity = recipient_entity
+            if contributor_entity and recipient_entity:
+                loan = UnifiedLoan(
+                    transaction=transaction,
+                    lender=contributor_entity,
+                    borrower=recipient_entity,
+                    amount=transaction.amount,
+                    loan_date=transaction.transaction_date,
+                    due_date=builder._parse_date(builder._get_field_value(raw_data, "loan_due_date")),
+                    interest_rate=builder._parse_amount(builder._get_field_value(raw_data, "loan_interest_rate")),
+                    collateral=builder._get_field_value(raw_data, "loan_collateral"),
+                    state_id=builder.state_id
+                )
+                transaction.loan = loan
+        
+        return transaction
+    
+    def process_records(
+        self,
+        records: List[Dict[str, Any]],
+        state: str,
+        state_id: Optional[int] = None,
+        state_code: Optional[str] = None
+    ) -> List[UnifiedTransaction]:
+        """
+        Process multiple records from any state into unified transactions.
+        
+        Args:
+            records: List of raw data dictionaries
+            state: State identifier
+            
+        Returns:
+            List of UnifiedTransaction objects
+        """
+        return [self.process_record(record, state, state_id=state_id, state_code=state_code) for record in records] 
+
+
+# Global processor instance
+unified_sql_processor = UnifiedSQLDataProcessor() 
