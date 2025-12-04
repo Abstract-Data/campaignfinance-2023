@@ -955,16 +955,26 @@ class UnifiedSQLModelBuilder:
         # Handle None unified_field
         if unified_field is None:
             return None
+        
+        # First check if the unified field name is directly in raw_data
+        # This handles cases where GenericFileReader already normalized the field names
+        if unified_field in raw_data:
+            return raw_data[unified_field]
             
-        # First try direct mapping
+        # Then try direct mapping from state-specific field names
         for state_field, mapped_field in self.field_mappings.items():
             if mapped_field == unified_field and state_field in raw_data:
                 return raw_data[state_field]
         
-        # If no direct mapping, try fuzzy matching
+        # If no direct mapping, try fuzzy matching (but avoid matching other unified field names)
         for field_name, value in raw_data.items():
-            if field_name is not None and self._fuzzy_match(field_name, unified_field):
-                return value
+            if field_name is not None:
+                # Skip fuzzy matching on fields that look like unified field names
+                # (they start with common prefixes like 'person_', 'address_', 'committee_')
+                if field_name.startswith(('person_', 'address_', 'committee_', 'transaction_')):
+                    continue
+                if self._fuzzy_match(field_name, unified_field):
+                    return value
         
         return None
     
