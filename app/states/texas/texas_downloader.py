@@ -137,16 +137,47 @@ class TECDownloader(FileDownloaderABC):
                         .alias('file_origin')
                     )
                 )
+                
+                # Get all unique columns from all files in this category
+                all_columns = set(df.columns)
+                for _file in v[1:]:  # Skip first file since we already loaded it
+                    try:
+                        _fdf = pl.read_parquet(_file)
+                        all_columns.update(_fdf.columns)
+                    except Exception as e:
+                        ic(f"Error reading {_file}: {e}")
+                        continue
+                
+                # Ensure all columns exist in the main DataFrame
+                for col in all_columns:
+                    if col not in df.columns:
+                        df = df.with_columns(pl.lit(None).alias(col))
+                
+                # Now process each file and align columns
                 for _file in _files:
-                    _fdf = (
-                        pl.read_parquet(_file)
-                        .with_columns(
-                            pl.lit(_file.stem)
-                            .alias('file_origin')
+                    try:
+                        _fdf = (
+                            pl.read_parquet(_file)
+                            .with_columns(
+                                pl.lit(_file.stem)
+                                .alias('file_origin')
+                            )
                         )
-                    )
-                    df = df.vstack(_fdf)
-                    ic(f"Added {_file.stem} to DataFrame {k}")
+                        
+                        # Add missing columns to _fdf
+                        for col in all_columns:
+                            if col not in _fdf.columns:
+                                _fdf = _fdf.with_columns(pl.lit(None).alias(col))
+                        
+                        # Ensure column order matches
+                        _fdf = _fdf.select(df.columns)
+                        
+                        # Now stack the aligned DataFrames
+                        df = df.vstack(_fdf)
+                        ic(f"Added {_file.stem} to DataFrame {k}")
+                    except Exception as e:
+                        ic(f"Error processing {_file}: {e}")
+                        continue
             else:
                 df = (
                     pl.read_parquet(v[0])
@@ -189,15 +220,56 @@ class TECDownloader(FileDownloaderABC):
                 _type = file.stem.rsplit('_', 1)[0]
                 _data.setdefault(_type, []).append(file)
 
-            _data = (
-                {
-                    k: (
-                        pl.scan_parquet(v)
-                        .collect()
-                        .to_dicts()
-                    ) for k, v in _data.items()
-                }
-            )
+            _data = {}
+            for k, v in _data.items():
+                if len(v) == 1:
+                    # Single file - read directly
+                    _data[k] = pl.read_parquet(v[0]).to_dicts()
+                else:
+                    # Multiple files - need to align schemas
+                    try:
+                        # Read first file
+                        df = pl.read_parquet(v[0])
+                        
+                        # Get all unique columns from all files
+                        all_columns = set(df.columns)
+                        for _file in v[1:]:
+                            try:
+                                _fdf = pl.read_parquet(_file)
+                                all_columns.update(_fdf.columns)
+                            except Exception as e:
+                                ic(f"Error reading {_file}: {e}")
+                                continue
+                        
+                        # Ensure all columns exist in the main DataFrame
+                        for col in all_columns:
+                            if col not in df.columns:
+                                df = df.with_columns(pl.lit(None).alias(col))
+                        
+                        # Process remaining files
+                        for _file in v[1:]:
+                            try:
+                                _fdf = pl.read_parquet(_file)
+                                
+                                # Add missing columns to _fdf
+                                for col in all_columns:
+                                    if col not in _fdf.columns:
+                                        _fdf = _fdf.with_columns(pl.lit(None).alias(col))
+                                
+                                # Ensure column order matches
+                                _fdf = _fdf.select(df.columns)
+                                
+                                # Stack the aligned DataFrames
+                                df = df.vstack(_fdf)
+                            except Exception as e:
+                                ic(f"Error processing {_file}: {e}")
+                                continue
+                        
+                        _data[k] = df.to_dicts()
+                    except Exception as e:
+                        ic(f"Error processing category {k}: {e}")
+                        _data[k] = []
+            
             cls.data = _data
         return cls.data
 

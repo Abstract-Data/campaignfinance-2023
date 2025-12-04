@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, List, Dict, Any, Type, NamedTuple, Self
+from typing import Optional, List, Dict, Any, Type, NamedTuple, Self, Tuple
 import pandas as pd
 import polars as pl
 from polars import DataFrame
@@ -38,6 +38,8 @@ class TexasSearchSetup:
     COLS: Optional[Dict[str, List[str]]] = None
     NAME_ORG: Any = None
     amount_: Optional[str] = None
+
+
     type_: Optional[TexasFieldsBase] = None
     filer_id_: Optional[str] = "filerIdent"
     filer_name_: Optional[str] = "filerName"
@@ -118,45 +120,45 @@ class TexasSearchResult:
     def __repr__(self):
         return f"TexasSearchResult({', '.join(self.input_terms)})"
 
-    def group_by_year(self) -> pd.DataFrame:
-        _df = self.data if self.filtered is None else self.filtered
-        _result = (
-            _df
-            .group_by(
-                pl.col('filerIdent'),
-                self.config.NAME_ORG,
-                pl.col(self.config.type_.DATE)
-                .dt.year()
-                .cast(pl.String)
-                .alias('year'))
-            .agg(
-                pl.col(self.config.type_.AMOUNT)
-                .cast(pl.Float64)
-                .alias('total')
-                .sum()
-                .round())
-            .to_pandas()
-        )
-
-        _merge_uniques = (
-            self.unique_filers
-            .to_pandas()
-            .merge(_result, on='filerIdent', how='left'))
-
-        _ct = pd.crosstab(
-            index=[
-                _merge_uniques['filerIdent'],
-                _merge_uniques['filerName'],
-                _merge_uniques[self.config.search_field_]],
-            columns=_merge_uniques['year'],
-            values=_merge_uniques['total'],
-            aggfunc='sum',
-            margins=True,
-            margins_name='total',
-            dropna=True
-        )
-        self.grouped = _ct
-        return _ct
+    # def group_by_year(self) -> pd.DataFrame:
+    #     _df = self.data if self.filtered is None else self.filtered
+    #     _result = (
+    #         _df
+    #         .group_by(
+    #             pl.col('filerIdent'),
+    #             self.config.NAME_ORG,
+    #             pl.col(self.config.type_.DATE)
+    #             .dt.year()
+    #             .cast(pl.String)
+    #             .alias('year'))
+    #         .agg(
+    #             pl.col(self.config.type_.AMOUNT)
+    #             .cast(pl.Float64)
+    #             .alias('total')
+    #             .sum()
+    #             .round())
+    #         .to_pandas()
+    #     )
+    #
+    #     _merge_uniques = (
+    #         self.unique_filers
+    #         .to_pandas()
+    #         .merge(_result, on='filerIdent', how='left'))
+    #
+    #     _ct = pd.crosstab(
+    #         index=[
+    #             _merge_uniques['filerIdent'],
+    #             _merge_uniques['filerName'],
+    #             _merge_uniques[self.config.search_field_]],
+    #         columns=_merge_uniques['year'],
+    #         values=_merge_uniques['total'],
+    #         aggfunc='sum',
+    #         margins=True,
+    #         margins_name='total',
+    #         dropna=True
+    #     )
+    #     self.grouped = _ct
+    #     return _ct
 
 
 @dataclass
@@ -171,6 +173,59 @@ class TexasSearch:
         self.config = TexasSearchSetup(self.data)
         self.data = self.config.DATA
 
+    def normal_search(self, result: TexasSearchResult) -> tuple[list[DataFrame], list[DataFrame], dict[
+        Any, dict[int, Any]]] | None:
+        _result = []
+        _unique_filers = []
+        _unique_filters = dict()
+        for p in result.input_terms:
+            _param_df = (
+                self.data
+                .filter(
+                    pl.col(self.config.search_field_)
+                    .str
+                    .contains(p)
+                )
+                .collect()
+            )
+            if _param_df.is_empty():
+                continue
+            _result.append(_param_df)
+
+            _param_unique_filers = (
+                _param_df
+                .group_by(
+                    pl.col(self.config.filer_id_))
+                .agg(
+                    pl.col(self.config.type_.FILER_NAME)
+                    .first()
+                    .alias(self.config.type_.FILER_NAME)
+                ))
+            _unique_filers.append(_param_unique_filers)
+
+            _unique_filters[p] = {
+                x[0]: x[1] for x in enumerate(
+                    set(
+                        _param_df.to_pandas()[self.config.search_field_].to_list()
+                    ), 1
+                )
+            }
+            return _result, _unique_filers, _unique_filters
+
+    def by_filer_search(self, result: TexasSearchResult) -> List[pl.DataFrame]:
+        _result_frames = []
+        for p in result.input_terms:
+            _param_df = (
+                self.data.filter(
+                    pl.col(self.config.filer_id_).cast(pl.String)
+                    .str
+                    .contains(str(p))
+                )
+            ).collect().cast(pl.String)
+            if _param_df.is_empty():
+                continue
+            _result_frames.append(_param_df)
+        return _result_frames
 
     def search(self, *args, by_filer=False) -> TexasSearchResult:
         result = TexasSearchResult(input_terms=args, config=self.config)
@@ -181,46 +236,20 @@ class TexasSearch:
         _still_running, _message_printed = True, False
         _start_time = time.time()
         while _still_running:
-            for p in result.input_terms:
-                _param_df = (
-                    self.data
-                    .filter(
-                        pl.col(self.config.search_field_ if not by_filer else self.config.filer_name_)
-                        .str
-                        .contains(p)
-                    )
-                   .collect()
-                )
-                _result.append(_param_df)
-
-                _param_unique_filers = (
-                    _param_df
-                    .group_by(
-                        pl.col(self.config.filer_id_))
-                    .agg(
-                        pl.col(self.config.type_.FILER_NAME)
-                        .first()
-                        .alias(self.config.type_.FILER_NAME)
-                    ))
-                _unique_filers.append(_param_unique_filers)
-
-                _unique_filters[p] = {
-                    x[0]: x[1] for x in enumerate(
-                        set(
-                            _param_df.to_pandas()[self.config.search_field_].to_list()
-                        ), 1
-                    )
-                }
-                if time.time() - _start_time > 5 and not _message_printed:
-                    print("Still searching...")
-                    _message_printed = True
-            _result = pl.concat(_result)
-            _unique_filers = pl.concat(_unique_filers)
+            if not by_filer:
+                __result, __unique_filers, __unique_filters = self.normal_search(result)
+                _unique_filers = pl.concat(__unique_filers)
+                result.unique_filers = _unique_filers
+                result.unique_filters = _unique_filters
+            else:
+                __result = self.by_filer_search(result)
+            if time.time() - _start_time > 5 and not _message_printed:
+                print("Still searching...")
+                _message_printed = True
+            _result = pl.concat(__result)
             _still_running = False
 
         result.data = _result
-        result.unique_filers = _unique_filers
-        result.unique_filters = _unique_filters
         if by_filer:
             return result
         result = self.choose_options(result)
@@ -235,7 +264,7 @@ class TexasSearch:
                 )
                 .str
                 .contains(
-                    '|'.join(
+                    '|'.join(str(x) for x in
                         result.selected_choices
                     )
                 )

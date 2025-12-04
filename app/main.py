@@ -61,6 +61,25 @@ separate script so they're created in the correct order."""
 download = TexasDownloader()
 # download.download()
 dfs = download.dataframes()
+
+contribution_df = dfs['contribs']
+expenditure_df = dfs['expend']
+
+tim_dunn = contribution_df.filter(pl.col('contributorNameLast') == "DUNN", pl.col('contributorNameFirst').str.contains("TIM")).collect().to_pandas()
+farris_wilks = contribution_df.filter(pl.col('contributorNameLast') == "WILKS", pl.col('contributorNameFirst').str.contains("FARRIS")).collect().to_pandas()
+don_dyer = contribution_df.filter(pl.col('contributorNameLast') == "DYER", pl.col('contributorNameFirst').str.contains("DON")).collect().to_pandas()
+doug_deason = contribution_df.filter(pl.col('contributorNameLast') == "DEASON", pl.col('contributorNameFirst').str.contains("DOUG")).collect().to_pandas()
+
+donation_list = pd.concat([tim_dunn, farris_wilks, don_dyer])
+campaign_ids_set = set(donation_list['filerIdent'].unique())
+
+donation_campaign_expenses = expenditure_df.filter(pl.col('filerIdent').is_in(campaign_ids_set)).collect().to_pandas()
+donation_campaign_expenses['new_PayeeName'] = donation_campaign_expenses['payeeNameOrganization'].fillna('') \
+    .where(donation_campaign_expenses['payeeNameOrganization'].notna(),
+           (donation_campaign_expenses['payeeNameFirst'].fillna('') + ' ' +
+            donation_campaign_expenses['payeeNameLast'].fillna('')).str.strip())
+donation_campaign_expenses['expendAmount'] = donation_campaign_expenses['expendAmount'].astype(float)
+expenses_groupby = donation_campaign_expenses.groupby(['filerName', 'new_PayeeName']).agg({'expendAmount': 'sum'}).reset_index()
 # sprague = pl.scan_csv(Path.home() / 'Downloads' / 'CAC_EXP_MSTRKEY_13504.CSV', infer_schema_length=None)
 # FIRST_AND_LAST = pl.format(
 #     "{} {}", pl.col("FIRST_NAME"), pl.col("LAST_NAME"))
@@ -89,32 +108,40 @@ dfs = download.dataframes()
 # )
 #
 # ct.to_csv(Path.home() / 'Downloads' / 'sprague_by_purpose.csv')
-search_expenditures = TexasSearch(dfs['expend'])
-search_contributions = TexasSearch(dfs['contribs'])
-macias = search_expenditures.search(
-    "Luke Macias",
-    "Macias Strategies",
-    "Pale Horse Strategies",
-    "Influencable",
-)
-parscale = search_expenditures.search(
-    "Brad Parscale", "Campaign Nucleus", "Parscale Strategy"
-)
-
-berry = search_expenditures.search(
-    "Jordan Berry", "Berry Communications")
-
-macias_grouped = macias.group_by_year()
-parscale_grouped = parscale.group_by_year()
-berry_grouped = berry.group_by_year()
-
+# search_expenditures = TexasSearch(dfs['expend'])
+# search_contributions = TexasSearch(dfs['contribs'])
+# travis_gop_possible = [
+#     43474,
+#     15789,
+#     23738,
+#     57940,
+#     15789,
+#     39023,
+#     15743,
+#     57940,
+#     17221,
+#     58441,
+#     39023,
+# ]
+#
+# travis_gop = search_expenditures.search(*travis_gop_possible, by_filer=True)
+#
+# travis_expenses = travis_gop.data.to_pandas()
+# travis_expense_ct = pd.crosstab(
+#     index=travis_expenses['payeeName'],
+#     columns=pd.to_datetime(travis_expenses['expendDt']).dt.year,
+#     values=travis_expenses['expendAmount'].astype(float),
+#     aggfunc='sum',
+#     margins=True,
+#     margins_name='total',
+#     dropna=True
+# ).sort_values(by='total', ascending=False)
+#
+# travis_county_fec_contributions = pd.read_csv("/Users/johneakin/Downloads/schedule_a-2025-02-25T21_25_07.csv")
 # grouped.to_csv(Path.home() / 'Downloads' / 'macias.csv')
 
-grouped_filers = tuple(macias_grouped.reset_index()['filerName'].to_list())
 
-donors = search_contributions.search(*grouped_filers, by_filer=True)
-donors_grouped = donors.group_by_year()
-
+# tim_dunn = search_contributions.search("TIM DUNN")
 # df = dfs['contribs']
 # cols = df.collect_schema().names()
 # date_cols = [x for x in cols if x.endswith('Dt')]

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Callable, Dict, Generator
 import datetime
 from dataclasses import dataclass
-from logger import Logger
+from app.logger import Logger
 from rich.progress import Progress
 import polars as pl
 from rich.progress import Progress
@@ -80,11 +80,65 @@ class FileReader:
                     yield _record
 
     def read_folder(self, folder: Path, **kwargs) -> Generator[Dict[int, Dict], None, None]:
-        files = list(folder.glob("*.csv"))
+        # Get both CSV and Parquet files
+        csv_files = list(folder.glob("*.csv"))
+        parquet_files = list(folder.glob("*.parquet"))
+        all_files = csv_files + parquet_files
+        
         with Progress() as pbar:
-            task = pbar.add_task("Reading files...", total=len(files))
-            for file in files:
+            task = pbar.add_task("Reading files...", total=len(all_files))
+            for file in all_files:
                 pbar.update(task, advance=1)
-                recs = self.read_csv(file, **kwargs)
-                for rec in recs:
-                    yield rec
+                try:
+                    if file.suffix.lower() == '.csv':
+                        recs = self.read_csv(file, **kwargs)
+                    elif file.suffix.lower() == '.parquet':
+                        recs = self.read_parquet(file, **kwargs)
+                    else:
+                        continue
+                        
+                    for rec in recs:
+                        yield rec
+                except Exception as e:
+                    print(f"Error processing file {file}: {str(e)}")
+                    continue
+
+    @include_file_origin
+    @include_download_date
+    def read_parquet(self, file: Path, **kwargs) -> Generator[Dict[int, Dict], None, None]:
+        """
+        Read a Parquet file and yield each row as a dictionary.
+        Handles schema mismatches by reading row by row.
+        """
+        try:
+            # Use scan_parquet for lazy evaluation
+            lazy_df = pl.scan_parquet(file, **kwargs)
+            
+            # Collect the lazy frame and then iterate over rows
+            df = lazy_df.collect()
+            
+            # Use iter_rows to get each row as a dictionary
+            for row in df.iter_rows(named=True):
+                yield row
+                
+        except Exception as e:
+            print(f"Error reading parquet file {file}: {str(e)}")
+            # Try alternative approach if scan_parquet fails
+            try:
+                df = pl.read_parquet(file, **kwargs)
+                for row_dict in df.to_dicts():
+                    yield row_dict
+            except Exception as e2:
+                print(f"Alternative approach also failed for {file}: {str(e2)}")
+
+    @include_file_origin
+    @include_download_date
+    def read_txt_file(self, file: Path, **kwargs) -> Generator[Dict[int, Dict], None, None]:
+        with open(file, "r", encoding='utf-8') as _file:
+            _records = csv.DictReader(_file)
+            if kwargs.get('lowercase_headers'):
+                _records.fieldnames = [x.lower() for x in _records.fieldnames]
+            for _record in _records:
+                if kwargs.get('change_space_in_headers'):
+                    _record = {k.replace(' ', '_'): v for k, v in _record.items() if k is not None}
+                yield _record

@@ -30,7 +30,7 @@ class TECAddressBase(TECBaseModel):
     country: Optional[str] = Field(default=None, description="Country")
     region: Optional[str] = Field(default=None, description="Region")
     standardized: str = Field(default=None, description="Address standardized")
-    person_name_id: Optional[str] = Field(default=None, foreign_key="tx_person_names.id")
+    person_name_id: Optional[str] = Field(default=None, foreign_key="texas.tx_person_names.id")
     # person_name: list['TECPersonName'] = Relationship(back_populates="addresses")
 
     @model_validator(mode='before')
@@ -147,6 +147,6 @@ class TECPersonAddressLinkModel(TECBaseModel, table=True):
     __table_args__ = {"schema": "texas"}
     address_id: str = Field(foreign_key="texas.tx_addresses.id", primary_key=True)
     person_id: Optional[str] = Field(default=None, foreign_key="texas.tx_person_names.id", primary_key=True)
-    treasurer_id: Optional[str] = Field(default=None, foreign_key="texas.tx_treasurers.id", primary_key=True)
-    assistant_treasurer_id: Optional[str] = Field(default=None, foreign_key="texas.tx_assistant_treasurers.id", primary_key=True)
+    treasurer_id: Optional[str] = Field(default=None, foreign_key="texas.tx_treasurer.id", primary_key=True)
+    assistant_treasurer_id: Optional[str] = Field(default=None, foreign_key="texas.tx_assistant_treasurer.id", primary_key=True)
 

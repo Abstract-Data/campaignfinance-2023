@@ -22,6 +22,7 @@ dependencies = [
     "requests>=2.32.3",
     "selenium>=4.27.1",
     "sqlmodel>=0.0.22",
+    "psycopg2-binary>=2.9.9",
     "tomli>=2.2.1",
     "tqdm>=4.67.1",
     "usaddress-scourgify>=0.6.0",
@@ -31,6 +32,8 @@ dependencies = [
     "polars>=1.19.0",
     "web-scrape-utils",
     "pyarrow>=19.0.0",
+    "hypothesis>=6.112.1",
+    "pytest>=8.3.3",
 ]
 
 [tool.uv.sources]

@@ -1,6 +1,6 @@
 from hypothesis import given, strategies as st
 from pydantic import BaseModel
-from funcs import StateFileValidation
+from abcs.abc_validation import StateFileValidation
 
 class MockModel(BaseModel):
     field: str

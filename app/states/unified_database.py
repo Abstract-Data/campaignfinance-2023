@@ -1195,5 +1195,14 @@ class UnifiedDatabaseManager:
             return unlinked_transactions
 
 
+
 # Global database manager instance (PostgreSQL)
-db_manager = UnifiedDatabaseManager()
+# Only created if PostgreSQL connection is available
+try:
+    db_manager = UnifiedDatabaseManager()
+except (RuntimeError, Exception) as e:
+    # PostgreSQL not available or schema doesn't exist - set to None
+    # Tests can check if db_manager is None before using
+    db_manager = None
+    import warnings
+    warnings.warn(f"PostgreSQL database manager not available: {e}", UserWarning)

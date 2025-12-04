@@ -20,7 +20,7 @@ from funcs.record_keygen import RecordKeyGenerator
 
 class TECAddress(TECAddressBase, table=True):
     __tablename__ = "tx_addresses"
-    __table_args__ = {"schema": "texas"}
+    __table_args__ = {"schema": "texas", "extend_existing": True}
     person_name: list['TECPersonName'] = Relationship(
         back_populates="addresses",
         link_model=TECPersonAddressLinkModel)
