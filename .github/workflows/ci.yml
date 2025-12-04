@@ -31,5 +31,5 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: Abstract-Data/campaignfinance
+          slug: Abstract-Data/campaignfinance-2023
 
