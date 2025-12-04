@@ -4,14 +4,14 @@ from sqlmodel import Field, JSON, Relationship, Date
 from pydantic import field_validator, model_validator, BeforeValidator, create_model
 from pydantic_extra_types.phone_numbers import PhoneNumber
 from pydantic_core import PydanticCustomError
-import funcs.validator_functions as funcs
-import states.texas.funcs.tx_validation_funcs as tx_funcs
+import app.funcs.validator_functions as funcs
+import app.states.texas.funcs.tx_validation_funcs as tx_funcs
 from .texas_settings import TECBaseModel
 from .texas_address import TECAddressBase, TECPersonAddressLinkModel
 from .texas_flags import TECFlagsBase
 from .texas_personname import TECPersonNameBase
 
-from funcs.record_keygen import RecordKeyGenerator
+from app.funcs.record_keygen import RecordKeyGenerator
 
 # TODO: Create a 'Corrections' variable to hold the corrections for
 #  the data as a list to add each correction to the list.

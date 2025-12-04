@@ -3,7 +3,7 @@ import abc
 
 import sqlalchemy
 import sqlmodel
-import abcs.abc_validation as validation
+import app.abcs.abc_validation as validation
 from pathlib import Path
 from typing import ClassVar, Dict, List
 from dataclasses import dataclass, field
@@ -13,10 +13,10 @@ from typing import Generator, overload, Iterator, Tuple, Optional, Any, Callable
 from collections import defaultdict
 import datetime
 # from abcs.abc_download import FileDownloader
-from abcs.abc_db_loader import DBLoaderClass
-from abcs.abc_state_config import StateConfig
-from logger import Logger
-import funcs
+from app.abcs.abc_db_loader import DBLoaderClass
+from app.abcs.abc_state_config import StateConfig
+from app.logger import Logger
+import app.funcs as funcs
 import inject
 from sqlmodel import SQLModel
 from pydantic import BaseModel, Field, ConfigDict, model_validator, computed_field

@@ -1,5 +1,5 @@
 
-from abcs import (
+from app.abcs import (
     FileDownloaderABC, StateConfig, CategoryTypes, RecordGen, CategoryConfig, progress, CSVReaderConfig)
 from web_scrape_utils import CreateWebDriver, By
 

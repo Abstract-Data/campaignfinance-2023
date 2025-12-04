@@ -1,6 +1,6 @@
 from __future__ import annotations
 from sqlmodel import SQLModel, Session, create_engine, select
-from logger import Logger
+from app.logger import Logger
 from typing import Iterator, List, Type, Generator
 from dataclasses import dataclass
 import itertools

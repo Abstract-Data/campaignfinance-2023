@@ -2,7 +2,7 @@ from typing import Optional
 from pydantic import BeforeValidator
 from sqlmodel import Field
 from .texas_settings import TECBaseModel
-import funcs.validator_functions as funcs
+import app.funcs.validator_functions as funcs
 
 
 class TECFlagsBase(TECBaseModel):

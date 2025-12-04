@@ -1,4 +1,4 @@
-import funcs.validator_functions as funcs
+import app.funcs.validator_functions as funcs
 from functools import partial
 
 

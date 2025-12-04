@@ -7,13 +7,13 @@ from pydantic_extra_types.phone_numbers import PhoneNumber
 from pydantic_core import PydanticCustomError
 
 from . import TECBaseModel
-import funcs.validator_functions as funcs
-import states.texas.funcs.tx_validation_funcs as tx_funcs
+import app.funcs.validator_functions as funcs
+import app.states.texas.funcs.tx_validation_funcs as tx_funcs
 from scourgify import NormalizeAddress
 from scourgify.exceptions import AddressNormalizationError
 import usaddress
 from icecream import ic
-from funcs.record_keygen import RecordKeyGenerator
+from app.funcs.record_keygen import RecordKeyGenerator
 
 ADDRESS_LIST = {}
 

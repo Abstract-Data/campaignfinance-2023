@@ -3,7 +3,7 @@ from pydantic import field_validator, model_validator
 from sqlmodel import Field
 from pydantic_core import PydanticCustomError
 from .ok_settings import OklahomaSettings
-import funcs.validator_functions as funcs
+import app.funcs.validator_functions as funcs
 from datetime import date
 
 """

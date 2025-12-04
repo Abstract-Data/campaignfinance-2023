@@ -2,11 +2,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List
 from typing import Generator, Type
-import funcs
-from logger import Logger
-from abcs import StateCategoryClass, StateConfig, CategoryConfig, CSVReaderConfig
-from states.oklahoma.oklahoma_database import oklahoma_snowpark_session
-import states.oklahoma.validators as validators
+import app.funcs as funcs
+from app.logger import Logger
+from app.abcs import StateCategoryClass, StateConfig, CategoryConfig, CSVReaderConfig
+from app.states.oklahoma.oklahoma_database import oklahoma_snowpark_session
+from . import validators
 from functools import partial
 
 # TODO: Change File Prefix Configurations to Oklahoma

@@ -4,7 +4,7 @@ from pydantic import field_validator, model_validator
 from sqlmodel import Field
 from pydantic_core import PydanticCustomError
 from .texas_settings import TECSettings
-import states.texas.funcs.tx_validation_funcs as tx_funcs
+import app.states.texas.funcs.tx_validation_funcs as tx_funcs
 
 
 class TECContribution(TECSettings, table=True):

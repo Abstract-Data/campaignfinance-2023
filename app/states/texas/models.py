@@ -4,9 +4,9 @@ from datetime import date
 from pydantic import ConfigDict, model_validator, BaseModel, BeforeValidator
 from sqlmodel import SQLModel, Field
 from .validators.texas_settings import TECSettings
-import states.texas.funcs.tx_validation_funcs as tx_funcs
-import funcs.validator_functions as funcs
-from funcs.record_keygen import RecordKeyGenerator
+import app.states.texas.funcs.tx_validation_funcs as tx_funcs
+import app.funcs.validator_functions as funcs
+from app.funcs.record_keygen import RecordKeyGenerator
 
 class TECFlags(TECSettings, table=True):
     __tablename__ = "tx_flags"

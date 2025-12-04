@@ -1,4 +1,4 @@
-from states.texas.validators.texas_settings import TECSettings
+from app.states.texas.validators.texas_settings import TECSettings
 from datetime import date
 
 class TECDirectExpenses(TECSettings):

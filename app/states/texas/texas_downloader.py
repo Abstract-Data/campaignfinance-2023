@@ -8,12 +8,12 @@ import zipfile
 from tqdm import tqdm
 import time
 from icecream import ic
-from funcs.csv_reader import FileReader
+from app.funcs.csv_reader import FileReader
 import polars as pl
 import itertools
 
 
-from abcs import (
+from app.abcs import (
     FileDownloaderABC, StateConfig, CategoryTypes, RecordGen, CategoryConfig, progress)
 from web_scrape_utils import CreateWebDriver, By
 

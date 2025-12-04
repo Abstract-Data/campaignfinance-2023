@@ -1,5 +1,5 @@
 from pydantic_core import PydanticCustomError
-import funcs.validator_functions as funcs
+import app.funcs.validator_functions as funcs
 from datetime import datetime
 
 

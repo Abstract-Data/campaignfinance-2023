@@ -1,7 +1,7 @@
 from __future__ import annotations
 import abc
 from sqlmodel import SQLModel, Session, create_engine, select
-from logger import Logger
+from app.logger import Logger
 from typing import Iterator, List, Type
 from dataclasses import dataclass
 import itertools

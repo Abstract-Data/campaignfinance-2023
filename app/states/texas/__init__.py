@@ -1,10 +1,10 @@
 from __future__ import annotations
-from logger import Logger
+from app.logger import Logger
 # from states.texas.texas_database import local_postgres_engine as engine
-import states.texas.validators as validators
+from . import validators
 from .texas_downloader import TECDownloader
 from .texas_search import TexasSearch
-from abcs import StateCategoryClass, StateConfig, CategoryConfig, CSVReaderConfig, CategoryTypes
+from app.abcs import StateCategoryClass, StateConfig, CategoryConfig, CSVReaderConfig, CategoryTypes
 from functools import partial
 
 logger = Logger(__name__)

@@ -12,7 +12,7 @@ from icecream import ic
 from enum import StrEnum
 from rich.progress import track
 
-import funcs
+import app.funcs as funcs
 
 
 def check_for_empty_gen(func):

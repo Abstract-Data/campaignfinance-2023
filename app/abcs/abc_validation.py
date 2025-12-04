@@ -6,9 +6,9 @@ from sqlmodel import SQLModel
 import csv
 from tqdm import tqdm
 from pydantic import ValidationError
-from abcs.abc_validation_errors import ValidationErrorList
-from funcs.validator_functions import create_record_id
-from logger import Logger
+from app.abcs.abc_validation_errors import ValidationErrorList
+from app.funcs.validator_functions import create_record_id
+from app.logger import Logger
 from icecream import ic
 
 ValidatorType = Type[SQLModel]

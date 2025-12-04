@@ -4,7 +4,7 @@ from sqlmodel import Field
 from pydantic_core import PydanticCustomError
 from datetime import date
 from .ok_settings import OklahomaSettings
-import funcs.validator_functions as funcs
+import app.funcs.validator_functions as funcs
 
 """
 Oklahoma Expenditure Model/Validator 
