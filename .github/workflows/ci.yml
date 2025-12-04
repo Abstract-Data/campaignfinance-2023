@@ -25,7 +25,7 @@ jobs:
           uv pip install pytest-cov pytest-xdist
       
       - name: Run tests with coverage
-        run: uv run pytest -n auto --cov --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy
+        run: uv run pytest app/tests/ --cov --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy
       
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
