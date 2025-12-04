@@ -16,11 +16,9 @@ jobs:
         with:
           python-version: "3.12"
       
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-      
-      - name: Install dependencies
+      - name: Install uv and dependencies
         run: |
+          pip install uv
           uv sync
           uv pip install pytest-cov pytest-xdist
       
