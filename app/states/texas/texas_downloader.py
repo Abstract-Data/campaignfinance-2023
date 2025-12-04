@@ -148,10 +148,10 @@ class TECDownloader(FileDownloaderABC):
                         ic(f"Error reading {_file}: {e}")
                         continue
                 
-                # Ensure all columns exist in the main DataFrame
+                # Ensure all columns exist in the main DataFrame (cast to String for compatibility)
                 for col in all_columns:
                     if col not in df.columns:
-                        df = df.with_columns(pl.lit(None).alias(col))
+                        df = df.with_columns(pl.lit(None).cast(pl.String).alias(col))
                 
                 # Now process each file and align columns
                 for _file in _files:
@@ -164,10 +164,10 @@ class TECDownloader(FileDownloaderABC):
                             )
                         )
                         
-                        # Add missing columns to _fdf
+                        # Add missing columns to _fdf (cast to String for compatibility)
                         for col in all_columns:
                             if col not in _fdf.columns:
-                                _fdf = _fdf.with_columns(pl.lit(None).alias(col))
+                                _fdf = _fdf.with_columns(pl.lit(None).cast(pl.String).alias(col))
                         
                         # Ensure column order matches
                         _fdf = _fdf.select(df.columns)
@@ -241,20 +241,20 @@ class TECDownloader(FileDownloaderABC):
                                 ic(f"Error reading {_file}: {e}")
                                 continue
                         
-                        # Ensure all columns exist in the main DataFrame
+                        # Ensure all columns exist in the main DataFrame (cast to String for compatibility)
                         for col in all_columns:
                             if col not in df.columns:
-                                df = df.with_columns(pl.lit(None).alias(col))
+                                df = df.with_columns(pl.lit(None).cast(pl.String).alias(col))
                         
                         # Process remaining files
                         for _file in v[1:]:
                             try:
                                 _fdf = pl.read_parquet(_file)
                                 
-                                # Add missing columns to _fdf
+                                # Add missing columns to _fdf (cast to String for compatibility)
                                 for col in all_columns:
                                     if col not in _fdf.columns:
-                                        _fdf = _fdf.with_columns(pl.lit(None).alias(col))
+                                        _fdf = _fdf.with_columns(pl.lit(None).cast(pl.String).alias(col))
                                 
                                 # Ensure column order matches
                                 _fdf = _fdf.select(df.columns)

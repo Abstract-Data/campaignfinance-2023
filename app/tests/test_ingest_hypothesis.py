@@ -173,6 +173,11 @@ def texas_category_files(draw: st.DrawFn) -> Dict[str, List[Tuple[List[str], Lis
 def test_texas_consolidate_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, category_files):
     monkeypatch.setattr(StateConfig, "TEMP_FOLDER", property(lambda self: tmp_path))
     tmp_path.mkdir(parents=True, exist_ok=True)
+    
+    # Clean up any leftover parquet files from previous Hypothesis examples
+    # (tmp_path is reused between examples, so we need to start fresh)
+    for existing_file in tmp_path.glob("*.parquet"):
+        existing_file.unlink()
 
     # Ensure downloader is initialised with patched temp folder
     TECDownloader(config=TEXAS_CONFIGURATION)
