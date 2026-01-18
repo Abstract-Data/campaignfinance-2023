@@ -18,6 +18,8 @@ __pycache__/
 states/texas/*.env
 
 # Generated data files
+*.db
+*.db-journal
 field_analysis_results.json
 unified_field_library.json
 # C extensions
