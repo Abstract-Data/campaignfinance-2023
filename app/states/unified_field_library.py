@@ -129,9 +129,9 @@ class UnifiedFieldLibrary:
                 name="amount",
                 category=FieldCategory.AMOUNT,
                 field_type=FieldType.CURRENCY,
-                description="Monetary amount of the transaction",
+                description="Monetary amount of the transaction (negative values indicate refunds/corrections)",
                 examples=["contributionAmount", "expendAmount", "Receipt Amount", "Expenditure Amount"],
-                validation_rules={"required": False, "min_value": 0}  # Some records may have missing amounts
+                validation_rules={"required": False}  # Allow negative amounts for refunds
             ),
             "transaction_date": FieldDefinition(
                 name="transaction_date",
@@ -319,12 +319,23 @@ class UnifiedFieldLibrary:
             StateFieldMapping("texas", "contributorEmployer", "person_employer", 1.0),
             StateFieldMapping("texas", "contributorOccupation", "person_occupation", 1.0),
             
-            # Address fields
+            # Address fields (contributor)
             StateFieldMapping("texas", "contributorStreetAddr1", "address_street_1", 1.0),
             StateFieldMapping("texas", "contributorStreetAddr2", "address_street_2", 1.0),
             StateFieldMapping("texas", "contributorStreetCity", "address_city", 1.0),
             StateFieldMapping("texas", "contributorStreetStateCd", "address_state", 1.0),
             StateFieldMapping("texas", "contributorStreetPostalCode", "address_zip", 1.0),
+            
+            # Address fields (filer) - for filers file
+            StateFieldMapping("texas", "filerStreetAddr1", "address_street_1", 1.0),
+            StateFieldMapping("texas", "filerStreetAddr2", "address_street_2", 1.0),
+            StateFieldMapping("texas", "filerStreetCity", "address_city", 1.0),
+            StateFieldMapping("texas", "filerStreetStateCd", "address_state", 1.0),
+            StateFieldMapping("texas", "filerStreetPostalCode", "address_zip", 1.0),
+            
+            # Person fields (filer) - for filers file
+            StateFieldMapping("texas", "filerNameFirst", "person_first_name", 1.0),
+            StateFieldMapping("texas", "filerNameLast", "person_last_name", 1.0),
             
             # Committee fields
             StateFieldMapping("texas", "filerName", "committee_name", 1.0),

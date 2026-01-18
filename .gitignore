@@ -16,6 +16,10 @@ __pycache__/
 
 # Campaign Finance Ignore
 states/texas/*.env
+
+# Generated data files
+field_analysis_results.json
+unified_field_library.json
 # C extensions
 *.so
 

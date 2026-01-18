@@ -746,6 +746,7 @@ class ProductionLoader:
                             transaction.campaign.primary_committee = final_committee
                     if active_state and getattr(transaction.campaign, "state_id", None) is None:
                         transaction.campaign.state_id = active_state.id
+                    
                     updated_memberships = []
                     for membership in list(transaction.campaign.entities):
                         membership_entity = membership.entity

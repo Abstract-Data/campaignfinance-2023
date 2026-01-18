@@ -36,5 +36,19 @@ dependencies = [
     "pytest>=8.3.3",
 ]
 
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
 [tool.uv.sources]
 web-scrape-utils = { git = "https://github.com/jreakin/jre-web-scrape-utils.git", branch = "jan25-web-scrape" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "app/tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
