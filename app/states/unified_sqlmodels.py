@@ -26,6 +26,10 @@ class TransactionType(str, Enum):
     EXPENDITURE = "expenditure"
     LOAN = "loan"
     PLEDGE = "pledge"
+    DEBT = "debt"
+    CREDIT = "credit"
+    TRAVEL = "travel"
+    ASSET = "asset"
     REFUND = "refund"
     TRANSFER = "transfer"
     OTHER = "other"
@@ -113,6 +117,10 @@ class State(SQLModel, table=True):
     campaigns: List["UnifiedCampaign"] = Relationship(back_populates="state")
     contributions: List["UnifiedContribution"] = Relationship(back_populates="state")
     loans: List["UnifiedLoan"] = Relationship(back_populates="state")
+    debts: List["UnifiedDebt"] = Relationship(back_populates="state")
+    credits: List["UnifiedCredit"] = Relationship(back_populates="state")
+    travel_records: List["UnifiedTravel"] = Relationship(back_populates="state")
+    assets: List["UnifiedAsset"] = Relationship(back_populates="state")
     campaign_entities: List["UnifiedCampaignEntity"] = Relationship(back_populates="state")
     transaction_persons: List["UnifiedTransactionPerson"] = Relationship(back_populates="state")
     committee_persons: List["UnifiedCommitteePerson"] = Relationship(back_populates="state")
@@ -340,6 +348,22 @@ class UnifiedEntity(SQLModel, table=True):
         back_populates="borrower",
         sa_relationship_kwargs={"foreign_keys": "UnifiedLoan.borrower_entity_id"}
     )
+    debts_owed_to: List["UnifiedDebt"] = Relationship(
+        back_populates="creditor",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedDebt.creditor_entity_id"}
+    )
+    debts_owed_by: List["UnifiedDebt"] = Relationship(
+        back_populates="debtor",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedDebt.debtor_entity_id"}
+    )
+    credits_from: List["UnifiedCredit"] = Relationship(
+        back_populates="payor",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedCredit.payor_entity_id"}
+    )
+    credits_to: List["UnifiedCredit"] = Relationship(
+        back_populates="recipient",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedCredit.recipient_entity_id"}
+    )
     state: Optional[State] = Relationship(back_populates="entities")
 
 
@@ -392,6 +416,22 @@ class UnifiedTransaction(SQLModel, table=True):
         sa_relationship_kwargs={"uselist": False}
     )
     loan: Optional["UnifiedLoan"] = Relationship(
+        back_populates="transaction",
+        sa_relationship_kwargs={"uselist": False}
+    )
+    debt: Optional["UnifiedDebt"] = Relationship(
+        back_populates="transaction",
+        sa_relationship_kwargs={"uselist": False}
+    )
+    credit: Optional["UnifiedCredit"] = Relationship(
+        back_populates="transaction",
+        sa_relationship_kwargs={"uselist": False}
+    )
+    travel: Optional["UnifiedTravel"] = Relationship(
+        back_populates="transaction",
+        sa_relationship_kwargs={"uselist": False}
+    )
+    asset: Optional["UnifiedAsset"] = Relationship(
         back_populates="transaction",
         sa_relationship_kwargs={"uselist": False}
     )
@@ -687,6 +727,185 @@ class UnifiedLoan(SQLModel, table=True):
     state: Optional[State] = Relationship(back_populates="loans")
 
 
+class UnifiedDebt(SQLModel, table=True):
+    """Normalized debt detail extracted from transactions.
+    
+    Tracks outstanding debts owed by the campaign/committee.
+    Similar to loans but specifically for debt obligations.
+    """
+    __tablename__ = "unified_debts"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    transaction_id: int = Field(sa_column=Column(Integer, ForeignKey("unified_transactions.id"), unique=True))
+    creditor_entity_id: int = Field(foreign_key="unified_entities.id")
+    debtor_entity_id: int = Field(foreign_key="unified_entities.id")
+    state_id: Optional[int] = Field(default=None, foreign_key="states.id")
+    
+    # Debt details
+    amount: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    original_amount: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    debt_date: Optional[date] = Field(default=None, index=True)
+    due_date: Optional[date] = Field(default=None, index=True)
+    description: Optional[str] = Field(default=None, sa_column=Column(Text))
+    
+    # Guarantor information
+    is_guaranteed: bool = Field(default=False, index=True)
+    guarantor_name: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    guarantee_amount: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    
+    # Status
+    is_paid: bool = Field(default=False, index=True)
+    payment_amount: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    payment_date: Optional[date] = Field(default=None)
+    
+    metadata_json: Optional[str] = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    transaction: "UnifiedTransaction" = Relationship(back_populates="debt")
+    creditor: "UnifiedEntity" = Relationship(
+        back_populates="debts_owed_to",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedDebt.creditor_entity_id"}
+    )
+    debtor: "UnifiedEntity" = Relationship(
+        back_populates="debts_owed_by",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedDebt.debtor_entity_id"}
+    )
+    state: Optional[State] = Relationship(back_populates="debts")
+
+
+class UnifiedCredit(SQLModel, table=True):
+    """Normalized credit/refund detail extracted from transactions.
+    
+    Tracks credits, refunds, and returns received by the campaign/committee.
+    """
+    __tablename__ = "unified_credits"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    transaction_id: int = Field(sa_column=Column(Integer, ForeignKey("unified_transactions.id"), unique=True))
+    payor_entity_id: int = Field(foreign_key="unified_entities.id")
+    recipient_entity_id: int = Field(foreign_key="unified_entities.id")
+    state_id: Optional[int] = Field(default=None, foreign_key="states.id")
+    
+    # Credit details
+    amount: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    credit_date: Optional[date] = Field(default=None, index=True)
+    credit_type: Optional[str] = Field(default=None, sa_column=Column(String(100)))  # refund, return, adjustment, etc.
+    description: Optional[str] = Field(default=None, sa_column=Column(Text))
+    
+    # Related transaction (what was the credit for)
+    related_transaction_id: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    
+    metadata_json: Optional[str] = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    transaction: "UnifiedTransaction" = Relationship(back_populates="credit")
+    payor: "UnifiedEntity" = Relationship(
+        back_populates="credits_from",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedCredit.payor_entity_id"}
+    )
+    recipient: "UnifiedEntity" = Relationship(
+        back_populates="credits_to",
+        sa_relationship_kwargs={"foreign_keys": "UnifiedCredit.recipient_entity_id"}
+    )
+    state: Optional[State] = Relationship(back_populates="credits")
+
+
+class UnifiedTravel(SQLModel, table=True):
+    """Normalized travel detail extracted from transactions.
+    
+    Tracks travel expenses, including transportation, lodging, and meals
+    associated with campaign activities.
+    """
+    __tablename__ = "unified_travel"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    transaction_id: int = Field(sa_column=Column(Integer, ForeignKey("unified_transactions.id"), unique=True))
+    traveler_person_id: Optional[int] = Field(default=None, foreign_key="unified_persons.id")
+    state_id: Optional[int] = Field(default=None, foreign_key="states.id")
+    
+    # Parent transaction info (travel is often a sub-item of contribution/expenditure)
+    parent_transaction_type: Optional[str] = Field(default=None, sa_column=Column(String(50)))
+    parent_transaction_id: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    parent_amount: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    
+    # Travel details
+    amount: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    travel_date: Optional[date] = Field(default=None, index=True)
+    
+    # Transportation
+    transportation_type: Optional[str] = Field(default=None, sa_column=Column(String(100)))  # air, car, rail, etc.
+    transportation_description: Optional[str] = Field(default=None, sa_column=Column(String(255)))
+    
+    # Itinerary
+    departure_city: Optional[str] = Field(default=None, sa_column=Column(String(100)))
+    departure_state: Optional[str] = Field(default=None, sa_column=Column(String(50)))
+    arrival_city: Optional[str] = Field(default=None, sa_column=Column(String(100)))
+    arrival_state: Optional[str] = Field(default=None, sa_column=Column(String(50)))
+    departure_date: Optional[date] = Field(default=None, index=True)
+    arrival_date: Optional[date] = Field(default=None)
+    
+    # Purpose
+    travel_purpose: Optional[str] = Field(default=None, sa_column=Column(Text))
+    
+    # Traveler info (denormalized for quick access)
+    traveler_name: Optional[str] = Field(default=None, sa_column=Column(String(200)))
+    
+    metadata_json: Optional[str] = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    transaction: "UnifiedTransaction" = Relationship(back_populates="travel")
+    traveler: Optional["UnifiedPerson"] = Relationship()
+    state: Optional[State] = Relationship(back_populates="travel_records")
+
+
+class UnifiedAsset(SQLModel, table=True):
+    """Normalized asset detail extracted from transactions.
+    
+    Tracks campaign assets such as equipment, property, and other
+    items of value owned by the campaign/committee.
+    """
+    __tablename__ = "unified_assets"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    transaction_id: int = Field(sa_column=Column(Integer, ForeignKey("unified_transactions.id"), unique=True))
+    committee_id: Optional[str] = Field(default=None, foreign_key="unified_committees.filer_id")
+    state_id: Optional[int] = Field(default=None, foreign_key="states.id")
+    
+    # Asset details
+    asset_type: Optional[str] = Field(default=None, sa_column=Column(String(100)))  # equipment, property, vehicle, etc.
+    description: Optional[str] = Field(default=None, sa_column=Column(Text))
+    
+    # Valuation
+    acquisition_date: Optional[date] = Field(default=None, index=True)
+    acquisition_cost: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    current_value: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    valuation_date: Optional[date] = Field(default=None)
+    
+    # Disposition (if sold/disposed)
+    disposition_date: Optional[date] = Field(default=None)
+    disposition_amount: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    is_disposed: bool = Field(default=False, index=True)
+    
+    metadata_json: Optional[str] = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    transaction: "UnifiedTransaction" = Relationship(back_populates="asset")
+    committee: Optional["UnifiedCommittee"] = Relationship()
+    state: Optional[State] = Relationship(back_populates="assets")
+
+
 # Database indexes for performance
 class UnifiedTransactionIndexes:
     """Database indexes for the unified transaction system"""
@@ -736,6 +955,28 @@ class UnifiedTransactionIndexes:
     # Loan indexes
     idx_loans_date = Index("idx_loans_date", UnifiedLoan.loan_date)
     idx_loans_due_date = Index("idx_loans_due_date", UnifiedLoan.due_date)
+    
+    # Debt indexes
+    idx_debts_date = Index("idx_debts_date", UnifiedDebt.debt_date)
+    idx_debts_due_date = Index("idx_debts_due_date", UnifiedDebt.due_date)
+    idx_debts_amount = Index("idx_debts_amount", UnifiedDebt.amount)
+    idx_debts_is_paid = Index("idx_debts_is_paid", UnifiedDebt.is_paid)
+    
+    # Credit indexes
+    idx_credits_date = Index("idx_credits_date", UnifiedCredit.credit_date)
+    idx_credits_amount = Index("idx_credits_amount", UnifiedCredit.amount)
+    idx_credits_type = Index("idx_credits_type", UnifiedCredit.credit_type)
+    
+    # Travel indexes
+    idx_travel_date = Index("idx_travel_date", UnifiedTravel.travel_date)
+    idx_travel_departure = Index("idx_travel_departure", UnifiedTravel.departure_date)
+    idx_travel_departure_city = Index("idx_travel_departure_city", UnifiedTravel.departure_city)
+    idx_travel_arrival_city = Index("idx_travel_arrival_city", UnifiedTravel.arrival_city)
+    
+    # Asset indexes
+    idx_assets_acquisition_date = Index("idx_assets_acquisition_date", UnifiedAsset.acquisition_date)
+    idx_assets_type = Index("idx_assets_type", UnifiedAsset.asset_type)
+    idx_assets_is_disposed = Index("idx_assets_is_disposed", UnifiedAsset.is_disposed)
 
 
 class UnifiedSQLModelBuilder:
@@ -1275,6 +1516,17 @@ class UnifiedSQLModelBuilder:
                 "loan": TransactionType.LOAN,
                 "expenditure": TransactionType.EXPENDITURE,
                 "expense": TransactionType.EXPENDITURE,
+                "debt": TransactionType.DEBT,
+                "obligation": TransactionType.DEBT,
+                "credit": TransactionType.CREDIT,
+                "refund": TransactionType.CREDIT,
+                "return": TransactionType.CREDIT,
+                "travel": TransactionType.TRAVEL,
+                "trip": TransactionType.TRAVEL,
+                "transportation": TransactionType.TRAVEL,
+                "asset": TransactionType.ASSET,
+                "equipment": TransactionType.ASSET,
+                "property": TransactionType.ASSET,
             }
             if type_str in type_synonyms:
                 return type_synonyms[type_str]
@@ -1282,17 +1534,40 @@ class UnifiedSQLModelBuilder:
                 if transaction_type.value in type_str:
                     return transaction_type
         
+        # Check for explicit record_type field (Texas uses this)
+        record_type = raw_data.get("record_type", "").upper()
+        record_type_map = {
+            "RCPT": TransactionType.CONTRIBUTION,
+            "EXPN": TransactionType.EXPENDITURE,
+            "LOAN": TransactionType.LOAN,
+            "PLDG": TransactionType.PLEDGE,
+            "DEBT": TransactionType.DEBT,
+            "CRED": TransactionType.CREDIT,
+            "TRVL": TransactionType.TRAVEL,
+            "ASSET": TransactionType.ASSET,
+        }
+        if record_type in record_type_map:
+            return record_type_map[record_type]
+        
         # Infer from field names
         field_names = [k.lower() for k in raw_data.keys()]
         
         if any('contribution' in name for name in field_names):
             return TransactionType.CONTRIBUTION
-        elif any('expenditure' in name for name in field_names):
+        elif any('expenditure' in name or 'expend' in name for name in field_names):
             return TransactionType.EXPENDITURE
         elif any('loan' in name for name in field_names):
             return TransactionType.LOAN
         elif any('pledge' in name for name in field_names):
             return TransactionType.PLEDGE
+        elif any('debt' in name for name in field_names):
+            return TransactionType.DEBT
+        elif any('credit' in name for name in field_names):
+            return TransactionType.CREDIT
+        elif any('travel' in name for name in field_names):
+            return TransactionType.TRAVEL
+        elif any('asset' in name for name in field_names):
+            return TransactionType.ASSET
         elif any('refund' in name for name in field_names):
             return TransactionType.REFUND
         elif any('transfer' in name for name in field_names):
@@ -1450,6 +1725,104 @@ class UnifiedSQLDataProcessor:
                     state_id=builder.state_id
                 )
                 transaction.loan = loan
+        
+        # Create debt detail record
+        if transaction.transaction_type == TransactionType.DEBT:
+            # For debts, the contributor is the creditor (who is owed money)
+            # and the committee/campaign is the debtor
+            creditor_entity = contributor_entity
+            debtor_entity = recipient_entity or (committee.entity if committee and hasattr(committee, 'entity') else None)
+            
+            if creditor_entity:
+                debt = UnifiedDebt(
+                    transaction=transaction,
+                    creditor=creditor_entity,
+                    debtor=debtor_entity or creditor_entity,  # Fallback if no debtor
+                    amount=transaction.amount,
+                    original_amount=builder._parse_amount(builder._get_field_value(raw_data, "debt_original_amount")) or transaction.amount,
+                    debt_date=transaction.transaction_date,
+                    due_date=builder._parse_date(builder._get_field_value(raw_data, "debt_due_date")),
+                    description=transaction.description,
+                    is_guaranteed=builder._parse_boolean(builder._get_field_value(raw_data, "loan_guaranteed_flag")),
+                    guarantor_name=builder._get_field_value(raw_data, "guarantor_name"),
+                    guarantee_amount=builder._parse_amount(builder._get_field_value(raw_data, "loan_guarantee_amount")),
+                    is_paid=builder._parse_boolean(builder._get_field_value(raw_data, "debt_paid_flag")),
+                    payment_amount=builder._parse_amount(builder._get_field_value(raw_data, "debt_payment_amount")),
+                    payment_date=builder._parse_date(builder._get_field_value(raw_data, "debt_payment_date")),
+                    state_id=builder.state_id
+                )
+                transaction.debt = debt
+        
+        # Create credit detail record
+        if transaction.transaction_type == TransactionType.CREDIT:
+            payor_entity = contributor_entity  # Who is giving the credit/refund
+            recipient_ent = recipient_entity or (committee.entity if committee and hasattr(committee, 'entity') else None)
+            
+            if payor_entity:
+                credit = UnifiedCredit(
+                    transaction=transaction,
+                    payor=payor_entity,
+                    recipient=recipient_ent or payor_entity,  # Fallback
+                    amount=transaction.amount,
+                    credit_date=transaction.transaction_date,
+                    credit_type=builder._get_field_value(raw_data, "credit_type"),
+                    description=transaction.description,
+                    related_transaction_id=builder._get_field_value(raw_data, "related_transaction_id"),
+                    state_id=builder.state_id
+                )
+                transaction.credit = credit
+        
+        # Create travel detail record
+        if transaction.transaction_type == TransactionType.TRAVEL:
+            # Get traveler info
+            traveler_name = builder._get_field_value(raw_data, "traveler_name") or builder._get_field_value(raw_data, "parent_full_name")
+            
+            travel = UnifiedTravel(
+                transaction=transaction,
+                traveler=contributor if contributor else None,
+                state_id=builder.state_id,
+                # Parent transaction info
+                parent_transaction_type=builder._get_field_value(raw_data, "parent_type"),
+                parent_transaction_id=builder._get_field_value(raw_data, "parent_id"),
+                parent_amount=builder._parse_amount(builder._get_field_value(raw_data, "parent_amount")),
+                # Travel details
+                amount=transaction.amount,
+                travel_date=transaction.transaction_date,
+                transportation_type=builder._get_field_value(raw_data, "transportation_type_cd") or builder._get_field_value(raw_data, "transportation_type"),
+                transportation_description=builder._get_field_value(raw_data, "transportation_type_descr"),
+                # Itinerary
+                departure_city=builder._get_field_value(raw_data, "departure_city"),
+                departure_state=builder._get_field_value(raw_data, "departure_state"),
+                arrival_city=builder._get_field_value(raw_data, "arrival_city"),
+                arrival_state=builder._get_field_value(raw_data, "arrival_state"),
+                departure_date=builder._parse_date(builder._get_field_value(raw_data, "departure_dt")),
+                arrival_date=builder._parse_date(builder._get_field_value(raw_data, "arrival_dt")),
+                # Purpose
+                travel_purpose=builder._get_field_value(raw_data, "travel_purpose") or transaction.description,
+                traveler_name=traveler_name
+            )
+            transaction.travel = travel
+        
+        # Create asset detail record
+        if transaction.transaction_type == TransactionType.ASSET:
+            asset = UnifiedAsset(
+                transaction=transaction,
+                committee=committee,
+                state_id=builder.state_id,
+                # Asset details
+                asset_type=builder._get_field_value(raw_data, "asset_type"),
+                description=transaction.description or builder._get_field_value(raw_data, "asset_descr"),
+                # Valuation
+                acquisition_date=transaction.transaction_date,
+                acquisition_cost=transaction.amount,
+                current_value=builder._parse_amount(builder._get_field_value(raw_data, "asset_current_value")),
+                valuation_date=builder._parse_date(builder._get_field_value(raw_data, "asset_valuation_date")),
+                # Disposition
+                disposition_date=builder._parse_date(builder._get_field_value(raw_data, "asset_disposition_date")),
+                disposition_amount=builder._parse_amount(builder._get_field_value(raw_data, "asset_disposition_amount")),
+                is_disposed=builder._parse_boolean(builder._get_field_value(raw_data, "asset_disposed_flag"))
+            )
+            transaction.asset = asset
         
         return transaction
     

@@ -34,6 +34,7 @@ dependencies = [
     "pyarrow>=19.0.0",
     "hypothesis>=6.112.1",
     "pytest>=8.3.3",
+    "pytest-cov>=4.1.0",
 ]
 
 [build-system]
@@ -52,3 +53,15 @@ testpaths = ["tests", "app/tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "if __name__ == .__main__.:"
+]

@@ -287,6 +287,130 @@ class UnifiedFieldLibrary:
             ),
         })
         
+        # Debt fields
+        self.unified_fields.update({
+            "loan_guaranteed_flag": FieldDefinition(
+                name="loan_guaranteed_flag",
+                category=FieldCategory.FILING_INFO,
+                field_type=FieldType.BOOLEAN,
+                description="Whether the loan/debt has a guarantor",
+                examples=["loanGuaranteedFlag"],
+                validation_rules={"default": False}
+            ),
+            "loan_guarantee_amount": FieldDefinition(
+                name="loan_guarantee_amount",
+                category=FieldCategory.AMOUNT,
+                field_type=FieldType.CURRENCY,
+                description="Amount guaranteed by a third party",
+                examples=["loanGuaranteeAmount"],
+                validation_rules={"required": False}
+            ),
+        })
+        
+        # Travel fields
+        self.unified_fields.update({
+            "parent_type": FieldDefinition(
+                name="parent_type",
+                category=FieldCategory.TYPE,
+                field_type=FieldType.CODE,
+                description="Parent transaction type (RCPT, EXPN, etc.)",
+                examples=["parentType"],
+                validation_rules={"required": False}
+            ),
+            "parent_id": FieldDefinition(
+                name="parent_id",
+                category=FieldCategory.TRANSACTION_ID,
+                field_type=FieldType.IDENTIFIER,
+                description="Parent transaction ID",
+                examples=["parentId"],
+                validation_rules={"required": False}
+            ),
+            "parent_amount": FieldDefinition(
+                name="parent_amount",
+                category=FieldCategory.AMOUNT,
+                field_type=FieldType.CURRENCY,
+                description="Parent transaction amount",
+                examples=["parentAmount"],
+                validation_rules={"required": False}
+            ),
+            "parent_full_name": FieldDefinition(
+                name="parent_full_name",
+                category=FieldCategory.PERSON_NAME,
+                field_type=FieldType.STRING,
+                description="Full name associated with parent transaction",
+                examples=["parentFullName"],
+                validation_rules={"required": False}
+            ),
+            "transportation_type_cd": FieldDefinition(
+                name="transportation_type_cd",
+                category=FieldCategory.TYPE,
+                field_type=FieldType.CODE,
+                description="Transportation type code",
+                examples=["transportationTypeCd"],
+                validation_rules={"required": False}
+            ),
+            "transportation_type_descr": FieldDefinition(
+                name="transportation_type_descr",
+                category=FieldCategory.DESCRIPTION,
+                field_type=FieldType.STRING,
+                description="Transportation type description",
+                examples=["transportationTypeDescr"],
+                validation_rules={"required": False}
+            ),
+            "departure_city": FieldDefinition(
+                name="departure_city",
+                category=FieldCategory.PERSON_ADDRESS,
+                field_type=FieldType.STRING,
+                description="Departure city for travel",
+                examples=["departureCity"],
+                validation_rules={"required": False}
+            ),
+            "arrival_city": FieldDefinition(
+                name="arrival_city",
+                category=FieldCategory.PERSON_ADDRESS,
+                field_type=FieldType.STRING,
+                description="Arrival city for travel",
+                examples=["arrivalCity"],
+                validation_rules={"required": False}
+            ),
+            "departure_dt": FieldDefinition(
+                name="departure_dt",
+                category=FieldCategory.DATE,
+                field_type=FieldType.DATE,
+                description="Departure date for travel",
+                examples=["departureDt"],
+                validation_rules={"required": False}
+            ),
+            "arrival_dt": FieldDefinition(
+                name="arrival_dt",
+                category=FieldCategory.DATE,
+                field_type=FieldType.DATE,
+                description="Arrival date for travel",
+                examples=["arrivalDt"],
+                validation_rules={"required": False}
+            ),
+            "travel_purpose": FieldDefinition(
+                name="travel_purpose",
+                category=FieldCategory.DESCRIPTION,
+                field_type=FieldType.STRING,
+                description="Purpose of the travel",
+                examples=["travelPurpose"],
+                validation_rules={"required": False}
+            ),
+        })
+        
+        # Asset fields
+        self.unified_fields.update({
+            "asset_descr": FieldDefinition(
+                name="asset_descr",
+                category=FieldCategory.DESCRIPTION,
+                field_type=FieldType.STRING,
+                description="Description of the campaign asset",
+                examples=["assetDescr"],
+                validation_rules={"required": False}
+            ),
+        })
+        
         # Build category index
         for field_name, field_def in self.unified_fields.items():
             if field_def.category not in self.field_categories:
@@ -345,6 +469,51 @@ class UnifiedFieldLibrary:
             # Filing fields
             StateFieldMapping("texas", "filedDt", "filed_date", 1.0),
             StateFieldMapping("texas", "receivedDt", "filed_date", 0.9),  # Also used in contributions
+            
+            # Debt fields
+            StateFieldMapping("texas", "debtInfoId", "transaction_id", 1.0),
+            StateFieldMapping("texas", "loanInfoId", "transaction_id", 0.9),  # Debt uses loanInfoId in Texas
+            StateFieldMapping("texas", "loanGuaranteedFlag", "loan_guaranteed_flag", 1.0),
+            StateFieldMapping("texas", "loanGuaranteeAmount", "loan_guarantee_amount", 1.0),
+            
+            # Credit fields
+            StateFieldMapping("texas", "creditInfoId", "transaction_id", 1.0),
+            StateFieldMapping("texas", "creditDt", "transaction_date", 1.0),
+            StateFieldMapping("texas", "creditAmount", "amount", 1.0),
+            StateFieldMapping("texas", "creditDescr", "description", 1.0),
+            StateFieldMapping("texas", "payorNameFirst", "person_first_name", 1.0),
+            StateFieldMapping("texas", "payorNameLast", "person_last_name", 1.0),
+            StateFieldMapping("texas", "payorNameOrganization", "person_organization", 1.0),
+            
+            # Travel fields
+            StateFieldMapping("texas", "travelInfoId", "transaction_id", 1.0),
+            StateFieldMapping("texas", "parentType", "parent_type", 1.0),
+            StateFieldMapping("texas", "parentId", "parent_id", 1.0),
+            StateFieldMapping("texas", "parentDt", "transaction_date", 0.9),
+            StateFieldMapping("texas", "parentAmount", "parent_amount", 1.0),
+            StateFieldMapping("texas", "parentFullName", "parent_full_name", 1.0),
+            StateFieldMapping("texas", "transportationTypeCd", "transportation_type_cd", 1.0),
+            StateFieldMapping("texas", "transportationTypeDescr", "transportation_type_descr", 1.0),
+            StateFieldMapping("texas", "departureCity", "departure_city", 1.0),
+            StateFieldMapping("texas", "arrivalCity", "arrival_city", 1.0),
+            StateFieldMapping("texas", "departureDt", "departure_dt", 1.0),
+            StateFieldMapping("texas", "arrivalDt", "arrival_dt", 1.0),
+            StateFieldMapping("texas", "travelPurpose", "travel_purpose", 1.0),
+            StateFieldMapping("texas", "travellerNameFirst", "person_first_name", 0.9),
+            StateFieldMapping("texas", "travellerNameLast", "person_last_name", 0.9),
+            
+            # Asset fields
+            StateFieldMapping("texas", "assetInfoId", "transaction_id", 1.0),
+            StateFieldMapping("texas", "assetDescr", "asset_descr", 1.0),
+            
+            # Pledge fields
+            StateFieldMapping("texas", "pledgeInfoId", "transaction_id", 1.0),
+            StateFieldMapping("texas", "pledgeDt", "transaction_date", 1.0),
+            StateFieldMapping("texas", "pledgeAmount", "amount", 1.0),
+            StateFieldMapping("texas", "pledgeDescr", "description", 1.0),
+            StateFieldMapping("texas", "pledgerNameFirst", "person_first_name", 0.9),
+            StateFieldMapping("texas", "pledgerNameLast", "person_last_name", 0.9),
+            StateFieldMapping("texas", "pledgerNameOrganization", "person_organization", 0.9),
         ]
         
         # Oklahoma mappings
