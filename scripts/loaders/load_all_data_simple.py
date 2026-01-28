@@ -37,7 +37,7 @@ def load_all_data_simple():
         
         try:
             # Import here to avoid circular imports
-            from app.states.unified_state_loader import UnifiedStateLoader
+            from app.core.unified_state_loader import UnifiedStateLoader
             from app.states.postgres_config import create_postgres_database_manager
             
             # Create loader

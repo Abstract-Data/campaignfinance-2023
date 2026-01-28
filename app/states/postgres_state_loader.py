@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .postgres_config import create_postgres_database_manager, PostgresConfig
-from .unified_state_loader import UnifiedStateLoader
+from app.core.unified_state_loader import UnifiedStateLoader
 
 
 class PostgresStateLoader(UnifiedStateLoader):

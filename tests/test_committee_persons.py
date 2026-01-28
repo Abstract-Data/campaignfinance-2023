@@ -8,11 +8,11 @@ from icecream import ic
 from datetime import date
 from decimal import Decimal
 
-from app.states.unified_sqlmodels import (
+from app.core.unified_sqlmodels import (
     unified_sql_processor, UnifiedTransaction, PersonRole, TransactionType,
     CommitteeRole
 )
-from app.states.unified_database import db_manager
+from app.core.unified_database import db_manager
 
 
 def test_committee_person_relationships():
@@ -44,7 +44,7 @@ def test_committee_person_relationships():
     
     # Save person and committee to database
     with db_manager.get_session() as session:
-        from app.states.unified_sqlmodels import UnifiedPerson, UnifiedCommittee
+        from app.core.unified_sqlmodels import UnifiedPerson, UnifiedCommittee
         
         person = UnifiedPerson(**person_data)
         session.add(person)

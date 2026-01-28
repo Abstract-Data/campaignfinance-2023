@@ -11,7 +11,7 @@ from icecream import ic
 
 from app.states.postgres_config import create_postgres_database_manager, PostgresConfig
 from app.funcs.csv_reader import FileReader
-from app.states.unified_sqlmodels import unified_sql_processor
+from app.core.unified_sqlmodels import unified_sql_processor
 
 def load_actual_data_to_postgres():
     """Load actual data into PostgreSQL tables using unified models."""

@@ -28,10 +28,10 @@ from sqlalchemy import text
 from sqlmodel import select
 
 from app.ingest import GenericFileReader, SchemaValidationError, build_schema_for_states, build_unified_schema
-from app.states.unified_field_library import field_library
+from app.core.unified_field_library import field_library
 from sqlalchemy.exc import InvalidRequestError
 
-from app.states.unified_sqlmodels import (
+from app.core.unified_sqlmodels import (
     unified_sql_processor,
     UnifiedCommittee,
     UnifiedAddress,

@@ -250,7 +250,7 @@ Error Recovery          | 100%      | 100%      | Continue on error
 ```python
 def test_field_library_coverage():
     """Verify all state fields are mapped."""
-    from app.states.unified_field_library import field_library
+    from app.core.unified_field_library import field_library
     
     for state in ['texas', 'oklahoma']:
         mappings = field_library.get_state_mappings(state)

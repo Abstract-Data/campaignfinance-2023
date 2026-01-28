@@ -7,10 +7,10 @@ from pathlib import Path
 from icecream import ic
 from decimal import Decimal
 
-from app.states.unified_sqlmodels import (
+from app.core.unified_sqlmodels import (
     unified_sql_processor, UnifiedTransaction, PersonRole, TransactionType
 )
-from app.states.unified_database import db_manager
+from app.core.unified_database import db_manager
 
 
 def test_sqlmodels():

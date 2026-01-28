@@ -3,7 +3,7 @@
 Debug script to test address deduplication step by step.
 """
 
-from app.states.unified_sqlmodels import unified_sql_processor
+from app.core.unified_sqlmodels import unified_sql_processor
 from app.states.postgres_config import create_postgres_database_manager
 
 def debug_address_dedup():
@@ -37,7 +37,7 @@ def debug_address_dedup():
                 # Test address deduplication logic
                 db_manager = create_postgres_database_manager()
                 with db_manager.get_session() as session:
-                    from app.states.unified_sqlmodels import UnifiedAddress
+                    from app.core.unified_sqlmodels import UnifiedAddress
                     from sqlalchemy import select
                     
                     # Check if address already exists using raw SQL

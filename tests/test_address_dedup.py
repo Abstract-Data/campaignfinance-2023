@@ -3,7 +3,7 @@
 Test script to specifically test address deduplication.
 """
 
-from app.states.unified_sqlmodels import UnifiedSQLModelBuilder
+from app.core.unified_sqlmodels import UnifiedSQLModelBuilder
 from app.states.postgres_config import create_postgres_database_manager
 
 def test_address_dedup():

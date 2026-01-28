@@ -70,7 +70,7 @@ def create_tables(engine):
     
     # Import unified models (these are what the production loader uses)
     try:
-        from app.states.unified_sqlmodels import (
+        from app.core.unified_sqlmodels import (
             UnifiedTransaction, UnifiedPerson, UnifiedAddress, UnifiedCommittee,
             UnifiedTransactionPerson, UnifiedTransactionVersion,
             UnifiedPersonVersion, UnifiedCommitteeVersion, UnifiedAddressVersion,

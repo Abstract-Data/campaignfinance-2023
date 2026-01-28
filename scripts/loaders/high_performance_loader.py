@@ -3,7 +3,7 @@
 High-performance loader with optimized session management and caching.
 """
 
-from app.states.unified_sqlmodels import unified_sql_processor
+from app.core.unified_sqlmodels import unified_sql_processor
 from app.states.postgres_config import create_postgres_database_manager
 from pathlib import Path
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
@@ -122,7 +122,7 @@ def process_batch_optimized(records, db_manager, address_cache, committee_cache,
     
     with db_manager.get_session() as session:
         # Pre-load existing addresses and committees to avoid repeated queries
-        from app.states.unified_sqlmodels import UnifiedAddress, UnifiedCommittee
+        from app.core.unified_sqlmodels import UnifiedAddress, UnifiedCommittee
         from sqlalchemy import select
         
         # Load all existing addresses into cache if not already loaded

@@ -3,7 +3,7 @@
 Fixed loader with proper address deduplication using global cache.
 """
 
-from app.states.unified_sqlmodels import unified_sql_processor
+from app.core.unified_sqlmodels import unified_sql_processor
 from app.states.postgres_config import create_postgres_database_manager
 from pathlib import Path
 
@@ -38,7 +38,7 @@ def fixed_loader():
     # Process records in batches with proper deduplication
     with db_manager.get_session() as session:
         # Pre-load existing addresses and committees
-        from app.states.unified_sqlmodels import UnifiedAddress, UnifiedCommittee
+        from app.core.unified_sqlmodels import UnifiedAddress, UnifiedCommittee
         from sqlalchemy import select
         
         print("📋 Loading existing addresses and committees...")

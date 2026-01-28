@@ -66,7 +66,7 @@ docs/               # Technical documentation
 
 ### Data Loading
 ```python
-from app.states.unified_sqlmodels import unified_sql_processor
+from app.core.unified_sqlmodels import unified_sql_processor
 
 transaction = unified_sql_processor.process_record(
     record, state='texas', state_id=active_state.id, state_code='TX'

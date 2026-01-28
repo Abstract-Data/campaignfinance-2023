@@ -166,7 +166,7 @@ print(df.collect_schema().names())
 
 Check if a suitable unified field exists:
 ```python
-from app.states.unified_field_library import field_library
+from app.core.unified_field_library import field_library
 print([f.name for f in field_library.unified_fields.values()])
 ```
 

@@ -12,7 +12,7 @@ from collections import defaultdict, Counter
 import re
 from icecream import ic
 
-from .unified_field_library import UnifiedFieldLibrary, FieldCategory, FieldType, FieldDefinition, StateFieldMapping
+from app.core.unified_field_library import UnifiedFieldLibrary, FieldCategory, FieldType, FieldDefinition, StateFieldMapping
 
 
 class FieldAnalyzer:
@@ -449,7 +449,7 @@ def analyze_campaign_finance_fields():
     """
     Main function to analyze campaign finance fields across all states.
     """
-    from .unified_field_library import field_library
+    from app.core.unified_field_library import field_library
     
     analyzer = FieldAnalyzer(field_library)
     

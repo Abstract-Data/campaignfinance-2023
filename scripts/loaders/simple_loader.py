@@ -3,7 +3,7 @@
 Simple loader that uses the unified processor directly.
 """
 
-from app.states.unified_sqlmodels import unified_sql_processor
+from app.core.unified_sqlmodels import unified_sql_processor
 from app.states.postgres_config import create_postgres_database_manager
 from pathlib import Path
 
@@ -53,7 +53,7 @@ def simple_loader():
                     for tx_person in transaction.persons:
                         if tx_person.person and tx_person.person.address:
                             # Check if address already exists in database using SQLModel
-                            from app.states.unified_sqlmodels import UnifiedAddress
+                            from app.core.unified_sqlmodels import UnifiedAddress
                             from sqlalchemy import select
                             existing_address = session.exec(
                                 select(UnifiedAddress).where(

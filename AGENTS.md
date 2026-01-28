@@ -248,7 +248,7 @@ with open(file_path) as f:
 
 **✅ GOOD - Using the unified database manager:**
 ```python
-from app.states.unified_database import db_manager
+from app.core.unified_database import db_manager
 
 with db_manager.get_session() as session:
     # Use merge for upsert behavior
@@ -521,7 +521,7 @@ print(df.collect_schema().names())
 
 # Compare with registered mappings
 uv run python -c "
-from app.states.unified_field_library import field_library
+from app.core.unified_field_library import field_library
 mappings = field_library.get_state_mappings('texas')
 print([m.state_field for m in mappings])
 "
@@ -575,7 +575,7 @@ contributions.load_to_db(passed, create_table=True, limit=100000)
 
 ### Unified Data Processing
 ```python
-from app.states.unified_sqlmodels import unified_sql_processor
+from app.core.unified_sqlmodels import unified_sql_processor
 
 # Process state-specific record to unified format
 transaction = unified_sql_processor.process_record(
@@ -642,7 +642,7 @@ results = contribution_df.filter(
 
 ### Field Library Usage
 ```python
-from app.states.unified_field_library import field_library
+from app.core.unified_field_library import field_library
 
 # Get field mappings for a state
 mappings = field_library.get_state_mappings('texas')

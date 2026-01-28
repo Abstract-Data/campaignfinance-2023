@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Self, ClassVar
 import re
+import random
 from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
@@ -17,6 +18,27 @@ from app.abcs import (
 from web_scrape_utils import By
 
 logger = Logger(__name__)
+
+# Download timeout in seconds (1 hour)
+DOWNLOAD_TIMEOUT_SECONDS = 3600
+
+
+def exponential_backoff(attempt: int, base: float = 1.0, max_delay: float = 60.0) -> float:
+    """
+    Calculate delay with exponential backoff and jitter.
+
+    Args:
+        attempt: Current attempt number (0-indexed)
+        base: Base delay in seconds
+        max_delay: Maximum delay cap in seconds
+
+    Returns:
+        Delay in seconds with jitter applied
+    """
+    delay = min(base * (2 ** attempt), max_delay)
+    # Add jitter (10% of delay) to prevent synchronized retries
+    jitter = random.uniform(0, 0.1 * delay)
+    return delay + jitter
 
     
 @dataclass
@@ -52,29 +74,46 @@ class TECDownloader(FileDownloaderABC):
         wait.wait_until_clickable(By.LINK_TEXT, "Campaign Finance Reports")
         wait.wait_until_clickable(By.LINK_TEXT, "Database of Campaign Finance Reports")
         wait.wait_until_clickable(By.PARTIAL_LINK_TEXT, "Campaign Finance CSV Database")
-        time.sleep(5)
+        # Initial wait for download to start
+        time.sleep(exponential_backoff(0, base=2.0, max_delay=10.0))
 
+        # Error page recovery with exponential backoff
         attempts = 0
+        max_error_attempts = 5
         while driver.title == 'Error':
             attempts += 1
-            logger.warning("Error page detected, refreshing", extra={"attempt": attempts})
+            logger.warning("Error page detected, refreshing", extra={"attempt": attempts, "max_attempts": max_error_attempts})
             driver.refresh()
-            time.sleep(5)
-            if attempts > 5:
+            backoff_delay = exponential_backoff(attempts - 1, base=1.0, max_delay=30.0)
+            logger.debug("Waiting before retry", extra={"delay_seconds": round(backoff_delay, 2)})
+            time.sleep(backoff_delay)
+            if attempts >= max_error_attempts:
                 raise ConnectionError("Error downloading TEC Zipfile. You will need to contact TEC for more information.")
 
-
+        # Download polling with exponential backoff and timeout
         in_progress = False
+        poll_attempt = 0
+        download_start_time = time.time()
         while True:
+            # Check for timeout
+            elapsed = time.time() - download_start_time
+            if elapsed > DOWNLOAD_TIMEOUT_SECONDS:
+                raise TimeoutError(f"Download timed out after {DOWNLOAD_TIMEOUT_SECONDS // 60} minutes")
+
             dl_files = list(tmp.glob("*.crdownload"))
             if dl_files:
                 if not in_progress:
                     progress.update_task(_task2, "Still in progress")
                     in_progress = True
-                time.sleep(10)
+                # Use exponential backoff for polling (2s to 60s)
+                poll_delay = exponential_backoff(poll_attempt, base=2.0, max_delay=60.0)
+                poll_attempt = min(poll_attempt + 1, 10)  # Cap attempts to limit max delay
+                logger.debug("Download in progress, waiting", extra={"delay_seconds": round(poll_delay, 2), "elapsed_minutes": round(elapsed / 60, 1)})
+                time.sleep(poll_delay)
             else:
                 if in_progress:
                     progress.update_task(_task2, "Download Complete")
+                    logger.info("Download completed", extra={"elapsed_minutes": round(elapsed / 60, 1)})
                     _safe_to_delete = True
                 break
 

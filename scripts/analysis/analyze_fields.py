@@ -6,7 +6,7 @@ Script to analyze campaign finance fields and populate the unified field library
 from pathlib import Path
 from icecream import ic
 from app.states.field_analyzer import analyze_campaign_finance_fields
-from app.states.unified_field_library import field_library
+from app.core.unified_field_library import field_library
 
 
 def main():

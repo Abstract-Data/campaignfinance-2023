@@ -3,7 +3,7 @@
 Simple test to create addresses.
 """
 
-from app.states.unified_sqlmodels import UnifiedSQLModelBuilder
+from app.core.unified_sqlmodels import UnifiedSQLModelBuilder
 from app.states.postgres_config import create_postgres_database_manager
 
 def simple_address_test():
@@ -43,7 +43,7 @@ def simple_address_test():
                 print(f"✅ Address saved to database with ID: {address.id}")
                 
                 # Check if it's still there
-                from app.states.unified_sqlmodels import UnifiedAddress
+                from app.core.unified_sqlmodels import UnifiedAddress
                 saved_address = session.get(UnifiedAddress, address.id)
                 if saved_address:
                     print(f"✅ Address retrieved from database: {saved_address.street_1}, {saved_address.city}")

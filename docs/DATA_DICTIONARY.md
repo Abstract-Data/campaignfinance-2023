@@ -255,7 +255,7 @@ Fields are organized into semantic categories for easier discovery:
 To add a new field mapping:
 
 ```python
-from app.states.unified_field_library import field_library, StateFieldMapping
+from app.core.unified_field_library import field_library, StateFieldMapping
 
 # Add a new state field mapping
 field_library.add_state_mapping(
@@ -270,7 +270,7 @@ field_library.add_state_mapping(
 To add a new unified field:
 
 ```python
-from app.states.unified_field_library import (
+from app.core.unified_field_library import (
     field_library, FieldDefinition, FieldCategory, FieldType
 )
 

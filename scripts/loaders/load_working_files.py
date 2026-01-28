@@ -20,7 +20,7 @@ def load_working_files():
     
     try:
         # Import here to avoid circular imports
-        from app.states.unified_state_loader import UnifiedStateLoader
+        from app.core.unified_state_loader import UnifiedStateLoader
         from app.states.postgres_config import create_postgres_database_manager
         
         # Create loader for Oklahoma

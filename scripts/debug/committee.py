@@ -3,7 +3,7 @@
 Debug script to test committee creation.
 """
 
-from app.states.unified_sqlmodels import UnifiedSQLModelBuilder
+from app.core.unified_sqlmodels import UnifiedSQLModelBuilder
 from app.states.postgres_config import create_postgres_database_manager
 
 def debug_committee():

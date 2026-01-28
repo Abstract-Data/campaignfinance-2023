@@ -299,7 +299,7 @@ def sample_unified_committee_data() -> Dict[str, Any]:
 @pytest.fixture
 def field_library():
     """UnifiedFieldLibrary instance for testing field mappings."""
-    from app.states.unified_field_library import UnifiedFieldLibrary
+    from app.core.unified_field_library import UnifiedFieldLibrary
     return UnifiedFieldLibrary()
 
 

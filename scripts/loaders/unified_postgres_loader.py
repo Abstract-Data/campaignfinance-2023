@@ -12,7 +12,7 @@ from datetime import datetime
 
 from app.states.postgres_config import create_postgres_database_manager, PostgresConfig
 from app.funcs.csv_reader import FileReader
-from app.states.unified_sqlmodels import unified_sql_processor
+from app.core.unified_sqlmodels import unified_sql_processor
 
 def load_unified_data_to_postgres():
     """Load data into PostgreSQL using unified models with relationships."""

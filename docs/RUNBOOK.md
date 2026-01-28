@@ -274,7 +274,7 @@ CREATE INDEX idx_addresses_lookup ON unified_addresses(street_1, city, state, zi
 ```bash
 # Check registered mappings for state
 uv run python -c "
-from app.states.unified_field_library import field_library
+from app.core.unified_field_library import field_library
 mappings = field_library.get_state_mappings('texas')
 print(f'Texas mappings: {len(mappings)}')
 for m in mappings[:10]:

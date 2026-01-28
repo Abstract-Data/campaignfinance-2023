@@ -25,7 +25,7 @@ from typing import Any, Callable, Dict, Generator, Iterable, List, Optional, Seq
 
 import polars as pl
 
-from app.states.unified_field_library import FieldDefinition, FieldType, StateFieldMapping, field_library
+from app.core.unified_field_library import FieldDefinition, FieldType, StateFieldMapping, field_library
 
 logger = logging.getLogger(__name__)
 

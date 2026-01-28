@@ -25,7 +25,7 @@ def load_single_file_test():
         console.print("[yellow]Testing with Oklahoma 2020 data (limited records)...[/yellow]")
         
         # We'll modify the loader to process just one file
-        from app.states.unified_state_loader import UnifiedStateLoader
+        from app.core.unified_state_loader import UnifiedStateLoader
         from app.states.postgres_config import create_postgres_database_manager
         
         # Create a custom loader that only processes one file

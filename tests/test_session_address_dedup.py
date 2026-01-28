@@ -3,7 +3,7 @@
 Test script to verify address deduplication within the same session.
 """
 
-from app.states.unified_sqlmodels import UnifiedSQLModelBuilder
+from app.core.unified_sqlmodels import UnifiedSQLModelBuilder
 from app.states.postgres_config import create_postgres_database_manager
 
 def test_session_address_dedup():
@@ -65,7 +65,7 @@ def test_session_address_dedup():
                     print(f"  Address: {address.street_1}, {address.city}, {address.state} {address.zip_code}")
                     
                     # Check if this address already exists in the session
-                    from app.states.unified_sqlmodels import UnifiedAddress
+                    from app.core.unified_sqlmodels import UnifiedAddress
                     from sqlalchemy import select
                     existing_address = session.exec(
                         select(UnifiedAddress).where(

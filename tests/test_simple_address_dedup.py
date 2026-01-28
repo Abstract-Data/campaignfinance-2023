@@ -3,7 +3,7 @@
 Simple test for address deduplication only.
 """
 
-from app.states.unified_sqlmodels import unified_sql_processor
+from app.core.unified_sqlmodels import unified_sql_processor
 from app.states.postgres_config import create_postgres_database_manager
 
 def test_simple_address_dedup():
@@ -43,7 +43,7 @@ def test_simple_address_dedup():
                     print(f"Address: {tx_person.person.address.street_1}, {tx_person.person.address.city}")
                     
                     # Check if address already exists
-                    from app.states.unified_sqlmodels import UnifiedAddress
+                    from app.core.unified_sqlmodels import UnifiedAddress
                     existing_address = session.get(UnifiedAddress, 7)  # Use existing address ID
                     
                     if existing_address:

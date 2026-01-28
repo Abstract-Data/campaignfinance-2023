@@ -107,7 +107,7 @@ class PostgresConfig:
 
 def create_postgres_database_manager():
     """Create a PostgreSQL database manager instance."""
-    from .unified_database import UnifiedDatabaseManager
+    from app.core.unified_database import UnifiedDatabaseManager
     
     config = PostgresConfig()
     

@@ -5,7 +5,7 @@ Test script for unified models that can handle data from any state.
 
 from pathlib import Path
 from icecream import ic
-from app.states.unified_models import unified_processor, TransactionType, PersonType
+from app.core.unified_models import unified_processor, TransactionType, PersonType
 from decimal import Decimal
 
 

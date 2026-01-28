@@ -12,7 +12,7 @@ import json
 from datetime import datetime, date
 from decimal import Decimal
 
-from .postgres_config import PostgresConfig
+from app.states.postgres_config import PostgresConfig
 from .unified_sqlmodels import (
     UnifiedTransaction, UnifiedPerson, UnifiedAddress, UnifiedCommittee,
     UnifiedTransactionPerson, PersonRole, TransactionType, PersonType,

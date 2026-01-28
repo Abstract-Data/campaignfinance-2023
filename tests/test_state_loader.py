@@ -8,7 +8,7 @@ from icecream import ic
 from rich.console import Console
 from rich.table import Table
 
-from app.states.unified_state_loader import load_state_data
+from app.core.unified_state_loader import load_state_data
 
 
 def test_state_loader():
@@ -129,7 +129,7 @@ def demonstrate_simple_usage():
     console.print("""
 # Just one line of code to load a state:
 
-from app.states.unified_state_loader import load_state_data
+from app.core.unified_state_loader import load_state_data
 
 # Load Texas data with full automation
 summary = load_state_data("texas", Path("tmp"))

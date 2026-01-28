@@ -8,11 +8,11 @@ from icecream import ic
 from datetime import date
 from decimal import Decimal
 
-from app.states.unified_sqlmodels import (
+from app.core.unified_sqlmodels import (
     unified_sql_processor, UnifiedTransaction, PersonRole, TransactionType,
     CommitteeRole, UnifiedPerson, UnifiedCommittee, UnifiedTransactionPerson
 )
-from app.states.unified_database import db_manager
+from app.core.unified_database import db_manager
 
 
 def test_automatic_linking():

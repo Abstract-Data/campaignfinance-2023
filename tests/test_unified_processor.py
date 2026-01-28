@@ -3,7 +3,7 @@
 Test to use the unified processor directly.
 """
 
-from app.states.unified_sqlmodels import unified_sql_processor
+from app.core.unified_sqlmodels import unified_sql_processor
 from app.states.postgres_config import create_postgres_database_manager
 
 def test_unified_processor():

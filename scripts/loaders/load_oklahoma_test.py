@@ -23,7 +23,7 @@ def load_oklahoma_test():
     # Load Oklahoma data with a reasonable limit
     try:
         # Create a custom loader with limits
-        from app.states.unified_state_loader import UnifiedStateLoader
+        from app.core.unified_state_loader import UnifiedStateLoader
         from app.states.postgres_config import create_postgres_database_manager
         
         # Create PostgreSQL database manager

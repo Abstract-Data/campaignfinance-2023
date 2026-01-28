@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from app.states.postgres_config import create_postgres_database_manager, PostgresConfig
 from app.funcs.csv_reader import FileReader
-from app.states.unified_sqlmodels import unified_sql_processor
+from app.core.unified_sqlmodels import unified_sql_processor
 
 def test_unified_loader():
     """Test the unified loader with a small sample."""

@@ -3,7 +3,7 @@
 Simple test to create a transaction with existing committee.
 """
 
-from app.states.unified_sqlmodels import UnifiedSQLModelBuilder
+from app.core.unified_sqlmodels import UnifiedSQLModelBuilder
 from app.states.postgres_config import create_postgres_database_manager
 
 def test_simple_transaction():
@@ -37,7 +37,7 @@ def test_simple_transaction():
             db_manager = create_postgres_database_manager()
             with db_manager.get_session() as session:
                 # Check if committee exists
-                from app.states.unified_sqlmodels import UnifiedCommittee
+                from app.core.unified_sqlmodels import UnifiedCommittee
                 committee = session.get(UnifiedCommittee, "9908")
                 if committee:
                     print(f"✅ Found committee: {committee.name}")

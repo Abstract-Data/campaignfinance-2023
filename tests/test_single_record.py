@@ -3,7 +3,7 @@
 Test script to process a single record and debug the issue.
 """
 
-from app.states.unified_state_loader import UnifiedStateLoader
+from app.core.unified_state_loader import UnifiedStateLoader
 from app.states.postgres_config import create_postgres_database_manager
 from pathlib import Path
 

@@ -1248,7 +1248,7 @@ class UnifiedSQLModelBuilder:
             return None
         
         try:
-            from app.states.unified_database import db_manager
+            from app.core.unified_database import db_manager
             with db_manager.get_session() as session:
                 stmt = select(UnifiedCommittee).options(
                     selectinload(UnifiedCommittee.address),
@@ -1275,7 +1275,7 @@ class UnifiedSQLModelBuilder:
         if not normalized_name:
             return None
         try:
-            from app.states.unified_database import db_manager
+            from app.core.unified_database import db_manager
             with db_manager.get_session() as session:
                 query = select(UnifiedEntity).where(
                     UnifiedEntity.entity_type == entity_type,
@@ -1330,7 +1330,7 @@ class UnifiedSQLModelBuilder:
         if not normalized_name:
             return None
         try:
-            from app.states.unified_database import db_manager
+            from app.core.unified_database import db_manager
             with db_manager.get_session() as session:
                 query = select(UnifiedCampaign).where(
                     UnifiedCampaign.normalized_name == normalized_name
@@ -1405,7 +1405,7 @@ class UnifiedSQLModelBuilder:
             return None
         
         try:
-            from app.states.unified_database import db_manager
+            from app.core.unified_database import db_manager
             with db_manager.get_session() as session:
                 from sqlalchemy import text
                 

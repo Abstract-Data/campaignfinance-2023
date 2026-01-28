@@ -24,7 +24,7 @@ def test_limited_load():
         console.print("[yellow]Testing with Oklahoma data (100 records)...[/yellow]")
         
         # We need to modify the loader to accept max_records
-        from app.states.unified_state_loader import UnifiedStateLoader
+        from app.core.unified_state_loader import UnifiedStateLoader
         from app.states.postgres_config import create_postgres_database_manager
         
         # Create a custom loader
