@@ -49,23 +49,30 @@ class Logger:
         self.logger.addHandler(timed_logfile)
         self.logger.addHandler(console_handler)
 
-    def info(self, message):
-        self.logger.info(message)
+    def _format_message(self, message: str, extra: dict = None) -> str:
+        """Format message with extra context if provided."""
+        if extra:
+            context_str = " | ".join(f"{k}={v}" for k, v in extra.items())
+            return f"{message} [{context_str}]"
+        return message
 
-    def debug(self, message):
-        self.logger.debug(message)
+    def info(self, message, extra: dict = None):
+        self.logger.info(self._format_message(message, extra))
 
-    def warning(self, message):
-        self.logger.warning(message)
+    def debug(self, message, extra: dict = None):
+        self.logger.debug(self._format_message(message, extra))
 
-    def error(self, message):
-        self.logger.error(message)
+    def warning(self, message, extra: dict = None):
+        self.logger.warning(self._format_message(message, extra))
 
-    def critical(self, message):
-        self.logger.critical(message)
+    def error(self, message, extra: dict = None):
+        self.logger.error(self._format_message(message, extra))
 
-    def exception(self, message):
-        self.logger.exception(message)
+    def critical(self, message, extra: dict = None):
+        self.logger.critical(self._format_message(message, extra))
 
-    def silent_error(self, message):
-        self.error_logger.error(message)
+    def exception(self, message, extra: dict = None):
+        self.logger.exception(self._format_message(message, extra))
+
+    def silent_error(self, message, extra: dict = None):
+        self.error_logger.error(self._format_message(message, extra))

@@ -1,21 +1,22 @@
 from __future__ import annotations
-from typing import Self, ClassVar, Optional
+from typing import Self, ClassVar
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
 import zipfile
-from tqdm import tqdm
 import time
-from icecream import ic
 from app.funcs.csv_reader import FileReader
+from app.logger import Logger
 import polars as pl
 import itertools
 
 
 from app.abcs import (
-    FileDownloaderABC, StateConfig, CategoryTypes, RecordGen, CategoryConfig, progress)
-from web_scrape_utils import CreateWebDriver, By
+    FileDownloaderABC, StateConfig, RecordGen, progress)
+from web_scrape_utils import By
+
+logger = Logger(__name__)
 
     
 @dataclass
@@ -40,7 +41,7 @@ class TECDownloader(FileDownloaderABC):
             cls.not_headless()
 
         _task2 = progress.add_task("T2", "Downloading TEC Zipfile...", "In Progress")
-        ic()
+        logger.debug("Starting TEC download process")
         cls.driver.create_driver()
         driver = cls.driver.chrome_driver
         wait = cls.driver
@@ -56,7 +57,7 @@ class TECDownloader(FileDownloaderABC):
         attempts = 0
         while driver.title == 'Error':
             attempts += 1
-            ic(f"Error page detected. Refreshing... (Attempt #: {attempts})")
+            logger.warning("Error page detected, refreshing", extra={"attempt": attempts})
             driver.refresh()
             time.sleep(5)
             if attempts > 5:
@@ -79,7 +80,7 @@ class TECDownloader(FileDownloaderABC):
 
         if _safe_to_delete:
             _task1 = progress.add_task("T1", "Removing existing files", "In Progress")
-            ic()
+            logger.debug("Removing existing files from temp folder")
             list(map(lambda x: x.unlink(), _existing_files))
             progress.update_task(_task1, "Complete")
 
@@ -120,13 +121,13 @@ class TECDownloader(FileDownloaderABC):
     def consolidate_files(cls):
         _file_types = cls._create_file_type_dict()
         _file_count = len(_file_types)
-        ic(_file_types)
+        logger.debug("File types to consolidate", extra={"file_types": list(_file_types.keys())})
 
         _task = progress.add_task("Consolidation", "Consolidating Files By Category...", "Started")
-        ic()
+        logger.info("Starting file consolidation")
         for k, v in _file_types.items():
             if len(v) > 1:
-                ic("More than 1 file found")
+                logger.debug("Multiple files found for category", extra={"category": k, "file_count": len(v)})
                 _files = iter(v)
                 # Start with scanning the first file instead of empty DataFrame
                 _first_file = next(_files)
@@ -145,7 +146,7 @@ class TECDownloader(FileDownloaderABC):
                         _fdf = pl.read_parquet(_file)
                         all_columns.update(_fdf.columns)
                     except Exception as e:
-                        ic(f"Error reading {_file}: {e}")
+                        logger.warning("Error reading parquet file", extra={"file": str(_file), "error": str(e)})
                         continue
                 
                 # Ensure all columns exist in the main DataFrame (cast to String for compatibility)
@@ -174,9 +175,9 @@ class TECDownloader(FileDownloaderABC):
                         
                         # Now stack the aligned DataFrames
                         df = df.vstack(_fdf)
-                        ic(f"Added {_file.stem} to DataFrame {k}")
+                        logger.debug("Added file to DataFrame", extra={"file": _file.stem, "category": k})
                     except Exception as e:
-                        ic(f"Error processing {_file}: {e}")
+                        logger.warning("Error processing file", extra={"file": str(_file), "error": str(e)})
                         continue
             else:
                 df = (
@@ -238,7 +239,7 @@ class TECDownloader(FileDownloaderABC):
                                 _fdf = pl.read_parquet(_file)
                                 all_columns.update(_fdf.columns)
                             except Exception as e:
-                                ic(f"Error reading {_file}: {e}")
+                                logger.warning("Error reading parquet file", extra={"file": str(_file), "error": str(e)})
                                 continue
                         
                         # Ensure all columns exist in the main DataFrame (cast to String for compatibility)
@@ -262,12 +263,12 @@ class TECDownloader(FileDownloaderABC):
                                 # Stack the aligned DataFrames
                                 df = df.vstack(_fdf)
                             except Exception as e:
-                                ic(f"Error processing {_file}: {e}")
+                                logger.warning("Error processing file", extra={"file": str(_file), "error": str(e)})
                                 continue
-                        
+
                         _data[k] = df.to_dicts()
                     except Exception as e:
-                        ic(f"Error processing category {k}: {e}")
+                        logger.error("Error processing category", extra={"category": k, "error": str(e)})
                         _data[k] = []
             
             cls.data = _data

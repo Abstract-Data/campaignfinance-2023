@@ -1,6 +1,6 @@
 import abc
 from dataclasses import dataclass, field
-from typing import Type, Tuple, Iterator, Dict, Generator
+from typing import Type, Tuple, Iterator, Dict, Generator, Union
 import itertools
 from sqlmodel import SQLModel
 import csv
@@ -9,12 +9,11 @@ from pydantic import ValidationError
 from app.abcs.abc_validation_errors import ValidationErrorList
 from app.funcs.validator_functions import create_record_id
 from app.logger import Logger
-from icecream import ic
 
 ValidatorType = Type[SQLModel]
 PassedRecord = Tuple[str, SQLModel]
 FailedRecord = Tuple[str, Dict]
-PassedFailedIndividualRecord = PassedRecord or FailedRecord
+PassedFailedIndividualRecord = Union[PassedRecord, FailedRecord]
 PassedRecordList = Iterator[SQLModel]
 FailedRecordList = Iterator[Dict]
 PassedFailedRecordList = Tuple[PassedRecordList, FailedRecordList]
@@ -66,7 +65,7 @@ class StateFileValidation(abc.ABC):
 
     def _create_error_report(self) -> ValidationErrorList:
         if not self.failed:
-            ic("No failed records found")
+            self.logger.debug("No failed records found")
         if self.failed:
             self.failed, fails = itertools.tee(self.failed, 2)
             self.errors.create_error_list(list(fails))
