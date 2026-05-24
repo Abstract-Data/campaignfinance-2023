@@ -142,117 +142,99 @@ def _collect_source_rows(session: Session, state_id: int) -> list[dict[str, Any]
     return output
 
 
+def _name_fields(std_name: Any) -> dict[str, Any]:
+    if not isinstance(std_name, StandardizedName):
+        return {
+            "first_name": None,
+            "middle_name": None,
+            "last_name": None,
+            "suffix": None,
+            "is_organization": False,
+            "first_name_phonetic": phonetic_code(""),
+            "last_name_phonetic": phonetic_code(""),
+        }
+
+    first = std_name.first
+    last = std_name.last
+    return {
+        "first_name": first,
+        "middle_name": std_name.middle,
+        "last_name": last,
+        "suffix": std_name.suffix,
+        "is_organization": std_name.is_organization,
+        "first_name_phonetic": phonetic_code(first or ""),
+        "last_name_phonetic": phonetic_code(last or ""),
+    }
+
+
+def _address_fields(std_address: Any) -> dict[str, Any]:
+    if not isinstance(std_address, StandardizedAddress):
+        return {
+            "line_1": None,
+            "line_2": None,
+            "city": None,
+            "state": None,
+            "zip5": None,
+            "zip4": None,
+            "parse_status": "unparsed",
+        }
+
+    return {
+        "line_1": std_address.line_1,
+        "line_2": std_address.line_2,
+        "city": std_address.city,
+        "state": std_address.state,
+        "zip5": std_address.zip5,
+        "zip4": std_address.zip4,
+        "parse_status": std_address.parse_status,
+    }
+
+
 def _compute_features(rows: list[dict[str, Any]], run_id: int) -> list[ResolutionInput]:
     if not rows:
         return []
 
     frame = pl.DataFrame(rows)
-    features = (
-        frame.with_columns(
-            pl.col("raw_name").map_elements(
-                standardize_name,
-                return_dtype=pl.Object,
-            ).alias("std_name"),
-            pl.col("raw_address").map_elements(
-                standardize_address,
-                return_dtype=pl.Object,
-            ).alias("std_address"),
-        )
-        .with_columns(
-            pl.col("std_name").map_elements(
-                lambda value: value.first if isinstance(value, StandardizedName) else None,
-                return_dtype=pl.String,
-            ).alias("first_name"),
-            pl.col("std_name").map_elements(
-                lambda value: value.middle if isinstance(value, StandardizedName) else None,
-                return_dtype=pl.String,
-            ).alias("middle_name"),
-            pl.col("std_name").map_elements(
-                lambda value: value.last if isinstance(value, StandardizedName) else None,
-                return_dtype=pl.String,
-            ).alias("last_name"),
-            pl.col("std_name").map_elements(
-                lambda value: value.suffix if isinstance(value, StandardizedName) else None,
-                return_dtype=pl.String,
-            ).alias("suffix"),
-            pl.col("std_name").map_elements(
-                lambda value: value.is_organization if isinstance(value, StandardizedName) else False,
-                return_dtype=pl.Boolean,
-            ).alias("is_organization"),
-            pl.col("std_address").map_elements(
-                lambda value: value.line_1 if isinstance(value, StandardizedAddress) else None,
-                return_dtype=pl.String,
-            ).alias("line_1"),
-            pl.col("std_address").map_elements(
-                lambda value: value.line_2 if isinstance(value, StandardizedAddress) else None,
-                return_dtype=pl.String,
-            ).alias("line_2"),
-            pl.col("std_address").map_elements(
-                lambda value: value.city if isinstance(value, StandardizedAddress) else None,
-                return_dtype=pl.String,
-            ).alias("city"),
-            pl.col("std_address").map_elements(
-                lambda value: value.state if isinstance(value, StandardizedAddress) else None,
-                return_dtype=pl.String,
-            ).alias("state"),
-            pl.col("std_address").map_elements(
-                lambda value: value.zip5 if isinstance(value, StandardizedAddress) else None,
-                return_dtype=pl.String,
-            ).alias("zip5"),
-            pl.col("std_address").map_elements(
-                lambda value: value.zip4 if isinstance(value, StandardizedAddress) else None,
-                return_dtype=pl.String,
-            ).alias("zip4"),
-            pl.col("std_address").map_elements(
-                lambda value: value.parse_status if isinstance(value, StandardizedAddress) else "unparsed",
-                return_dtype=pl.String,
-            ).alias("parse_status"),
-            pl.col("raw_name").map_elements(
-                normalize_org_name,
-                return_dtype=pl.String,
-            ).alias("normalized_org"),
-        )
-        .with_columns(
-            pl.col("first_name").map_elements(
-                lambda value: phonetic_code(value or ""),
-                return_dtype=pl.String,
-            ).alias("first_name_phonetic"),
-            pl.col("last_name").map_elements(
-                lambda value: phonetic_code(value or ""),
-                return_dtype=pl.String,
-            ).alias("last_name_phonetic"),
-            pl.col("normalized_org").map_elements(
-                lambda value: phonetic_code((value or "").split(" ")[0]) if value else "",
-                return_dtype=pl.String,
-            ).alias("org_name_phonetic"),
-        )
+    # map_elements required here: standardize_name/standardize_address wrap
+    # probablepeople, usaddress, and scourgify — no native Polars equivalent.
+    enriched = frame.with_columns(
+        pl.col("raw_name").map_elements(
+            standardize_name,
+            return_dtype=pl.Object,
+        ).alias("std_name"),
+        pl.col("raw_address").map_elements(
+            standardize_address,
+            return_dtype=pl.Object,
+        ).alias("std_address"),
+        pl.col("raw_name").map_elements(
+            normalize_org_name,
+            return_dtype=pl.String,
+        ).alias("normalized_org"),
     )
 
-    rows_dict = features.select(
-        "source_type",
-        "source_id",
-        "entity_type",
-        "first_name",
-        "middle_name",
-        "last_name",
-        "suffix",
-        "is_organization",
-        "line_1",
-        "line_2",
-        "city",
-        "state",
-        "zip5",
-        "zip4",
-        "parse_status",
-        "normalized_org",
-        "first_name_phonetic",
-        "last_name_phonetic",
-        "org_name_phonetic",
-        "raw_name",
-        "raw_address",
-    ).to_dicts()
+    staged: list[ResolutionInput] = []
+    for row in enriched.iter_rows(named=True):
+        name_values = _name_fields(row["std_name"])
+        address_values = _address_fields(row["std_address"])
+        normalized_org = row["normalized_org"] or ""
+        staged.append(
+            ResolutionInput(
+                run_id=run_id,
+                source_type=row["source_type"],
+                source_id=row["source_id"],
+                entity_type=row["entity_type"],
+                normalized_org=normalized_org or None,
+                org_name_phonetic=phonetic_code(normalized_org.split(" ")[0])
+                if normalized_org
+                else "",
+                raw_name=row["raw_name"],
+                raw_address=row["raw_address"],
+                **name_values,
+                **address_values,
+            )
+        )
 
-    return [ResolutionInput(run_id=run_id, **row) for row in rows_dict]
+    return staged
 
 
 def build_resolution_input(session: Session, run_id: int, state_code: str) -> int:
@@ -268,7 +250,8 @@ def build_resolution_input(session: Session, run_id: int, state_code: str) -> in
     if not staged_rows:
         return 0
 
-    session.exec(delete(ResolutionInput).where(ResolutionInput.run_id == run_id))
-    session.add_all(staged_rows)
+    with session.begin_nested():
+        session.exec(delete(ResolutionInput).where(ResolutionInput.run_id == run_id))
+        session.add_all(staged_rows)
     session.commit()
     return len(staged_rows)

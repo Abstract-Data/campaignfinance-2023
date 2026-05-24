@@ -2,10 +2,29 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, String
 from sqlmodel import Field, SQLModel
+
+from app.resolve.models.canonical import (
+    UnmappedEntityTypeError,
+    map_unified_to_canonical_entity_type,
+)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def coerce_staging_entity_type(unified_entity_type: str) -> str:
+    """Map a unified ``entity_type`` string to a canonical staging value.
+
+    Used by the stage-1 path before writing ``resolution_input.entity_type``.
+    Raises :class:`UnmappedEntityTypeError` for types that belong on another
+    pass (e.g. ``campaign``).
+    """
+    return map_unified_to_canonical_entity_type(unified_entity_type).value
 
 
 class ResolutionInput(SQLModel, table=True):
@@ -29,8 +48,8 @@ class ResolutionInput(SQLModel, table=True):
     line_2: str | None = Field(default=None, sa_column=Column(String(500)))
     city: str | None = Field(default=None, sa_column=Column(String(200)))
     state: str | None = Field(default=None, sa_column=Column(String(50)))
-    zip5: str | None = Field(default=None, sa_column=Column(String(10)))
-    zip4: str | None = Field(default=None, sa_column=Column(String(10)))
+    zip5: str | None = Field(default=None, sa_column=Column(String(5)))
+    zip4: str | None = Field(default=None, sa_column=Column(String(4)))
     parse_status: str = Field(default="unparsed", sa_column=Column(String(20), nullable=False))
 
     normalized_org: str | None = Field(default=None, sa_column=Column(String(500)))
@@ -41,4 +60,4 @@ class ResolutionInput(SQLModel, table=True):
     raw_name: str | None = Field(default=None, sa_column=Column(String(500)))
     raw_address: str | None = Field(default=None, sa_column=Column(String(1000)))
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utc_now)

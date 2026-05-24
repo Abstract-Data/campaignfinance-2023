@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import Column, ForeignKey, Integer, Numeric, Text
 from sqlmodel import Field, SQLModel
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class UnifiedPledge(SQLModel, table=True):
@@ -36,5 +40,5 @@ class UnifiedPledge(SQLModel, table=True):
     is_fulfilled: bool = Field(default=False)
     description: str | None = Field(default=None, sa_column=Column(Text))
     metadata_json: str | None = Field(default=None, sa_column=Column(Text))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utc_now)
+    updated_at: datetime = Field(default_factory=_utc_now)

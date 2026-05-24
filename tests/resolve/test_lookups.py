@@ -4,29 +4,18 @@ from __future__ import annotations
 
 import pytest
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Field, Session, SQLModel, create_engine, select
+from sqlmodel import Session, create_engine, select
 
 from app.core.source_models.lookups import CommitteePurpose, ExpenditureCategory
+from tests.resolve.conftest import (
+    StubState,
+    StubUnifiedCommittee,
+    create_resolve_tables,
+)
 from app.core.source_models.lookups_ingest import (
     build_committee_purpose,
     build_expenditure_category,
 )
-
-
-class _State(SQLModel, table=True):
-    __tablename__ = "states"
-    __table_args__ = {"extend_existing": True}
-
-    id: int | None = Field(default=None, primary_key=True)
-    code: str = Field(max_length=2)
-
-
-class _UnifiedCommittee(SQLModel, table=True):
-    __tablename__ = "unified_committees"
-    __table_args__ = {"extend_existing": True}
-
-    filer_id: str = Field(primary_key=True, max_length=100)
-    name: str | None = None
 
 
 SAMPLE_EXCAT = {
@@ -78,18 +67,14 @@ def test_build_committee_purpose_maps_cvr3_fields() -> None:
 @pytest.fixture(name="lookup_session")
 def lookup_session_fixture():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
-    SQLModel.metadata.create_all(
+    create_resolve_tables(
         engine,
-        tables=[
-            _State.__table__,
-            _UnifiedCommittee.__table__,
-            ExpenditureCategory.__table__,
-            CommitteePurpose.__table__,
-        ],
+        stub_tables=[StubState.__table__, StubUnifiedCommittee.__table__],
+        app_tables=[ExpenditureCategory.__table__, CommitteePurpose.__table__],
     )
     with Session(engine) as session:
-        session.add(_State(id=43, code="TX"))
-        session.add(_UnifiedCommittee(filer_id="00012345", name="Example PAC"))
+        session.add(StubState(id=43, code="TX"))
+        session.add(StubUnifiedCommittee(filer_id="00012345", name="Example PAC"))
         session.commit()
         yield session
 

@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: wave-2-p1-r2
     content: "Wave 2: Dispatch 4 parallel agents — tasks 1d (CLI/run), 1e (blocking), 1f (fastpath), 1g (survivorship)"
-    status: pending
+    status: in_progress
   - id: wave-3-p1-z
     content: "Wave 3: Serial integration — task 1z wires stages 1→2→3→7, idempotency + Texas E2E"
     status: pending

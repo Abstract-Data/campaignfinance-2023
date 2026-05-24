@@ -2,55 +2,25 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 
 import pytest
-from sqlmodel import Field, Session, SQLModel, create_engine, select
+from sqlmodel import Session, create_engine, select
 
 from app.core.source_models.reports import UnifiedReport
+from tests.resolve.conftest import (
+    StubFileOrigin,
+    StubState,
+    StubUnifiedCommittee,
+    StubUnifiedTransaction,
+    create_resolve_tables,
+)
 from app.core.source_models.reports_ingest import (
     _parse_date,
     build_report,
     link_transactions_to_reports,
 )
-
-
-class _State(SQLModel, table=True):
-    __tablename__ = "states"
-    __table_args__ = {"extend_existing": True}
-
-    id: int | None = Field(default=None, primary_key=True)
-    code: str = Field(max_length=2, default="TX")
-
-
-class _FileOrigin(SQLModel, table=True):
-    __tablename__ = "file_origins"
-    __table_args__ = {"extend_existing": True}
-
-    id: str = Field(primary_key=True, max_length=64)
-    state_id: int | None = Field(default=None, foreign_key="states.id")
-    filename: str = Field(default="cover.parquet", max_length=500)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class _UnifiedCommittee(SQLModel, table=True):
-    __tablename__ = "unified_committees"
-    __table_args__ = {"extend_existing": True}
-
-    filer_id: str = Field(primary_key=True, max_length=100)
-    name: str | None = None
-
-
-class _UnifiedTransaction(SQLModel, table=True):
-    __tablename__ = "unified_transactions"
-    __table_args__ = {"extend_existing": True}
-
-    id: int | None = Field(default=None, primary_key=True)
-    state_id: int | None = Field(default=None, foreign_key="states.id")
-    committee_id: str | None = Field(default=None, foreign_key="unified_committees.filer_id")
-    report_ident: str | None = Field(default=None, max_length=20, index=True)
-    report_id: int | None = Field(default=None, index=True)
 
 
 SAMPLE_CVR1 = {
@@ -142,19 +112,19 @@ def test_build_report_file_origin_id_passed_through() -> None:
 @pytest.fixture(name="reports_session")
 def reports_session_fixture():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
-    SQLModel.metadata.create_all(
+    create_resolve_tables(
         engine,
-        tables=[
-            _State.__table__,
-            _FileOrigin.__table__,
-            _UnifiedCommittee.__table__,
-            _UnifiedTransaction.__table__,
-            UnifiedReport.__table__,
+        stub_tables=[
+            StubState.__table__,
+            StubFileOrigin.__table__,
+            StubUnifiedCommittee.__table__,
+            StubUnifiedTransaction.__table__,
         ],
+        app_tables=[UnifiedReport.__table__],
     )
     with Session(engine) as session:
-        session.add(_State(id=43, code="TX"))
-        session.add(_UnifiedCommittee(filer_id="00012345", name="Example PAC"))
+        session.add(StubState(id=43, code="TX"))
+        session.add(StubUnifiedCommittee(filer_id="00012345", name="Example PAC"))
         session.commit()
         yield session
 
@@ -165,8 +135,12 @@ def test_link_transactions_to_reports_returns_count(reports_session: Session) ->
     reports_session.commit()
     reports_session.refresh(report)
 
-    tx1 = _UnifiedTransaction(state_id=43, committee_id="00012345", report_ident="12345678901")
-    tx2 = _UnifiedTransaction(state_id=43, committee_id="00012345", report_ident="12345678901")
+    tx1 = StubUnifiedTransaction(
+        state_id=43, committee_id="00012345", report_ident="12345678901"
+    )
+    tx2 = StubUnifiedTransaction(
+        state_id=43, committee_id="00012345", report_ident="12345678901"
+    )
     reports_session.add(tx1)
     reports_session.add(tx2)
     reports_session.commit()
@@ -181,7 +155,9 @@ def test_link_transactions_to_reports_sets_report_id(reports_session: Session) -
     reports_session.commit()
     reports_session.refresh(report)
 
-    tx = _UnifiedTransaction(state_id=43, committee_id="00012345", report_ident="12345678901")
+    tx = StubUnifiedTransaction(
+        state_id=43, committee_id="00012345", report_ident="12345678901"
+    )
     reports_session.add(tx)
     reports_session.commit()
     reports_session.refresh(tx)
@@ -201,10 +177,10 @@ def test_link_transactions_to_reports_no_cross_state_collision(
     reports_session.commit()
     reports_session.refresh(report)
 
-    matching_tx = _UnifiedTransaction(
+    matching_tx = StubUnifiedTransaction(
         state_id=43, committee_id="00012345", report_ident="12345678901"
     )
-    wrong_state_tx = _UnifiedTransaction(
+    wrong_state_tx = StubUnifiedTransaction(
         state_id=44, committee_id="00012345", report_ident="12345678901"
     )
     reports_session.add(matching_tx)
@@ -229,13 +205,13 @@ def test_link_transactions_to_reports_skips_already_linked(reports_session: Sess
     reports_session.refresh(report1)
     reports_session.refresh(report2)
 
-    tx_linked = _UnifiedTransaction(
+    tx_linked = StubUnifiedTransaction(
         state_id=43,
         committee_id="00012345",
         report_ident="12345678901",
         report_id=report1.id,
     )
-    tx_unlinked = _UnifiedTransaction(
+    tx_unlinked = StubUnifiedTransaction(
         state_id=43, committee_id="00012345", report_ident="12345678901"
     )
     reports_session.add(tx_linked)

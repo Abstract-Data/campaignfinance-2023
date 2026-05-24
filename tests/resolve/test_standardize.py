@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from hypothesis import given, strategies as st
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -18,7 +19,8 @@ from app.resolve.standardize.addresses import standardize_address
 from app.resolve.standardize.names import standardize_name
 from app.resolve.standardize.orgs import normalize_org_name
 from app.resolve.standardize.stage1 import build_resolution_input
-from app.resolve.standardize.staging import ResolutionInput
+from app.resolve.standardize.staging import ResolutionInput, coerce_staging_entity_type
+from app.resolve.models.canonical import UnmappedEntityTypeError
 
 
 def _address_strategy():
@@ -72,6 +74,22 @@ def test_standardize_address_preserves_unit_suite():
 def test_standardize_address_unparseable_returns_unparsed():
     standardized = standardize_address("!!! ??? ###")
     assert standardized.parse_status == "unparsed"
+
+
+def test_coerce_staging_entity_type_maps_vendor_to_organization():
+    assert coerce_staging_entity_type("vendor") == "organization"
+
+
+def test_coerce_staging_entity_type_rejects_campaign():
+    with pytest.raises(UnmappedEntityTypeError, match="campaign"):
+        coerce_staging_entity_type("campaign")
+
+
+def test_resolution_input_zip_column_lengths():
+    zip5_col = ResolutionInput.__table__.c.zip5
+    zip4_col = ResolutionInput.__table__.c.zip4
+    assert zip5_col.type.length == 5
+    assert zip4_col.type.length == 4
 
 
 def test_resolution_input_table_registered_and_stage1_inserts_rows():
@@ -143,4 +161,73 @@ def test_resolution_input_table_registered_and_stage1_inserts_rows():
             "unified_committee",
             "unified_entity",
         }
+
+
+def test_build_resolution_input_rolls_back_delete_on_insert_failure(monkeypatch):
+    """Delete and insert share one transaction (M-4)."""
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(
+        engine,
+        tables=[
+            State.__table__,
+            UnifiedAddress.__table__,
+            UnifiedPerson.__table__,
+            UnifiedCommittee.__table__,
+            UnifiedEntity.__table__,
+            ResolutionInput.__table__,
+        ],
+    )
+
+    with Session(engine) as session:
+        tx = State(code="TX", name="Texas")
+        session.add(tx)
+        session.commit()
+        session.refresh(tx)
+
+        address = UnifiedAddress(
+            street_1="123 Main St",
+            city="Austin",
+            state="TX",
+            zip_code="78701",
+        )
+        session.add(address)
+        session.commit()
+        session.refresh(address)
+
+        session.add(
+            UnifiedPerson(
+                first_name="Jane",
+                last_name="Doe",
+                state_id=tx.id,
+                address_id=address.id,
+            )
+        )
+        session.add(
+            ResolutionInput(
+                run_id=7,
+                source_type="unified_person",
+                source_id="legacy",
+                entity_type="person",
+                raw_name="Legacy Row",
+                raw_address="",
+            )
+        )
+        session.commit()
+
+        def _fail_add_all(_rows):
+            raise RuntimeError("simulated insert failure")
+
+        monkeypatch.setattr(session, "add_all", _fail_add_all)
+
+        with pytest.raises(RuntimeError, match="simulated insert failure"):
+            build_resolution_input(session, run_id=7, state_code="TX")
+
+        surviving = session.exec(
+            select(ResolutionInput).where(ResolutionInput.run_id == 7)
+        ).all()
+        assert len(surviving) == 1
+        assert surviving[0].source_id == "legacy"
 

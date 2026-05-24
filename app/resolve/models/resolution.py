@@ -22,7 +22,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import Column, Float, Integer, Text
+from sqlalchemy import Column, Float, Integer, Text, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -151,6 +151,14 @@ class EntityCrosswalk(SQLModel, table=True):
     """
 
     __tablename__ = "entity_crosswalk"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_type",
+            "source_id",
+            "run_id",
+            name="uq_entity_crosswalk_source_run",
+        ),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     source_type: SourceType
@@ -179,6 +187,14 @@ class AddressCrosswalk(SQLModel, table=True):
     """
 
     __tablename__ = "address_crosswalk"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_type",
+            "source_id",
+            "run_id",
+            name="uq_address_crosswalk_source_run",
+        ),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     source_type: SourceType
@@ -207,6 +223,14 @@ class CampaignCrosswalk(SQLModel, table=True):
     """
 
     __tablename__ = "campaign_crosswalk"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_type",
+            "source_id",
+            "run_id",
+            name="uq_campaign_crosswalk_source_run",
+        ),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     source_type: SourceType

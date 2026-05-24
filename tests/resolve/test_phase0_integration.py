@@ -7,13 +7,12 @@ record types.
 
 from __future__ import annotations
 
-import uuid
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
-from sqlmodel import Field, Session, SQLModel, create_engine, select, text
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.core.source_models import (
     RECORD_TYPE_BUILDERS,
@@ -33,6 +32,12 @@ from app.core.source_models.lookups_ingest import (
 from app.core.source_models.notices_ingest import build_notice
 from app.core.source_models.pledges_ingest import build_pledge
 from app.core.source_models.spac_ingest import build_spac_link
+from tests.resolve.conftest import (
+    StubState,
+    StubUnifiedTransaction,
+    create_resolve_tables,
+    drop_resolve_tables,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -140,66 +145,21 @@ def test_spac_builder_returns_spac_link():
 # ---------------------------------------------------------------------------
 
 
-class _IntegState(SQLModel, table=True):
-    __tablename__ = "states"
-    __table_args__ = {"extend_existing": True}
-
-    id: int | None = Field(default=None, primary_key=True)
-    code: str = Field(default="TX")
-    name: str | None = Field(default=None)
-
-
-class _IntegFileOrigin(SQLModel, table=True):
-    __tablename__ = "file_origins"
-    __table_args__ = {"extend_existing": True}
-
-    id: str = Field(primary_key=True)
-
-
-class _IntegCommittee(SQLModel, table=True):
-    __tablename__ = "unified_committees"
-    __table_args__ = {"extend_existing": True}
-
-    filer_id: str = Field(primary_key=True)
-
-
-class _IntegEntity(SQLModel, table=True):
-    __tablename__ = "unified_entities"
-    __table_args__ = {"extend_existing": True}
-
-    id: int | None = Field(default=None, primary_key=True)
-    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()))
-
-
-class _IntegTransaction(SQLModel, table=True):
-    __tablename__ = "unified_transactions"
-    __table_args__ = {"extend_existing": True}
-
-    id: int | None = Field(default=None, primary_key=True)
-    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    amount: Decimal | None = None
-    transaction_date: date | None = None
-    description: str | None = None
-    report_id: int | None = None
-    report_ident: str | None = None
-    state_id: int | None = None
-
-
 @pytest.fixture(name="integ_engine")
 def integ_engine_fixture():
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
     )
-    SQLModel.metadata.create_all(engine)
+    create_resolve_tables(engine)
     yield engine
-    SQLModel.metadata.drop_all(engine)
+    drop_resolve_tables(engine)
 
 
 def test_load_cvr1_and_link_to_transactions(integ_engine):
     """End-to-end: insert a CVR1 report, insert transactions, verify linking."""
     with Session(integ_engine) as session:
-        state = _IntegState(code="TX")
+        state = StubState(code="TX")
         session.add(state)
         session.commit()
         session.refresh(state)
@@ -217,7 +177,7 @@ def test_load_cvr1_and_link_to_transactions(integ_engine):
         session.commit()
 
         # Insert a transaction that references this report
-        txn = _IntegTransaction(report_ident="REPT001")
+        txn = StubUnifiedTransaction(report_ident="REPT001", state_id=state.id)
         session.add(txn)
         session.commit()
 
@@ -227,7 +187,7 @@ def test_load_cvr1_and_link_to_transactions(integ_engine):
 
         # Verify the transaction has report_id set
         refreshed = session.exec(
-            select(_IntegTransaction).where(_IntegTransaction.id == txn.id)
+            select(StubUnifiedTransaction).where(StubUnifiedTransaction.id == txn.id)
         ).one()
         assert refreshed.report_id == report.id
 
@@ -235,7 +195,7 @@ def test_load_cvr1_and_link_to_transactions(integ_engine):
 def test_all_builders_produce_insertable_rows(integ_engine):
     """Verify each builder produces a row that can be persisted."""
     with Session(integ_engine) as session:
-        state = _IntegState(code="TX")
+        state = StubState(code="TX")
         session.add(state)
         session.commit()
         session.refresh(state)

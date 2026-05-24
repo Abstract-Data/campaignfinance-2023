@@ -137,3 +137,52 @@ def test_discover_and_load_unknown_state_raises() -> None:
     cfg = get_config("testing")
     with pytest.raises(ValueError, match="No glob config"):
         discover_and_load("nonexistent_state_xyz", cfg, dry_run=True)
+
+
+def test_persist_pldg_row_rolls_back_transaction_on_pledge_failure(monkeypatch) -> None:
+    """PLDG parent transaction and pledge detail share one savepoint (M-2)."""
+    from sqlmodel import SQLModel, Session, create_engine, select
+
+    from app.core.source_models.pledges import UnifiedPledge
+    from app.core.unified_sqlmodels import UnifiedTransaction
+    from scripts.loaders.production_loader import _persist_pldg_row
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(
+        engine,
+        tables=[UnifiedTransaction.__table__, UnifiedPledge.__table__],
+    )
+
+    raw = {
+        "recordType": "PLDG",
+        "filerIdent": "00012345",
+        "reportInfoIdent": 12345,
+        "pledgeAmount": "100.00",
+        "pledgeDt": "20240110",
+        "pledgeDescr": "Event pledge",
+    }
+
+    def _raise_build_pledge(*_args, **_kwargs):
+        raise RuntimeError("pledge build failed")
+
+    monkeypatch.setattr(
+        "app.core.source_models.pledges_ingest.build_pledge",
+        _raise_build_pledge,
+    )
+
+    with Session(engine) as session:
+        with pytest.raises(RuntimeError, match="pledge build failed"):
+            _persist_pldg_row(
+                session,
+                raw,
+                state="texas",
+                state_id=1,
+                state_code="TX",
+                file_origin_id=None,
+            )
+
+        assert session.exec(select(UnifiedTransaction)).all() == []
+        assert session.exec(select(UnifiedPledge)).all() == []

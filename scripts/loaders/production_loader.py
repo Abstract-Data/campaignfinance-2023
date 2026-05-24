@@ -23,12 +23,15 @@ from typing import Any
 # Allow ``uv run python scripts/loaders/production_loader.py`` from project root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from app.logger import Logger
 from scripts.loaders.file_discovery import discover_state_files
 from scripts.loaders.loader_config import (
     STATE_GLOB_CONFIGS,
     LoaderConfig,
     get_config,
 )
+
+logger = Logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Transaction record types handled by the existing unified_sql_processor path
@@ -165,6 +168,39 @@ def _persist_transaction(
     return transaction
 
 
+def _persist_pldg_row(
+    session: Any,
+    raw: dict[str, Any],
+    *,
+    state: str,
+    state_id: int,
+    state_code: str,
+    file_origin_id: str | None,
+) -> Any:
+    """Persist a PLDG transaction and its pledge detail in one savepoint."""
+    from app.core.source_models.pledges_ingest import build_pledge
+
+    with session.begin_nested():
+        txn = _persist_transaction(
+            session,
+            raw,
+            state=state,
+            state_id=state_id,
+            state_code=state_code,
+            file_origin_id=file_origin_id,
+        )
+        session.add(
+            build_pledge(
+                txn,
+                pledgor_entity=None,
+                recipient_entity=None,
+                raw=raw,
+                state_id=state_id,
+            )
+        )
+    return txn
+
+
 def _dispatch_source_record(
     raw: dict[str, Any],
     record_type: str,
@@ -193,7 +229,7 @@ def _link_after_load(session: Any) -> int:
     from app.core.source_models import link_transactions_to_reports, reconcile_report_totals
 
     linked = link_transactions_to_reports(session)
-    print(f"[loader] linked {linked} transaction(s) to report(s)")
+    logger.info(f"[loader] linked {linked} transaction(s) to report(s)")
     reconcile_report_totals(session)
     return linked
 
@@ -217,11 +253,11 @@ def discover_and_load(
         (item.path, item.record_type)
         for item in discover_state_files(state, base_dir=glob_cfg.base_dir)
     ]
-    print(f"[loader] discovered {len(discovered)} file(s) for state={state!r}")
+    logger.info(f"[loader] discovered {len(discovered)} file(s) for state={state!r}")
 
     if dry_run:
         for path, rtype in discovered:
-            print(f"  {path}  (record_type={rtype!r})")
+            logger.info(f"  {path}  (record_type={rtype!r})")
         return {"discovered": len(discovered), "loaded": 0, "skipped": 0}
 
     loaded = 0
@@ -249,7 +285,7 @@ def discover_and_load(
                 )
                 loaded += n
             except Exception as exc:  # noqa: BLE001
-                print(f"[loader] ERROR loading {path}: {exc}", file=sys.stderr)
+                logger.error(f"[loader] ERROR loading {path}: {exc}")
                 session.rollback()
                 skipped += 1
                 if not config.retry_failed:
@@ -276,14 +312,14 @@ def _load_file(
     """Load a single parquet/CSV file, routing by record type."""
     import polars as pl
 
-    print(f"[loader] loading {path.name} (record_type={record_type!r}) ...")
+    logger.info(f"[loader] loading {path.name} (record_type={record_type!r}) ...")
 
     if path.suffix.lower() == ".parquet":
         df = pl.read_parquet(path)
     elif path.suffix.lower() in {".csv", ".txt"}:
         df = pl.read_csv(path, infer_schema_length=0)
     else:
-        print(f"[loader] skipping unsupported file type: {path.suffix}", file=sys.stderr)
+        logger.warning(f"[loader] skipping unsupported file type: {path.suffix}")
         return 0
 
     file_origin_id = _ensure_file_origin(session, state_id, path)
@@ -299,28 +335,25 @@ def _load_file(
             effective_type = str(row_dict.get("recordType", "")).strip().upper() or None
 
         if effective_type in TRANSACTION_RECORD_TYPES:
-            txn = _persist_transaction(
-                session,
-                row_dict,
-                state=state,
-                state_id=state_id,
-                state_code=state_code,
-                file_origin_id=file_origin_id,
-            )
-            rows_loaded += 1
-
             if effective_type == "PLDG":
-                from app.core.source_models.pledges_ingest import build_pledge
-
-                session.add(
-                    build_pledge(
-                        txn,
-                        pledgor_entity=None,
-                        recipient_entity=None,
-                        raw=row_dict,
-                        state_id=state_id,
-                    )
+                _persist_pldg_row(
+                    session,
+                    row_dict,
+                    state=state,
+                    state_id=state_id,
+                    state_code=state_code,
+                    file_origin_id=file_origin_id,
                 )
+            else:
+                _persist_transaction(
+                    session,
+                    row_dict,
+                    state=state,
+                    state_id=state_id,
+                    state_code=state_code,
+                    file_origin_id=file_origin_id,
+                )
+            rows_loaded += 1
 
             batch_count += 1
             if batch_count >= config.commit_frequency:
@@ -341,9 +374,8 @@ def _load_file(
                 session.commit()
                 batch_count = 0
         else:
-            print(
-                f"[loader] unrecognized record_type={effective_type!r} in {path.name}",
-                file=sys.stderr,
+            logger.warning(
+                f"[loader] unrecognized record_type={effective_type!r} in {path.name}"
             )
 
     if batch_count:
@@ -362,4 +394,4 @@ if __name__ == "__main__":
 
     cfg = get_config(preset)
     results = discover_and_load(state, cfg, dry_run=dry)
-    print(f"[loader] done: {results}")
+    logger.info(f"[loader] done: {results}")

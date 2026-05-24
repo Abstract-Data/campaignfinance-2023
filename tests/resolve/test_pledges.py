@@ -2,44 +2,23 @@
 
 from __future__ import annotations
 
-import uuid
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Field, Session, SQLModel, create_engine
+from sqlmodel import Session, create_engine
 
 from app.core.source_models.pledges import UnifiedPledge
+from tests.resolve.conftest import (
+    StubState,
+    StubUnifiedEntity,
+    StubUnifiedTransaction,
+    create_resolve_tables,
+    drop_resolve_tables,
+)
 from app.core.source_models.pledges_ingest import build_pledge
-
-
-class _PledgeState(SQLModel, table=True):
-    __tablename__ = "states"
-    __table_args__ = {"extend_existing": True}
-
-    id: int | None = Field(default=None, primary_key=True)
-    code: str = Field(default="TX")
-
-
-class _PledgeEntity(SQLModel, table=True):
-    __tablename__ = "unified_entities"
-    __table_args__ = {"extend_existing": True}
-
-    id: int | None = Field(default=None, primary_key=True)
-    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()))
-
-
-class _PledgeTransaction(SQLModel, table=True):
-    __tablename__ = "unified_transactions"
-    __table_args__ = {"extend_existing": True}
-
-    id: int | None = Field(default=None, primary_key=True)
-    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    amount: Decimal | None = None
-    transaction_date: date | None = None
-    description: str | None = None
 
 
 SAMPLE_PLDG_RAW = {
@@ -99,19 +78,19 @@ def pledge_engine_fixture():
         "sqlite://",
         connect_args={"check_same_thread": False},
     )
-    SQLModel.metadata.create_all(engine)
+    create_resolve_tables(engine)
     yield engine
-    SQLModel.metadata.drop_all(engine)
+    drop_resolve_tables(engine)
 
 
 def test_unified_pledges_table_creates_and_enforces_transaction_uniqueness(
     pledge_engine,
 ):
     with Session(pledge_engine) as session:
-        state = _PledgeState(code="TX")
-        pledgor = _PledgeEntity()
-        recipient = _PledgeEntity()
-        transaction = _PledgeTransaction(
+        state = StubState(code="TX")
+        pledgor = StubUnifiedEntity()
+        recipient = StubUnifiedEntity()
+        transaction = StubUnifiedTransaction(
             amount=Decimal("100.00"),
             transaction_date=date(2024, 1, 1),
         )

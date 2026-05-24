@@ -7,9 +7,14 @@ from datetime import date
 
 import pytest
 from sqlalchemy import create_engine
-from sqlmodel import Field, Session, SQLModel, select
+from sqlmodel import Session, select
 
 from app.core.source_models.notices import UnifiedNotice
+from tests.resolve.conftest import (
+    StubState,
+    StubUnifiedCommittee,
+    create_resolve_tables,
+)
 from app.core.source_models.notices_ingest import build_notice
 
 
@@ -29,22 +34,6 @@ SAMPLE_CVR2 = {
     "notifierStreetCity": "AUSTIN",
     "notifierStreetStateCd": "TX",
 }
-
-
-class _State(SQLModel, table=True):
-    __tablename__ = "states"
-    __table_args__ = {"extend_existing": True}
-
-    id: int | None = Field(default=None, primary_key=True)
-    code: str = Field(max_length=2)
-
-
-class _UnifiedCommittee(SQLModel, table=True):
-    __tablename__ = "unified_committees"
-    __table_args__ = {"extend_existing": True}
-
-    filer_id: str = Field(primary_key=True, max_length=100)
-    name: str | None = None
 
 
 def test_build_notice_maps_cvr2_fields() -> None:
@@ -73,17 +62,16 @@ def test_build_notice_maps_cvr2_fields() -> None:
 @pytest.fixture(name="notice_session")
 def notice_session_fixture():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
-    SQLModel.metadata.create_all(
+    create_resolve_tables(
         engine,
-        tables=[
-            _State.__table__,
-            _UnifiedCommittee.__table__,
-            UnifiedNotice.__table__,
-        ],
+        stub_tables=[StubState.__table__, StubUnifiedCommittee.__table__],
+        app_tables=[UnifiedNotice.__table__],
     )
     with Session(engine) as session:
-        session.add(_State(id=43, code="TX"))
-        session.add(_UnifiedCommittee(filer_id="00012345", name="JANE DOE FOR STATE SENATE"))
+        session.add(StubState(id=43, code="TX"))
+        session.add(
+            StubUnifiedCommittee(filer_id="00012345", name="JANE DOE FOR STATE SENATE")
+        )
         session.commit()
         yield session
 
