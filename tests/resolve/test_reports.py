@@ -9,7 +9,11 @@ import pytest
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 from app.core.source_models.reports import UnifiedReport
-from app.core.source_models.reports_ingest import build_report, link_transactions_to_reports
+from app.core.source_models.reports_ingest import (
+    _parse_date,
+    build_report,
+    link_transactions_to_reports,
+)
 
 
 class _State(SQLModel, table=True):
@@ -93,6 +97,24 @@ def test_build_report_parses_period_dates() -> None:
     assert report.filed_date == date(2024, 1, 15)
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("20240115", date(2024, 1, 15)),
+        ("2024-01-15", date(2024, 1, 15)),
+        ("05/24/2026", date(2026, 5, 24)),
+    ],
+)
+def test_parse_date_formats(raw: str, expected: date) -> None:
+    assert _parse_date(raw) == expected
+
+
+def test_build_report_parses_mmddyyyy_filed_date() -> None:
+    raw = dict(SAMPLE_CVR1, filedDt="05/24/2026")
+    report = build_report(raw, state_id=43, file_origin_id=None)
+    assert report.filed_date == date(2026, 5, 24)
+
+
 def test_build_report_parses_decimal_totals() -> None:
     report = build_report(SAMPLE_CVR1, state_id=43, file_origin_id=None)
 
@@ -168,6 +190,33 @@ def test_link_transactions_to_reports_sets_report_id(reports_session: Session) -
     reports_session.refresh(tx)
 
     assert tx.report_id == report.id
+
+
+def test_link_transactions_to_reports_no_cross_state_collision(
+    reports_session: Session,
+) -> None:
+    """Transactions must not link to a report in a different state."""
+    report = build_report(SAMPLE_CVR1, state_id=43, file_origin_id=None)
+    reports_session.add(report)
+    reports_session.commit()
+    reports_session.refresh(report)
+
+    matching_tx = _UnifiedTransaction(
+        state_id=43, committee_id="00012345", report_ident="12345678901"
+    )
+    wrong_state_tx = _UnifiedTransaction(
+        state_id=44, committee_id="00012345", report_ident="12345678901"
+    )
+    reports_session.add(matching_tx)
+    reports_session.add(wrong_state_tx)
+    reports_session.commit()
+
+    assert link_transactions_to_reports(reports_session) == 1
+
+    reports_session.refresh(matching_tx)
+    reports_session.refresh(wrong_state_tx)
+    assert matching_tx.report_id == report.id
+    assert wrong_state_tx.report_id is None
 
 
 def test_link_transactions_to_reports_skips_already_linked(reports_session: Session) -> None:

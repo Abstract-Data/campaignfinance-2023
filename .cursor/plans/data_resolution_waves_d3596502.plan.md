@@ -4,10 +4,10 @@ overview: Orchestrate the full data-resolution pipeline (Phases 0–4) in 11 seq
 todos:
   - id: wave-0-gate
     content: "Wave 0: Run Phase 0 verification (pytest + full Texas load + report reconciliation); re-dispatch failing 0a–0f tasks only if needed"
-    status: in_progress
+    status: completed
   - id: wave-1-p1-r1
     content: "Wave 1: Dispatch 3 parallel agents — tasks 1a (canonical schema), 1b (resolution schema), 1c (standardizers/stage 1)"
-    status: pending
+    status: completed
   - id: wave-2-p1-r2
     content: "Wave 2: Dispatch 4 parallel agents — tasks 1d (CLI/run), 1e (blocking), 1f (fastpath), 1g (survivorship)"
     status: pending

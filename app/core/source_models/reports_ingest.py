@@ -10,6 +10,9 @@ from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.core.source_models.reports import UnifiedReport
+from app.logger import Logger
+
+_logger = Logger(__name__)
 
 
 def _optional_str(value: object) -> str | None:
@@ -20,7 +23,7 @@ def _optional_str(value: object) -> str | None:
 
 
 def _parse_date(value: object) -> date | None:
-    """Parse a TEC date string (yyyyMMdd) to a Python date."""
+    """Parse a TEC date string (yyyyMMdd, YYYY-MM-DD, or MM/DD/YYYY) to a date."""
     raw = _optional_str(value)
     if raw is None:
         return None
@@ -28,12 +31,16 @@ def _parse_date(value: object) -> date | None:
         return date(int(raw[:4]), int(raw[4:6]), int(raw[6:8]))
     for sep in ("-", "/"):
         parts = raw.split(sep)
-        if len(parts) == 3:
-            try:
-                y, m, d = (int(p) for p in parts)
-                return date(y, m, d)
-            except ValueError:
-                pass
+        if len(parts) != 3:
+            continue
+        try:
+            a, b, c = (int(p) for p in parts)
+        except ValueError:
+            continue
+        if a > 31:
+            return date(a, b, c)
+        if c > 31:
+            return date(c, a, b)
     return None
 
 
@@ -121,15 +128,18 @@ def link_transactions_to_reports(session: Session) -> int:
         SET report_id = (
             SELECT r.id
             FROM unified_reports r
-            WHERE r.report_ident = unified_transactions.report_ident
+            WHERE r.state_id = unified_transactions.state_id
+              AND r.report_ident = unified_transactions.report_ident
             LIMIT 1
         )
         WHERE unified_transactions.report_id IS NULL
           AND unified_transactions.report_ident IS NOT NULL
+          AND unified_transactions.state_id IS NOT NULL
           AND EXISTS (
               SELECT 1
               FROM unified_reports r
-              WHERE r.report_ident = unified_transactions.report_ident
+              WHERE r.state_id = unified_transactions.state_id
+                AND r.report_ident = unified_transactions.report_ident
           )
         """
     )
@@ -213,14 +223,14 @@ def reconcile_report_totals(
             matched += 1
         else:
             mismatched += 1
-            print(
+            _logger.warning(
                 f"[reconcile] report {report_ident!r} (id={report_id}): "
                 f"declared_contrib={declared_contrib} vs summed={summed_contrib}, "
                 f"declared_exp={declared_exp} vs summed={summed_exp} "
                 f"(tolerance={tolerance})"
             )
 
-    print(
+    _logger.info(
         f"[reconcile] checked={checked} matched={matched} "
         f"mismatched={mismatched} skipped={skipped}"
     )

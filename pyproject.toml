@@ -30,6 +30,7 @@ dependencies = [
     "rich>=13.9.4",
     "polars>=1.19.0",
     "typer>=0.25.1",
+    "jellyfish>=1.2.1",
 ]
 
 [project.scripts]
@@ -58,6 +59,7 @@ aligned = "2026-05-23"
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.152.9",
     "pytest>=9.0.3",
 ]
 # Ruff configuration lives in .ruff.toml.
