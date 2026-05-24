@@ -1,0 +1,37 @@
+---
+description: Project-wide context — always loaded. Points to AGENTS.md as the source of truth.
+globs:
+alwaysApply: true
+---
+
+# campaignfinance — Project Rules
+
+`AGENTS.md` (at the repo root) is the single source of truth for standards,
+scope, guardrails, and commands. `CLAUDE.md` and `GEMINI.md` resolve to it.
+Read `AGENTS.md` before making changes.
+
+## Stack
+
+Python 3.12+ · uv · Polars + pandas · SQLModel/SQLAlchemy · Pydantic v2 ·
+Selenium (state-portal scraping) · pytest + Hypothesis · Ruff · PostgreSQL
+(prod) / SQLite (dev).
+
+## Project shape
+
+- `app/abcs/` — abstract base classes (state-agnostic processing interfaces)
+- `app/core/` — unified cross-state models, field library, loaders
+- `app/ingest/` — schema-driven file parsing (`GenericFileReader`)
+- `app/states/` — Texas / Oklahoma implementations
+- `app/funcs/` — shared utilities
+- `scripts/` — loaders, debug, analysis
+- `tests/` — integration · `app/tests/` — unit
+
+## Hard rules
+
+- Parameterized SQLModel/SQLAlchemy queries only — never string-interpolated SQL.
+- Log via the `Logger` class (`app/logger.py`), never `print()` in `app/`.
+- Secrets resolve through the 1Password SDK (`app/op.py`) — never the `op read` CLI.
+- New state code inherits the ABC pattern; field mappings register in the unified field library.
+- Consult Context7 before writing against Polars / SQLModel / Pydantic APIs.
+
+Commands, full guardrails, and the Definition of Done live in `AGENTS.md`.

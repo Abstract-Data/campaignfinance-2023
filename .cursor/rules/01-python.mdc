@@ -1,0 +1,26 @@
+---
+description: Python coding conventions for campaignfinance.
+globs: app/**/*.py,scripts/**/*.py
+alwaysApply: false
+---
+
+# Python Conventions
+
+- **Package manager:** uv. Add deps with `uv add`; never edit `pyproject.toml`
+  dependency lists by hand. Run code with `uv run`.
+- **Lint/format:** Ruff. `uv run ruff check . --fix` and `uv run ruff format .`
+  before every commit.
+- **Typing:** type hints on every public function signature. `X | None`, not
+  `Optional[X]`.
+- **Naming:** `snake_case` functions/vars, `PascalCase` classes,
+  `UPPER_SNAKE_CASE` constants, `_leading_underscore` for private.
+- **Errors:** never `except:` bare — catch the specific exception type. Validate
+  external input with Pydantic before use. Fail fast and loud.
+- **Resources:** context managers for files and DB sessions
+  (`db_manager.get_session()`).
+- **Logging:** the `Logger` class (`app/logger.py`) — supports PaperTrail.
+  No `print()` in `app/`.
+- **Secrets:** `pydantic-settings` + the 1Password SDK (`app/op.py`). Never read
+  `os.environ` directly outside the settings module.
+- **DB:** SQLModel/SQLAlchemy parameterized queries only. Cache addresses,
+  committees, and entities to avoid duplicate inserts.

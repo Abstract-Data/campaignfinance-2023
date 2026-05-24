@@ -1,0 +1,35 @@
+# Ruff configuration for campaignfinance.
+# Ruff is the linter and formatter — see AGENTS.md.
+
+target-version = "py312"
+line-length = 100
+
+extend-exclude = [
+    ".venv",
+    "tmp",
+    "campaignfinance.egg-info",
+    "maintenance",
+]
+
+[lint]
+# Conservative starting set: pyflakes, pycodestyle errors/warnings, isort.
+# This is intentionally low-noise so CI is green on the existing codebase.
+# Tighten over time — recommended next additions: "B", "C4", "UP", "N".
+select = ["E", "F", "I", "W"]
+ignore = [
+    "E501",  # line length handled by the formatter
+]
+
+[lint.per-file-ignores]
+# Tests and scripts may use print() and looser patterns.
+"tests/**" = ["N802", "N803"]
+"app/tests/**" = ["N802", "N803"]
+"scripts/**" = ["N802", "N803"]
+"**/__init__.py" = ["F401"]
+
+[lint.isort]
+known-first-party = ["app"]
+
+[format]
+quote-style = "double"
+indent-style = "space"

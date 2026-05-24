@@ -1,0 +1,56 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git reset --hard*)",
+      "Read(./.env)",
+      "Read(./**/.env)"
+    ],
+    "allow": [
+      "Bash(uv run pytest:*)",
+      "Bash(uv run ruff:*)",
+      "Bash(uv run python:*)",
+      "Bash(uv sync:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/block-dangerous.sh" },
+          { "type": "command", "command": "bash .claude/hooks/block-op-read.sh" },
+          { "type": "command", "command": "bash .claude/hooks/pre-commit.sh" }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/block-env-writes.sh" },
+          { "type": "command", "command": "bash .claude/hooks/sql-injection-check.sh" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/domain-purity-check.sh" },
+          { "type": "command", "command": "bash .claude/hooks/router-boundary-check.sh" },
+          { "type": "command", "command": "bash .claude/hooks/no-print-check.sh" },
+          { "type": "command", "command": "bash .claude/hooks/env-leak-check.sh" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/verify-completion.sh" }
+        ]
+      }
+    ]
+  }
+}

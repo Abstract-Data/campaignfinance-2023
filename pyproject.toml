@@ -1,7 +1,7 @@
 [project]
 name = "campaignfinance"
 version = "0.1.0"
-description = "Add your description here"
+description = "Aggregates, normalizes, and analyzes US state campaign-finance data behind a unified cross-state data model."
 readme = "README.md"
 requires-python = ">=3.12.8"
 dependencies = [
@@ -33,3 +33,10 @@ dependencies = [
 
 [tool.uv.workspace]
 members = ["packages/*"]
+
+[tool.abstract-data]
+# Used by the project-alignment skill to detect project type on future runs.
+project_type = "pipeline"
+template_version = "1.8.8"
+aligned = "2026-05-23"
+# Ruff configuration lives in .ruff.toml.

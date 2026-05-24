@@ -1,0 +1,22 @@
+---
+description: Test conventions for campaignfinance.
+globs: tests/**,app/tests/**,**/test_*.py
+alwaysApply: false
+---
+
+# Testing Conventions
+
+- **Runner:** pytest (+ Hypothesis for property-based tests). `uv run pytest`.
+- **Layout:** unit tests in `app/tests/`, integration tests in `tests/`.
+  Discovery: files `test_*.py`, classes `Test*`, functions `test_*`.
+- **Fixtures:** shared setup belongs in `tests/conftest.py` — reuse it, don't
+  re-create sessions per test.
+- **Property-based:** use `@given` for validators and the file reader. Run with
+  `--hypothesis-show-statistics` when tuning strategies.
+- **Integration:** exercise the real parsing path against fixture files — do not
+  mock `GenericFileReader` or the validators.
+- **Coverage:** new features must ship with tests; CI fails under the configured
+  coverage threshold.
+- **Before commit:** `uv run pytest` must pass — all tests, no exceptions.
+- Tests may write under `tests/` and `app/tests/` only; never modify `app/`
+  source to make a test pass.

@@ -1,0 +1,32 @@
+name: CI Report
+
+on:
+  workflow_call:
+    inputs:
+      quality_result:
+        type: string
+        required: true
+      tests_result:
+        type: string
+        required: true
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Post sticky PR comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: ci-report
+          message: |
+            ## CI Results
+
+            | Check | Result |
+            |-------|--------|
+            | Quality — ruff lint + format | `${{ inputs.quality_result }}` |
+            | Tests — pytest + coverage | `${{ inputs.tests_result }}` |
+
+            Coverage detail is reported to Codecov. See the workflow logs for
+            per-job output.
