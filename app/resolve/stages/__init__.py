@@ -16,7 +16,10 @@ from typing import Any
 from sqlmodel import Session
 
 from app.resolve.blocking import run_blocking_stage
+from app.resolve.stages.classify import run_classify_stage
+from app.resolve.stages.cluster import run_cluster_stage
 from app.resolve.stages.fastpath import run_fastpath_stage
+from app.resolve.stages.score import run_score_stage
 from app.resolve.stages.survivorship import run_survivorship_stage
 from app.resolve.standardize.stage1 import build_resolution_input
 
@@ -43,7 +46,10 @@ def stage1_build_resolution_input(
 
 __all__ = [
     "run_blocking_stage",
+    "run_classify_stage",
+    "run_cluster_stage",
     "run_fastpath_stage",
+    "run_score_stage",
     "run_survivorship_stage",
     "stage1_build_resolution_input",
 ]

@@ -31,6 +31,8 @@ dependencies = [
     "polars>=1.19.0",
     "typer>=0.25.1",
     "jellyfish>=1.2.1",
+    "splink>=4.0.16",
+    "duckdb>=1.5.3",
 ]
 
 [project.scripts]

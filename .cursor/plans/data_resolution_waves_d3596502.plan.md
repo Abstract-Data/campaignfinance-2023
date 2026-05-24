@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: wave-4-p2-r1
     content: "Wave 4: Dispatch 4 parallel agents — tasks 2a (Splink), 2b (classify), 2c (cluster), 2e (golden set)"
-    status: in_progress
+    status: completed
   - id: wave-5-p2-r2
     content: "Wave 5: Serial — task 2d updates survivorship for probabilistic clusters"
     status: pending
