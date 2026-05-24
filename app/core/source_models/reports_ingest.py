@@ -7,7 +7,7 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import text
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.core.source_models.reports import UnifiedReport
 
@@ -136,3 +136,97 @@ def link_transactions_to_reports(session: Session) -> int:
     result = session.execute(stmt)
     session.commit()
     return result.rowcount
+
+
+def reconcile_report_totals(
+    session: Session,
+    *,
+    tolerance: Decimal = Decimal("1.00"),
+    sample_size: int = 100,
+) -> dict[str, int]:
+    """Compare declared report totals to summed linked transactions.
+
+    Samples up to *sample_size* reports that have linked transactions and logs
+    mismatches beyond *tolerance*. This is a data-quality signal, not a hard gate.
+
+    Returns
+    -------
+    dict[str, int]
+        Summary counts: ``checked``, ``matched``, ``mismatched``, ``skipped``.
+    """
+    from app.core.unified_sqlmodels import TransactionType, UnifiedTransaction
+
+    stmt = text(
+        """
+        SELECT r.id, r.report_ident, r.total_contributions, r.total_expenditures
+        FROM unified_reports r
+        WHERE EXISTS (
+            SELECT 1 FROM unified_transactions t
+            WHERE t.report_id = r.id
+        )
+        LIMIT :limit
+        """
+    )
+    rows = session.execute(stmt, {"limit": sample_size}).fetchall()
+
+    checked = 0
+    matched = 0
+    mismatched = 0
+    skipped = 0
+
+    for row in rows:
+        report_id, report_ident, declared_contrib, declared_exp = row
+        checked += 1
+
+        if declared_contrib is None and declared_exp is None:
+            skipped += 1
+            continue
+
+        txns = session.exec(
+            select(UnifiedTransaction).where(UnifiedTransaction.report_id == report_id)
+        ).all()
+
+        if not txns:
+            skipped += 1
+            continue
+
+        summed_contrib = sum(
+            (t.amount or Decimal(0))
+            for t in txns
+            if t.transaction_type == TransactionType.CONTRIBUTION
+        )
+        summed_exp = sum(
+            (t.amount or Decimal(0))
+            for t in txns
+            if t.transaction_type == TransactionType.EXPENDITURE
+        )
+
+        def _within(declared: Decimal | None, summed: Decimal) -> bool:
+            if declared is None:
+                return True
+            return abs(summed - declared) <= tolerance
+
+        contrib_ok = _within(declared_contrib, summed_contrib)
+        exp_ok = _within(declared_exp, summed_exp)
+
+        if contrib_ok and exp_ok:
+            matched += 1
+        else:
+            mismatched += 1
+            print(
+                f"[reconcile] report {report_ident!r} (id={report_id}): "
+                f"declared_contrib={declared_contrib} vs summed={summed_contrib}, "
+                f"declared_exp={declared_exp} vs summed={summed_exp} "
+                f"(tolerance={tolerance})"
+            )
+
+    print(
+        f"[reconcile] checked={checked} matched={matched} "
+        f"mismatched={mismatched} skipped={skipped}"
+    )
+    return {
+        "checked": checked,
+        "matched": matched,
+        "mismatched": mismatched,
+        "skipped": skipped,
+    }

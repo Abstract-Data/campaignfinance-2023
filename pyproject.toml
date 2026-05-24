@@ -55,4 +55,9 @@ members = ["packages/*"]
 project_type = "pipeline"
 template_version = "1.8.8"
 aligned = "2026-05-23"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
 # Ruff configuration lives in .ruff.toml.

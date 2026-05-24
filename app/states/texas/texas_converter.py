@@ -13,6 +13,7 @@ from app.logger import Logger
 logger = Logger(__name__)
 
 _ENCODINGS = ("utf-8", "cp1252", "latin-1")
+_METADATA_STEM_PREFIXES = ("CFS-Codes", "CFS-ReadMe")
 
 
 @dataclass
@@ -26,16 +27,22 @@ class ConvertResult:
         return not self.failed
 
 
+def _is_metadata_file(path: Path) -> bool:
+    return path.stem.startswith(_METADATA_STEM_PREFIXES)
+
+
 def _read_delimited_file(path: Path) -> pl.DataFrame:
+    read_kwargs: dict[str, object] = {
+        "infer_schema_length": 0,
+        "try_parse_dates": False,
+    }
+    if path.suffix.lower() == ".txt":
+        read_kwargs["truncate_ragged_lines"] = True
+
     last_error: Exception | None = None
     for encoding in _ENCODINGS:
         try:
-            return pl.read_csv(
-                path,
-                encoding=encoding,
-                infer_schema_length=10_000,
-                try_parse_dates=False,
-            )
+            return pl.read_csv(path, encoding=encoding, **read_kwargs)
         except Exception as exc:
             last_error = exc
     if last_error is not None:
@@ -58,6 +65,12 @@ def convert_folder(
     sources = sorted({*folder.glob("*.csv"), *folder.glob("*.txt")})
 
     for source_path in sources:
+        if _is_metadata_file(source_path):
+            skipped += 1
+            if on_progress is not None:
+                on_progress(source_path)
+            continue
+
         parquet_path = source_path.with_suffix(".parquet")
         try:
             if parquet_path.exists() and not overwrite:

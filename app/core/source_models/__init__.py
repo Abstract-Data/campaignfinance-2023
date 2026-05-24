@@ -29,7 +29,11 @@ from app.core.source_models.notices_ingest import build_notice
 from app.core.source_models.pledges import UnifiedPledge
 from app.core.source_models.pledges_ingest import build_pledge
 from app.core.source_models.reports import UnifiedReport
-from app.core.source_models.reports_ingest import build_report, link_transactions_to_reports
+from app.core.source_models.reports_ingest import (
+    build_report,
+    link_transactions_to_reports,
+    reconcile_report_totals,
+)
 from app.core.source_models.spac import SpacLink
 from app.core.source_models.spac_ingest import build_spac_link
 
@@ -65,5 +69,6 @@ __all__ = [
     "build_report",
     "build_spac_link",
     "link_transactions_to_reports",
+    "reconcile_report_totals",
     "RECORD_TYPE_BUILDERS",
 ]

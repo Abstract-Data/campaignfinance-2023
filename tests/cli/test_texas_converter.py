@@ -81,3 +81,38 @@ def test_on_progress_called_once_per_file(tmp_path: Path) -> None:
 
     assert len(seen) == 2
     assert {p.name for p in seen} == {"a.csv", "b.txt"}
+
+
+def test_metadata_txt_files_are_skipped_not_failed(tmp_path: Path) -> None:
+    (tmp_path / "CFS-ReadMe_20260524.txt").write_text(
+        "not,a,tabular,file\nextra,field\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "good.csv").write_text("name,value\nAlice,1\n", encoding="utf-8")
+
+    result = convert_folder(tmp_path)
+
+    assert result.converted == 1
+    assert result.skipped == 1
+    assert result.failed == []
+    assert result.ok is True
+    assert not (tmp_path / "CFS-ReadMe_20260524.parquet").exists()
+    assert (tmp_path / "good.parquet").exists()
+
+
+def test_mixed_type_columns_read_as_strings(tmp_path: Path) -> None:
+    csv_path = tmp_path / "cand.csv"
+    csv_path.write_text(
+        "candidateHoldOfficePlace,contributorStreetPostalCode\n"
+        "1,78701\n"
+        "Dallas,34682-0601\n",
+        encoding="utf-8",
+    )
+
+    result = convert_folder(tmp_path)
+
+    assert result.ok is True
+    frame = pl.read_parquet(tmp_path / "cand.parquet")
+    assert frame["candidateHoldOfficePlace"].dtype == pl.String
+    assert frame["contributorStreetPostalCode"].dtype == pl.String
+    assert frame["candidateHoldOfficePlace"].to_list() == ["1", "Dallas"]

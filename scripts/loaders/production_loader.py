@@ -23,6 +23,7 @@ from typing import Any
 # Allow ``uv run python scripts/loaders/production_loader.py`` from project root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.loaders.file_discovery import discover_state_files
 from scripts.loaders.loader_config import (
     STATE_GLOB_CONFIGS,
     LoaderConfig,
@@ -32,16 +33,32 @@ from scripts.loaders.loader_config import (
 # ---------------------------------------------------------------------------
 # Transaction record types handled by the existing unified_sql_processor path
 # ---------------------------------------------------------------------------
-TRANSACTION_RECORD_TYPES = frozenset({
-    "RCPT", "EXPN", "LOAN", "PLDG", "DEBT", "CRED", "TRVL", "ASSET", "CAND",
-})
+TRANSACTION_RECORD_TYPES = frozenset(
+    {
+        "RCPT",
+        "EXPN",
+        "LOAN",
+        "PLDG",
+        "DEBT",
+        "CRED",
+        "TRVL",
+        "ASSET",
+        "CAND",
+    }
+)
+
+_STATE_CODES: dict[str, tuple[str, str]] = {
+    "texas": ("TX", "Texas"),
+    "oklahoma": ("OK", "Oklahoma"),
+}
 
 
 def _get_session(db_url: str | None = None):
-    """Create a SQLModel session.  Lazy-imports to avoid import-time DB init."""
-    from sqlmodel import Session, create_engine
+    """Create a SQLModel session with all source + unified tables registered."""
+    from sqlmodel import Session, SQLModel, create_engine
 
-    from app.core.source_models import (  # noqa: F401 — registers tables
+    from app.core import unified_sqlmodels  # noqa: F401 — registers unified_* tables
+    from app.core.source_models import (  # noqa: F401 — registers Phase-0 tables
         CommitteePurpose,
         ExpenditureCategory,
         SpacLink,
@@ -49,7 +66,6 @@ def _get_session(db_url: str | None = None):
         UnifiedPledge,
         UnifiedReport,
     )
-    from sqlmodel import SQLModel
 
     if db_url is None:
         db_url = "sqlite:///campaignfinance_dev.db"
@@ -59,36 +75,118 @@ def _get_session(db_url: str | None = None):
     return Session(engine)
 
 
+def _ensure_state(session: Any, state_name: str) -> Any:
+    """Return the ``states`` row for *state_name*, creating it if needed."""
+    from sqlmodel import select
+
+    from app.core.unified_sqlmodels import State
+
+    code, name = _STATE_CODES.get(state_name.lower(), (state_name[:2].upper(), state_name.title()))
+    existing = session.exec(select(State).where(State.code == code)).first()
+    if existing:
+        return existing
+
+    row = State(code=code, name=name)
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def _file_origin_id(state_id: int, path: Path) -> str:
+    from app.core.unified_sqlmodels import FileOrigin
+
+    return FileOrigin.build_key(state_id, path.name)
+
+
+def _ensure_file_origin(session: Any, state_id: int, path: Path) -> str:
+    from sqlmodel import select
+
+    from app.core.unified_sqlmodels import FileOrigin
+
+    origin_id = _file_origin_id(state_id, path)
+    existing = session.get(FileOrigin, origin_id)
+    if existing:
+        return origin_id
+
+    session.add(FileOrigin(id=origin_id, state_id=state_id, filename=path.name))
+    session.flush()
+    return origin_id
+
+
+def _persist_transaction(
+    session: Any,
+    raw: dict[str, Any],
+    *,
+    state: str,
+    state_id: int,
+    state_code: str,
+    file_origin_id: str | None,
+) -> Any:
+    """Process one raw row through ``unified_sql_processor`` and persist it."""
+    from sqlmodel import select
+
+    from app.core.unified_sqlmodels import UnifiedCommittee, unified_sql_processor
+
+    transaction = unified_sql_processor.process_record(
+        raw,
+        state,
+        state_id=state_id,
+        state_code=state_code,
+    )
+    if file_origin_id:
+        transaction.file_origin_id = file_origin_id
+
+    if transaction.committee_id:
+        existing = session.exec(
+            select(UnifiedCommittee).where(
+                UnifiedCommittee.filer_id == transaction.committee_id
+            )
+        ).first()
+        if existing:
+            transaction.committee = existing
+        elif transaction.committee:
+            session.add(transaction.committee)
+
+    for tx_person in transaction.persons:
+        if tx_person.person and tx_person.person.address:
+            session.add(tx_person.person.address)
+
+    session.add(transaction)
+    session.flush()
+    return transaction
+
+
 def _dispatch_source_record(
     raw: dict[str, Any],
     record_type: str,
     state_id: int,
     session: Any,
+    *,
+    file_origin_id: str | None = None,
 ) -> bool:
-    """Route a raw source record to the appropriate ingest builder.
-
-    Returns
-    -------
-    bool
-        ``True`` if the record was handled; ``False`` if unknown type.
-    """
+    """Route a raw source record to the appropriate ingest builder."""
     from app.core.source_models import RECORD_TYPE_BUILDERS
 
     builder = RECORD_TYPE_BUILDERS.get(record_type)
     if builder is None:
         return False
 
-    obj = builder(raw, state_id=state_id)
+    if record_type == "CVR1":
+        obj = builder(raw, state_id=state_id, file_origin_id=file_origin_id)
+    else:
+        obj = builder(raw, state_id=state_id)
     session.add(obj)
     return True
 
 
 def _link_after_load(session: Any) -> int:
     """Post-load: link transactions to reports and log results."""
-    from app.core.source_models import link_transactions_to_reports
+    from app.core.source_models import link_transactions_to_reports, reconcile_report_totals
 
     linked = link_transactions_to_reports(session)
     print(f"[loader] linked {linked} transaction(s) to report(s)")
+    reconcile_report_totals(session)
     return linked
 
 
@@ -97,37 +195,20 @@ def discover_and_load(
     config: LoaderConfig,
     *,
     dry_run: bool = False,
-    state_id: int = 1,
+    state_id: int | None = None,
     db_url: str | None = None,
 ) -> dict[str, int]:
-    """Discover all files for *state* and load them into the database.
-
-    Parameters
-    ----------
-    state:
-        Lower-case state name (must be a key in ``STATE_GLOB_CONFIGS``).
-    config:
-        Loader configuration (batch size, limits, etc.).
-    dry_run:
-        If ``True``, discover files but skip actual DB writes.
-    state_id:
-        FK for the state row in ``states`` (default 1 for Texas).
-    db_url:
-        SQLAlchemy database URL.  Defaults to SQLite dev database.
-
-    Returns
-    -------
-    dict[str, int]
-        Counts of discovered, loaded, and skipped records.
-    """
+    """Discover all files for *state* and load them into the database."""
     glob_cfg = STATE_GLOB_CONFIGS.get(state)
     if glob_cfg is None:
         raise ValueError(
-            f"No glob config for state {state!r}. "
-            f"Available: {', '.join(STATE_GLOB_CONFIGS)}"
+            f"No glob config for state {state!r}. Available: {', '.join(STATE_GLOB_CONFIGS)}"
         )
 
-    discovered = list(glob_cfg.discover())
+    discovered = [
+        (item.path, item.record_type)
+        for item in discover_state_files(state, base_dir=glob_cfg.base_dir)
+    ]
     print(f"[loader] discovered {len(discovered)} file(s) for state={state!r}")
 
     if dry_run:
@@ -137,15 +218,37 @@ def discover_and_load(
 
     loaded = 0
     skipped = 0
+    records_seen = 0
 
     session = _get_session(db_url)
     try:
+        state_row = _ensure_state(session, state)
+        resolved_state_id = state_id if state_id is not None else state_row.id
+        state_code = state_row.code
+
         for path, record_type in discovered:
+            if config.max_records and records_seen >= config.max_records:
+                break
             try:
-                n = _load_file(path, record_type, config, state_id=state_id, session=session)
+                n = _load_file(
+                    path,
+                    record_type,
+                    config,
+                    state=state,
+                    state_id=resolved_state_id,
+                    state_code=state_code,
+                    session=session,
+                    max_remaining=(
+                        None
+                        if config.max_records is None
+                        else config.max_records - records_seen
+                    ),
+                )
                 loaded += n
+                records_seen += n
             except Exception as exc:  # noqa: BLE001
                 print(f"[loader] ERROR loading {path}: {exc}", file=sys.stderr)
+                session.rollback()
                 skipped += 1
                 if not config.retry_failed:
                     raise
@@ -162,13 +265,13 @@ def _load_file(
     record_type: str | None,
     config: LoaderConfig,
     *,
+    state: str,
     state_id: int,
+    state_code: str,
     session: Any,
+    max_remaining: int | None = None,
 ) -> int:
-    """Load a single parquet/CSV file, routing by record type.
-
-    Returns the number of rows loaded.
-    """
+    """Load a single parquet/CSV file, routing by record type."""
     import polars as pl
 
     print(f"[loader] loading {path.name} (record_type={record_type!r}) ...")
@@ -181,32 +284,67 @@ def _load_file(
         print(f"[loader] skipping unsupported file type: {path.suffix}", file=sys.stderr)
         return 0
 
+    file_origin_id = _ensure_file_origin(session, state_id, path)
     rows_loaded = 0
     effective_type = record_type
+    batch_count = 0
 
     for row_dict in df.to_dicts():
-        # Derive record type from row if not set at file level
+        if max_remaining is not None and rows_loaded >= max_remaining:
+            break
+
         if effective_type is None:
             effective_type = str(row_dict.get("recordType", "")).strip().upper() or None
 
         if effective_type in TRANSACTION_RECORD_TYPES:
-            # Transaction path: handled by existing unified_sql_processor
-            # PLDG also needs a pledge detail row (handled in unified_sql_processor)
-            print(
-                f"[loader] {effective_type} row → transaction processor (not implemented in this loader)",
-                file=sys.stderr,
+            txn = _persist_transaction(
+                session,
+                row_dict,
+                state=state,
+                state_id=state_id,
+                state_code=state_code,
+                file_origin_id=file_origin_id,
             )
+            rows_loaded += 1
+
+            if effective_type == "PLDG":
+                from app.core.source_models.pledges_ingest import build_pledge
+
+                session.add(
+                    build_pledge(
+                        txn,
+                        pledgor_entity=None,
+                        recipient_entity=None,
+                        raw=row_dict,
+                        state_id=state_id,
+                    )
+                )
+
+            batch_count += 1
+            if batch_count >= config.commit_frequency:
+                session.commit()
+                batch_count = 0
             continue
 
-        if effective_type and _dispatch_source_record(row_dict, effective_type, state_id, session):
+        if effective_type and _dispatch_source_record(
+            row_dict,
+            effective_type,
+            state_id,
+            session,
+            file_origin_id=file_origin_id,
+        ):
             rows_loaded += 1
+            batch_count += 1
+            if batch_count >= config.commit_frequency:
+                session.commit()
+                batch_count = 0
         else:
             print(
                 f"[loader] unrecognized record_type={effective_type!r} in {path.name}",
                 file=sys.stderr,
             )
 
-    if rows_loaded:
+    if batch_count:
         session.commit()
 
     return rows_loaded
