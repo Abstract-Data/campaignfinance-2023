@@ -1,0 +1,199 @@
+"""ResolutionRun orchestrator and Stage protocol.
+
+``ResolutionRun`` manages the full ``match_run`` lifecycle:
+  running → completed
+  running → failed
+
+It calls each stage in order, merges their count dicts, and guarantees
+that a failed run drops its staging tables so no partial canonical write
+survives.
+
+``Stage`` is the protocol every pipeline stage callable must satisfy.
+task-1z injects the concrete stage list; this module defines the contract.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime, timezone
+from typing import Any, Protocol, runtime_checkable
+
+from sqlmodel import Session
+
+from app.resolve.models.resolution import MatchRun, PassType, RunStatus
+
+logger = logging.getLogger(__name__)
+
+_ENGINE_VERSION = "1.0.0"
+
+
+@runtime_checkable
+class Stage(Protocol):
+    """Protocol for a resolution pipeline stage.
+
+    A stage is any callable with signature
+    ``(session, run_id, config) -> dict``.  The dict is a count snapshot
+    that is merged (``dict.update``) into the run's running totals.  An
+    empty dict is valid — the stage simply produces no counts.
+    """
+
+    def __call__(
+        self,
+        session: Session,
+        run_id: int,
+        config: dict[str, Any],
+    ) -> dict[str, Any]: ...
+
+
+class ResolutionRun:
+    """Orchestrates a single resolution pipeline execution.
+
+    Parameters
+    ----------
+    state_code:
+        Two-letter state code (e.g. ``"TX"``).
+    config:
+        Pipeline configuration dict.  Snapshotted verbatim into
+        ``match_run.config_json`` so the run is fully reproducible.
+    """
+
+    def __init__(self, state_code: str, config: dict[str, Any]) -> None:
+        self.state_code = state_code
+        self.config = config
+        self._run: MatchRun | None = None
+
+    @property
+    def run_id(self) -> int | None:
+        """The ``match_run.id`` after ``start()`` is called, else ``None``."""
+        if self._run is None:
+            return None
+        return self._run.id
+
+    def start(self, session: Session) -> MatchRun:
+        """Insert a ``match_run`` row with ``status="running"`` and return it.
+
+        ``config_json`` is a deterministic JSON snapshot of ``self.config``
+        (keys sorted), ensuring identical configs produce identical JSON.
+        """
+        run = MatchRun(
+            state_code=self.state_code,
+            pass_type=PassType.entity,
+            engine_version=_ENGINE_VERSION,
+            config_json=json.dumps(self.config, sort_keys=True),
+            started_at=datetime.now(timezone.utc),
+            status=RunStatus.running,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+        self._run = run
+        logger.info("Started match_run id=%d state=%s", run.id, self.state_code)
+        return run
+
+    def finish(self, session: Session, counts: dict[str, Any]) -> None:
+        """Mark the run ``completed``, set ``finished_at``, and write counts.
+
+        Only counter columns present in *counts* are updated; missing keys
+        leave the existing column values intact.
+
+        Raises
+        ------
+        RuntimeError
+            If ``start()`` has not been called.
+        """
+        if self._run is None:
+            raise RuntimeError("ResolutionRun.start() must be called before finish()")
+
+        run = session.get(MatchRun, self._run.id)
+        if run is None:
+            raise RuntimeError(f"MatchRun id={self._run.id} not found")
+
+        run.status = RunStatus.completed
+        run.finished_at = datetime.now(timezone.utc)
+
+        _COUNTER_COLS = (
+            "records_in",
+            "pairs_compared",
+            "auto_merges",
+            "queued",
+            "rejected",
+            "canonical_out",
+        )
+        for col in _COUNTER_COLS:
+            if col in counts:
+                setattr(run, col, int(counts[col]))
+
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+        self._run = run
+        logger.info("Completed match_run id=%d", run.id)
+
+    def fail(self, session: Session, error: str) -> None:
+        """Mark the run ``failed``, set ``finished_at``, and drop staging tables.
+
+        Ensures no partial canonical write survives a failed run.
+
+        Raises
+        ------
+        RuntimeError
+            If ``start()`` has not been called.
+        """
+        if self._run is None:
+            raise RuntimeError("ResolutionRun.start() must be called before fail()")
+
+        run = session.get(MatchRun, self._run.id)
+        if run is None:
+            raise RuntimeError(f"MatchRun id={self._run.id} not found")
+
+        run.status = RunStatus.failed
+        run.finished_at = datetime.now(timezone.utc)
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+        self._run = run
+
+        try:
+            from app.resolve.staging import drop_run_staging
+
+            drop_run_staging(session, run.id)
+        except Exception:
+            logger.exception("Failed to drop staging tables for run id=%d", run.id)
+
+        logger.error("Failed match_run id=%d: %s", run.id, error)
+
+    def run(
+        self,
+        session: Session,
+        stages: list[Stage],
+    ) -> MatchRun:
+        """Execute the pipeline: start, call each stage, then finish or fail.
+
+        Each stage receives ``(session, run_id, config)`` and returns a
+        ``dict`` of counts.  Dicts are merged left-to-right so later stages
+        can override earlier ones for the same counter key.
+
+        On any exception the run is marked ``failed`` and the exception is
+        re-raised unchanged.  The stage list is injected by ``task-1z``; an
+        empty list runs a no-op pipeline and completes cleanly.
+
+        Returns
+        -------
+        MatchRun
+            The completed (or failed, if post-failure return) run row.
+        """
+        self.start(session)
+        merged_counts: dict[str, Any] = {}
+
+        try:
+            for stage in stages:
+                stage_counts = stage(session, self._run.id, self.config)
+                if stage_counts:
+                    merged_counts.update(stage_counts)
+        except Exception as exc:
+            self.fail(session, str(exc))
+            raise
+
+        self.finish(session, merged_counts)
+        return self._run
