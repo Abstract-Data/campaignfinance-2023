@@ -44,6 +44,8 @@ uv run cf --version
 uv run python -m app.cli --help
 ```
 
+Both `uv run cf` and `uv run python -m app.cli` work after `uv sync`; you do not need `PYTHONPATH=.:app`.
+
 ## Tests
 
 ```bash
