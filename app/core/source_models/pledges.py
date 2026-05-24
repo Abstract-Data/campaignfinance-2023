@@ -28,8 +28,8 @@ class UnifiedPledge(SQLModel, table=True):
             unique=True,
         )
     )
-    pledgor_entity_id: int = Field(foreign_key="unified_entities.id")
-    recipient_entity_id: int = Field(foreign_key="unified_entities.id")
+    pledgor_entity_id: int | None = Field(default=None, foreign_key="unified_entities.id")
+    recipient_entity_id: int | None = Field(default=None, foreign_key="unified_entities.id")
     state_id: int | None = Field(default=None, foreign_key="states.id")
     amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(15, 2)))
     pledge_date: date | None = Field(default=None, index=True)

@@ -124,9 +124,7 @@ def _persist_transaction(
     file_origin_id: str | None,
 ) -> Any:
     """Process one raw row through ``unified_sql_processor`` and persist it."""
-    from sqlmodel import select
-
-    from app.core.unified_sqlmodels import UnifiedCommittee, unified_sql_processor
+    from app.core.unified_sqlmodels import unified_sql_processor
 
     transaction = unified_sql_processor.process_record(
         raw,
@@ -134,23 +132,33 @@ def _persist_transaction(
         state_id=state_id,
         state_code=state_code,
     )
+
+    committee_filer = transaction.committee_id
+    if not committee_filer:
+        filer = raw.get("filerIdent")
+        if filer is not None:
+            committee_filer = str(filer).strip() or None
+
+    report_ident = transaction.report_ident
+    if not report_ident:
+        report_info = raw.get("reportInfoIdent")
+        if report_info is not None:
+            report_ident = str(report_info).strip() or None
+
+    transaction.committee = None
+    transaction.campaign = None
+    transaction.contribution = None
+    transaction.loan = None
+    transaction.debt = None
+    transaction.credit = None
+    transaction.travel = None
+    transaction.asset = None
+    transaction.persons = []
+    transaction.committee_id = committee_filer
+    transaction.report_ident = report_ident
+
     if file_origin_id:
         transaction.file_origin_id = file_origin_id
-
-    if transaction.committee_id:
-        existing = session.exec(
-            select(UnifiedCommittee).where(
-                UnifiedCommittee.filer_id == transaction.committee_id
-            )
-        ).first()
-        if existing:
-            transaction.committee = existing
-        elif transaction.committee:
-            session.add(transaction.committee)
-
-    for tx_person in transaction.persons:
-        if tx_person.person and tx_person.person.address:
-            session.add(tx_person.person.address)
 
     session.add(transaction)
     session.flush()
@@ -218,7 +226,6 @@ def discover_and_load(
 
     loaded = 0
     skipped = 0
-    records_seen = 0
 
     session = _get_session(db_url)
     try:
@@ -227,8 +234,6 @@ def discover_and_load(
         state_code = state_row.code
 
         for path, record_type in discovered:
-            if config.max_records and records_seen >= config.max_records:
-                break
             try:
                 n = _load_file(
                     path,
@@ -238,14 +243,11 @@ def discover_and_load(
                     state_id=resolved_state_id,
                     state_code=state_code,
                     session=session,
-                    max_remaining=(
-                        None
-                        if config.max_records is None
-                        else config.max_records - records_seen
-                    ),
+                    # Preset max_records caps rows per file so subset loads still
+                    # touch every record type (assets_* no longer exhausts the budget).
+                    max_remaining=config.max_records,
                 )
                 loaded += n
-                records_seen += n
             except Exception as exc:  # noqa: BLE001
                 print(f"[loader] ERROR loading {path}: {exc}", file=sys.stderr)
                 session.rollback()
