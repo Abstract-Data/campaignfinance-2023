@@ -38,3 +38,11 @@ TEXAS_CONFIGURATION.CATEGORY_TYPES = CategoryTypes(
 
 TexasDownloader = partial(TECDownloader, config=TEXAS_CONFIGURATION)
 TexasCategory = partial(StateCategoryClass, config=TEXAS_CONFIGURATION)
+
+__all__ = [
+    "DownloadError",
+    "TECDownloader",
+    "TEXAS_CONFIGURATION",
+    "TexasCategory",
+    "TexasDownloader",
+]

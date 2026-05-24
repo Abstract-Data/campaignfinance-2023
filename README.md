@@ -10,6 +10,8 @@ Install dependencies with [uv](https://docs.astral.sh/uv/):
 uv sync
 ```
 
+`uv sync` installs the `cf` console script and project package. `probablepeople` pulls in `doublemetaphone`; the lockfile pins **1.2** (prebuilt wheels for Python 3.12) via `[tool.uv] override-dependencies` because 1.1 only ships an sdist that fails to compile on 3.12.
+
 ## State Data CLI (`cf`)
 
 The `cf` command prepares Texas campaign finance data for the resolution pipeline.

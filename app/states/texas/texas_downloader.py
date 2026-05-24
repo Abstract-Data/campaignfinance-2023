@@ -28,7 +28,8 @@ class DownloadError(Exception):
 
 
 def _is_safe_zip_member(member_name: str, destination: Path) -> bool:
-    member_path = Path(member_name)
+    normalized = member_name.replace("\\", "/")
+    member_path = Path(normalized)
     if member_path.is_absolute() or ".." in member_path.parts:
         return False
     resolved_target = (destination / member_path).resolve()
@@ -63,7 +64,7 @@ class TECDownloader(FileDownloaderABC):
         tmp.mkdir(parents=True, exist_ok=True)
 
         if overwrite:
-            for file_extension in ("*.csv", "*.txt"):
+            for file_extension in ("*.csv", "*.txt", "*.zip", "*.crdownload"):
                 for file in tmp.glob(file_extension):
                     logger.info(f"Removing {file}")
                     file.unlink()
@@ -121,23 +122,58 @@ class TECDownloader(FileDownloaderABC):
         return tmp
 
     def _wait_for_download(self, tmp: Path) -> None:
-        in_progress = False
+        saw_in_progress = False
         deadline = time.monotonic() + _DOWNLOAD_TIMEOUT_SECONDS
-        while True:
-            dl_files = list(tmp.glob("*.crdownload"))
-            if dl_files:
-                if not in_progress:
-                    logger.info(f"File {Path(dl_files[0]).stem} download in progress")
-                    in_progress = True
-                if time.monotonic() >= deadline:
-                    msg = f"Download timed out after {_DOWNLOAD_TIMEOUT_SECONDS} seconds"
-                    raise DownloadError(msg)
+
+        while time.monotonic() < deadline:
+            crdownloads = list(tmp.glob("*.crdownload"))
+            zip_files = list(tmp.glob("*.zip"))
+
+            if crdownloads:
+                if not saw_in_progress:
+                    logger.info(f"File {Path(crdownloads[0]).stem} download in progress")
+                saw_in_progress = True
                 time.sleep(_DOWNLOAD_POLL_SECONDS)
-            elif in_progress:
-                logger.info("File download complete")
-                return
-            else:
-                return
+                continue
+
+            if saw_in_progress and zip_files:
+                latest = max(zip_files, key=lambda path: path.stat().st_ctime)
+                if self._is_file_size_stable(latest):
+                    logger.info("File download complete")
+                    return
+                time.sleep(_DOWNLOAD_POLL_SECONDS)
+                continue
+
+            time.sleep(_DOWNLOAD_POLL_SECONDS)
+
+        msg = f"Download timed out after {_DOWNLOAD_TIMEOUT_SECONDS} seconds"
+        raise DownloadError(msg)
+
+    def _is_file_size_stable(
+        self,
+        path: Path,
+        *,
+        checks: int = 2,
+        interval: float = 1.0,
+    ) -> bool:
+        try:
+            previous_size = path.stat().st_size
+        except OSError:
+            return False
+
+        for _ in range(checks):
+            time.sleep(interval)
+            if list(path.parent.glob("*.crdownload")):
+                return False
+            try:
+                current_size = path.stat().st_size
+            except OSError:
+                return False
+            if current_size != previous_size:
+                previous_size = current_size
+                continue
+            return True
+        return False
 
     def read(self) -> RecordGen:
         reader = FileReader()

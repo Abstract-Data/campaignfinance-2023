@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.states.texas.texas_downloader import DownloadError, TECDownloader
+from app.states.texas.texas_downloader import DownloadError, TECDownloader, _is_safe_zip_member
 
 
 @pytest.fixture
@@ -61,6 +61,24 @@ def test_download_headless_adds_chrome_argument(downloader_config: MagicMock) ->
     assert "--headless" in args
 
 
+def test_is_safe_zip_member_rejects_path_traversal(tmp_path: Path) -> None:
+    destination = tmp_path / "dest"
+    destination.mkdir()
+
+    assert _is_safe_zip_member("../etc/passwd", destination) is False
+    assert _is_safe_zip_member("..\\etc\\passwd", destination) is False
+    assert _is_safe_zip_member("/etc/passwd", destination) is False
+    assert _is_safe_zip_member("subdir/../../outside.txt", destination) is False
+
+
+def test_is_safe_zip_member_allows_safe_relative_paths(tmp_path: Path) -> None:
+    destination = tmp_path / "dest"
+    destination.mkdir()
+
+    assert _is_safe_zip_member("contribs.csv", destination) is True
+    assert _is_safe_zip_member("data/contribs.csv", destination) is True
+
+
 def test_wait_loop_timeout_raises_download_error(downloader_config: MagicMock) -> None:
     downloader = TECDownloader(config=downloader_config)
     tmp_path = downloader_config.TEMP_FOLDER
@@ -79,6 +97,75 @@ def test_wait_loop_timeout_raises_download_error(downloader_config: MagicMock) -
     ):
         with pytest.raises(DownloadError, match="timed out"):
             downloader._wait_for_download(tmp_path)
+
+
+def test_wait_loop_waits_for_stable_zip(downloader_config: MagicMock) -> None:
+    downloader = TECDownloader(config=downloader_config)
+    tmp_path = downloader_config.TEMP_FOLDER
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    zip_path = tmp_path / "TEC_CF_CSV.zip"
+    zip_path.write_bytes(b"partial")
+
+    crdownload_seen = {"count": 0}
+    stable_checks: list[bool] = []
+
+    def fake_glob(self: Path, pattern: str) -> list[Path]:
+        if self != tmp_path:
+            return list(Path.glob(self, pattern))
+        if pattern == "*.crdownload":
+            crdownload_seen["count"] += 1
+            if crdownload_seen["count"] <= 1:
+                return [tmp_path / "file.crdownload"]
+            return []
+        if pattern == "*.zip":
+            return [zip_path]
+        return []
+
+    def fake_stable(_path: Path, **_kwargs: object) -> bool:
+        stable_checks.append(True)
+        return len(stable_checks) >= 2
+
+    monotonic_values = iter([float(i) for i in range(20)])
+
+    with (
+        patch("app.states.texas.texas_downloader._DOWNLOAD_TIMEOUT_SECONDS", 30),
+        patch(
+            "app.states.texas.texas_downloader.time.monotonic",
+            side_effect=lambda: next(monotonic_values),
+        ),
+        patch("app.states.texas.texas_downloader.time.sleep"),
+        patch.object(Path, "glob", fake_glob),
+        patch.object(downloader, "_is_file_size_stable", side_effect=fake_stable),
+    ):
+        downloader._wait_for_download(tmp_path)
+
+    assert len(stable_checks) >= 2
+
+
+def test_download_overwrite_removes_existing_zip(downloader_config: MagicMock) -> None:
+    downloader = TECDownloader(config=downloader_config)
+    tmp_path = downloader_config.TEMP_FOLDER
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    stale_zip = tmp_path / "stale.zip"
+    stale_zip.write_bytes(b"old")
+    wait = MagicMock()
+    wait.until.side_effect = lambda _: MagicMock(click=MagicMock())
+    mock_driver = MagicMock()
+
+    def _seed_download_zip(_self: TECDownloader, folder: Path) -> None:
+        (folder / "TEC_CF_CSV.zip").write_bytes(b"fresh")
+
+    with (
+        patch("app.states.texas.texas_downloader.webdriver.Chrome", return_value=mock_driver),
+        patch("app.states.texas.texas_downloader.WebDriverWait", return_value=wait),
+        patch("app.states.texas.texas_downloader.time.sleep"),
+        patch.object(TECDownloader, "_wait_for_download", _seed_download_zip),
+        patch("app.states.texas.texas_downloader.zipfile.ZipFile") as mock_zip,
+    ):
+        mock_zip.return_value.__enter__.return_value.infolist.return_value = []
+        downloader.download(overwrite=True)
+
+    assert not stale_zip.exists()
 
 
 def test_download_returns_temp_folder_path(downloader_config: MagicMock) -> None:

@@ -82,6 +82,23 @@ def patch_selenium_download(texas_data_dir: Path):
         yield mock_driver
 
 
+def test_prepare_texas_uses_custom_out_directory(
+    patch_texas_context,
+    patch_selenium_download,
+    tmp_path: Path,
+) -> None:
+    custom_out = tmp_path / "nested" / "texas-data"
+    result = runner.invoke(app, ["prepare", "texas", "--out", str(custom_out)])
+
+    assert result.exit_code == 0, result.stdout
+    assert "Prepare complete" in result.stdout
+    assert custom_out.is_dir()
+    for csv_name in _REQUIRED_CSVS:
+        stem = Path(csv_name).stem
+        matches = list(custom_out.glob(f"{stem}*.parquet"))
+        assert matches, f"Expected parquet for {stem} in {custom_out}"
+
+
 def test_prepare_texas_writes_parquet_and_passes_verify(
     patch_texas_context,
     patch_selenium_download,

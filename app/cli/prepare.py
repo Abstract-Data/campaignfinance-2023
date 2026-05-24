@@ -25,7 +25,7 @@ def run_prepare(
     ctx_folder = out.expanduser().resolve() if out is not None else None
 
     if not skip_download:
-        if run_download(state, overwrite=overwrite, headless=headless, out=out) != 0:
+        if run_download(state, overwrite=overwrite, headless=headless, out=ctx_folder) != 0:
             console.print("[red]Prepare failed at download stage.[/red]")
             return 1
 

@@ -73,7 +73,7 @@ def _match_prefix(stem: str) -> str | None:
 
 
 def _count_rows(files: list[Path]) -> int:
-    return sum(pl.read_parquet(path).height for path in files)
+    return sum(pl.scan_parquet(path).select(pl.len()).collect().item() for path in files)
 
 
 def verify_coverage(folder: Path) -> CoverageReport:
