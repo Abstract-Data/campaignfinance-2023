@@ -1,0 +1,1 @@
+"""Campaign finance CLI (`cf`)."""

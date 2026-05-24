@@ -29,7 +29,11 @@ dependencies = [
     "jupyter>=1.1.1",
     "rich>=13.9.4",
     "polars>=1.19.0",
+    "typer>=0.25.1",
 ]
+
+[project.scripts]
+cf = "app.cli.main:app"
 
 [tool.uv.workspace]
 members = ["packages/*"]
