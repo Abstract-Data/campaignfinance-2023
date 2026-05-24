@@ -6,7 +6,6 @@ from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
-from sqlalchemy.exc import IntegrityError
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 from app.core.source_models.reports import UnifiedReport

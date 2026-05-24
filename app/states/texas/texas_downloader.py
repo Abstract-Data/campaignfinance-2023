@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from abcs import FileDownloaderABC, RecordGen, StateConfig
 from funcs.csv_reader import FileReader
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -14,7 +15,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from tqdm import tqdm
 
-from abcs import CategoryTypes, FileDownloaderABC, RecordGen, StateConfig
 from app.logger import Logger
 
 logger = Logger(__name__)
@@ -25,6 +25,15 @@ _DOWNLOAD_TIMEOUT_SECONDS = 600
 
 class DownloadError(Exception):
     """Raised when the Texas TEC download or extraction fails."""
+
+
+def _is_safe_zip_member(member_name: str, destination: Path) -> bool:
+    member_path = Path(member_name)
+    if member_path.is_absolute() or ".." in member_path.parts:
+        return False
+    resolved_target = (destination / member_path).resolve()
+    resolved_dest = destination.resolve()
+    return resolved_target == resolved_dest or resolved_target.is_relative_to(resolved_dest)
 
 
 @dataclass
@@ -39,8 +48,9 @@ class TECDownloader(FileDownloaderABC):
         *,
         overwrite: bool = False,
         headless: bool = False,
+        output_dir: Path | None = None,
     ) -> Path:
-        tmp = self.config.TEMP_FOLDER
+        tmp = output_dir if output_dir is not None else self.config.TEMP_FOLDER
         options = Options()
         prefs = {"download.default_directory": str(tmp)}
         options.add_experimental_option("prefs", prefs)
@@ -58,6 +68,7 @@ class TECDownloader(FileDownloaderABC):
                     logger.info(f"Removing {file}")
                     file.unlink()
 
+        driver = None
         try:
             driver = webdriver.Chrome(options=options)
             wait = WebDriverWait(driver, 10)
@@ -68,14 +79,10 @@ class TECDownloader(FileDownloaderABC):
                 EC.element_to_be_clickable((By.LINK_TEXT, "Campaign Finance Reports"))
             ).click()
             wait.until(
-                EC.element_to_be_clickable(
-                    (By.LINK_TEXT, "Database of Campaign Finance Reports")
-                )
+                EC.element_to_be_clickable((By.LINK_TEXT, "Database of Campaign Finance Reports"))
             ).click()
             wait.until(
-                EC.element_to_be_clickable(
-                    (By.PARTIAL_LINK_TEXT, "Campaign Finance CSV Database")
-                )
+                EC.element_to_be_clickable((By.PARTIAL_LINK_TEXT, "Campaign Finance CSV Database"))
             ).click()
             time.sleep(5)
 
@@ -90,6 +97,9 @@ class TECDownloader(FileDownloaderABC):
             with zipfile.ZipFile(latest_file, "r") as zip_ref:
                 zip_file_info = zip_ref.infolist()
                 for file in tqdm(zip_file_info, desc="Extracting Files"):
+                    if not _is_safe_zip_member(file.filename, tmp):
+                        logger.warning(f"Skipping unsafe zip entry: {file.filename}")
+                        continue
                     zip_ref.extract(file, tmp)
                     file_name = Path(file.filename)
                     rename = (
@@ -99,12 +109,14 @@ class TECDownloader(FileDownloaderABC):
                     Path(tmp / file.filename).rename(tmp / rename)
             logger.info(f"Removing {latest_file}")
             latest_file.unlink()
-            driver.quit()
         except DownloadError:
             raise
         except Exception as exc:
             msg = f"Texas TEC download failed: {exc}"
             raise DownloadError(msg) from exc
+        finally:
+            if driver is not None:
+                driver.quit()
 
         return tmp
 
@@ -118,11 +130,8 @@ class TECDownloader(FileDownloaderABC):
                     logger.info(f"File {Path(dl_files[0]).stem} download in progress")
                     in_progress = True
                 if time.monotonic() >= deadline:
-                    msg = (
-                        f"Download timed out after {_DOWNLOAD_TIMEOUT_SECONDS} seconds"
-                    )
+                    msg = f"Download timed out after {_DOWNLOAD_TIMEOUT_SECONDS} seconds"
                     raise DownloadError(msg)
-</think>
                 time.sleep(_DOWNLOAD_POLL_SECONDS)
             elif in_progress:
                 logger.info("File download complete")

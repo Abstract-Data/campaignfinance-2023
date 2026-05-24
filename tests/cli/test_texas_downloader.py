@@ -1,129 +1,146 @@
-"""Tests for TECDownloader refactor (task A)."""
+"""Tests for Texas TEC downloader refactor (task A)."""
 
 from __future__ import annotations
 
-import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-from abcs.abc_state_config import CSVReaderConfig, StateConfig
-from states.texas.texas_downloader import (
-    DOWNLOAD_WAIT_TIMEOUT_SECONDS,
-    DownloadError,
-    TECDownloader,
-)
+
+from app.states.texas.texas_downloader import DownloadError, TECDownloader
 
 
-def _make_config(tmp_path: Path) -> StateConfig:
-    config = StateConfig(
-        STATE_NAME="texas",
-        STATE_ABBREVIATION="TX",
-        CSV_CONFIG=CSVReaderConfig(),
-    )
+@pytest.fixture
+def downloader_config(tmp_path: Path) -> MagicMock:
+    config = MagicMock()
+    config.TEMP_FOLDER = tmp_path / "tec_download"
+    config.FILE_COUNTS = None
     return config
 
 
-def _patch_temp_folder(monkeypatch: pytest.MonkeyPatch, config: StateConfig, folder: Path) -> None:
-    monkeypatch.setattr(type(config), "TEMP_FOLDER", property(lambda self: folder))
+def test_temp_folder_created_on_init_without_prompt(
+    downloader_config: MagicMock,
+) -> None:
+    fresh_dir = downloader_config.TEMP_FOLDER
+    assert not fresh_dir.exists()
+
+    with patch("builtins.input") as mock_input:
+        TECDownloader(config=downloader_config)
+
+    mock_input.assert_not_called()
+    assert fresh_dir.is_dir()
 
 
-def test_temp_folder_auto_created_no_input(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    temp_folder = tmp_path / "missing-texas"
-    assert not temp_folder.exists()
+def test_download_headless_adds_chrome_argument(downloader_config: MagicMock) -> None:
+    captured_options: list = []
+    wait = MagicMock()
+    wait.until.side_effect = lambda _: MagicMock(click=MagicMock())
 
-    monkeypatch.setattr(
-        "builtins.input",
-        lambda *_args, **_kwargs: pytest.fail("input() must not be called"),
-    )
-
-    config = _make_config(tmp_path)
-    _patch_temp_folder(monkeypatch, config, temp_folder)
-
-    downloader = TECDownloader(config=config)
-
-    assert temp_folder.is_dir()
-    assert downloader.folder == temp_folder
-
-
-def test_headless_adds_chrome_argument(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    temp_folder = tmp_path / "texas"
-    temp_folder.mkdir()
-    config = _make_config(tmp_path)
-    _patch_temp_folder(monkeypatch, config, temp_folder)
-
-    captured_options: list[object] = []
-
-    wait_mock = MagicMock()
-    wait_mock.until.side_effect = lambda _fn: MagicMock(click=MagicMock())
-    monkeypatch.setattr(
-        "states.texas.texas_downloader.WebDriverWait",
-        lambda _driver, _timeout: wait_mock,
-    )
-    monkeypatch.setattr("states.texas.texas_downloader.time.sleep", lambda _seconds: None)
-
-    def fake_chrome(*, options=None, **kwargs):
+    def fake_chrome(*, options):  # noqa: ANN001
         captured_options.append(options)
         return MagicMock()
 
-    monkeypatch.setattr("states.texas.texas_downloader.webdriver.Chrome", fake_chrome)
+    downloader = TECDownloader(config=downloader_config)
+    tmp_path = downloader_config.TEMP_FOLDER
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    zip_path = tmp_path / "TEC_CF_CSV.zip"
+    zip_path.write_bytes(b"placeholder")
 
-    zip_path = temp_folder / "data.zip"
-    with zipfile.ZipFile(zip_path, "w") as zf:
-        zf.writestr("sample.csv", "a,b\n1,2\n")
+    with (
+        patch("app.states.texas.texas_downloader.webdriver.Chrome", side_effect=fake_chrome),
+        patch("app.states.texas.texas_downloader.WebDriverWait", return_value=wait),
+        patch("app.states.texas.texas_downloader.time.sleep"),
+        patch.object(downloader, "_wait_for_download"),
+        patch("app.states.texas.texas_downloader.zipfile.ZipFile") as mock_zip,
+    ):
+        mock_zip.return_value.__enter__.return_value.infolist.return_value = []
+        downloader.download(headless=True)
 
-    downloader = TECDownloader(config=config)
-    result = downloader.download(headless=True)
-
-    assert result == temp_folder
-    assert len(captured_options) == 1
-    arguments = captured_options[0].arguments
-    assert "--headless" in arguments
+    assert captured_options
+    args = captured_options[0].arguments
+    assert "--headless" in args
 
 
-def test_wait_loop_timeout_raises_download_error(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    temp_folder = tmp_path / "texas"
-    temp_folder.mkdir()
-    config = _make_config(tmp_path)
-    _patch_temp_folder(monkeypatch, config, temp_folder)
+def test_wait_loop_timeout_raises_download_error(downloader_config: MagicMock) -> None:
+    downloader = TECDownloader(config=downloader_config)
+    tmp_path = downloader_config.TEMP_FOLDER
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "file.crdownload").write_text("partial")
 
-    def fake_chrome(*, options=None, **kwargs):
-        driver = MagicMock()
-        wait_mock = MagicMock()
-        wait_mock.until.side_effect = lambda fn: MagicMock(click=MagicMock())
-        monkeypatch.setattr(
-            "states.texas.texas_downloader.WebDriverWait",
-            lambda _driver, _timeout: wait_mock,
-        )
-        monkeypatch.setattr("states.texas.texas_downloader.time.sleep", lambda _seconds: None)
-        return driver
+    with (
+        patch(
+            "app.states.texas.texas_downloader._DOWNLOAD_TIMEOUT_SECONDS",
+            0,
+        ),
+        patch(
+            "app.states.texas.texas_downloader.time.monotonic",
+            side_effect=[0.0, 1.0],
+        ),
+    ):
+        with pytest.raises(DownloadError, match="timed out"):
+            downloader._wait_for_download(tmp_path)
 
-    monkeypatch.setattr("states.texas.texas_downloader.webdriver.Chrome", fake_chrome)
 
-    crdownload = temp_folder / "file.csv.crdownload"
-    crdownload.touch()
+def test_download_returns_temp_folder_path(downloader_config: MagicMock) -> None:
+    downloader = TECDownloader(config=downloader_config)
+    tmp_path = downloader_config.TEMP_FOLDER
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    wait = MagicMock()
+    wait.until.side_effect = lambda _: MagicMock(click=MagicMock())
+    mock_driver = MagicMock()
 
-    start = 0.0
+    with (
+        patch("app.states.texas.texas_downloader.webdriver.Chrome", return_value=mock_driver),
+        patch("app.states.texas.texas_downloader.WebDriverWait", return_value=wait),
+        patch("app.states.texas.texas_downloader.time.sleep"),
+        patch.object(downloader, "_wait_for_download"),
+        patch("app.states.texas.texas_downloader.zipfile.ZipFile") as mock_zip,
+    ):
+        mock_zip.return_value.__enter__.return_value.infolist.return_value = []
+        (tmp_path / "TEC_CF_CSV.zip").write_bytes(b"placeholder")
+        result = downloader.download()
 
-    def fake_monotonic() -> float:
-        nonlocal start
-        start += DOWNLOAD_WAIT_TIMEOUT_SECONDS
-        return start
+    assert result == tmp_path
+    mock_driver.quit.assert_called_once()
 
-    monkeypatch.setattr("states.texas.texas_downloader.time.monotonic", fake_monotonic)
 
-    original_glob = Path.glob
+def test_download_quits_driver_on_download_error(downloader_config: MagicMock) -> None:
+    downloader = TECDownloader(config=downloader_config)
+    tmp_path = downloader_config.TEMP_FOLDER
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    wait = MagicMock()
+    wait.until.side_effect = lambda _: MagicMock(click=MagicMock())
+    mock_driver = MagicMock()
 
-    def glob_with_crdownload(self: Path, pattern: str):
-        if pattern == "*.crdownload":
-            return iter([crdownload])
-        return original_glob(self, pattern)
+    with (
+        patch("app.states.texas.texas_downloader.webdriver.Chrome", return_value=mock_driver),
+        patch("app.states.texas.texas_downloader.WebDriverWait", return_value=wait),
+        patch("app.states.texas.texas_downloader.time.sleep"),
+        patch.object(downloader, "_wait_for_download"),
+    ):
+        with pytest.raises(DownloadError, match="No zip file found"):
+            downloader.download()
 
-    monkeypatch.setattr(Path, "glob", glob_with_crdownload)
+    mock_driver.quit.assert_called_once()
 
-    downloader = TECDownloader(config=config)
 
-    with pytest.raises(DownloadError, match="timed out"):
-        downloader.download()
+def test_download_uses_output_dir_override(downloader_config: MagicMock, tmp_path: Path) -> None:
+    downloader = TECDownloader(config=downloader_config)
+    custom_dir = tmp_path / "custom_out"
+    wait = MagicMock()
+    wait.until.side_effect = lambda _: MagicMock(click=MagicMock())
+    mock_driver = MagicMock()
+
+    with (
+        patch("app.states.texas.texas_downloader.webdriver.Chrome", return_value=mock_driver),
+        patch("app.states.texas.texas_downloader.WebDriverWait", return_value=wait),
+        patch("app.states.texas.texas_downloader.time.sleep"),
+        patch.object(downloader, "_wait_for_download"),
+        patch("app.states.texas.texas_downloader.zipfile.ZipFile") as mock_zip,
+    ):
+        custom_dir.mkdir(parents=True, exist_ok=True)
+        (custom_dir / "TEC_CF_CSV.zip").write_bytes(b"placeholder")
+        mock_zip.return_value.__enter__.return_value.infolist.return_value = []
+        result = downloader.download(output_dir=custom_dir)
+
+    assert result == custom_dir

@@ -31,8 +31,14 @@ class FakeDownloader:
     def __init__(self, config: object) -> None:
         self.config = config
 
-    def download(self, *, overwrite: bool = False, headless: bool = False) -> Path:
-        return Path("/tmp/texas")
+    def download(
+        self,
+        *,
+        overwrite: bool = False,
+        headless: bool = False,
+        output_dir: Path | None = None,
+    ) -> Path:
+        return output_dir or Path("/tmp/texas")
 
 
 @dataclass
@@ -70,11 +76,17 @@ def fake_state_context() -> FakeStateContext:
 
 @pytest.fixture
 def patch_resolve_state(monkeypatch: pytest.MonkeyPatch, fake_state_context: FakeStateContext):
-    def _resolve(_state: object) -> FakeStateContext:
+    def _resolve(_state: object, *, data_folder: Path | None = None) -> FakeStateContext:
+        if data_folder is not None:
+            return FakeStateContext(
+                config=fake_state_context.config,
+                temp_folder=data_folder,
+            )
         return fake_state_context
 
     for module in ("app.cli.download", "app.cli.convert", "app.cli.verify"):
         monkeypatch.setattr(f"{module}.resolve_state", _resolve)
+    monkeypatch.setattr("app.cli.state.resolve_state", _resolve)
 
 
 @pytest.fixture
@@ -146,7 +158,13 @@ def test_download_texas_failure(
     patch_texas_downloader,
 ) -> None:
     class FailingDownloader(FakeDownloader):
-        def download(self, *, overwrite: bool = False, headless: bool = False) -> Path:
+        def download(
+            self,
+            *,
+            overwrite: bool = False,
+            headless: bool = False,
+            output_dir: Path | None = None,
+        ) -> Path:
             raise FakeDownloadError("network timeout")
 
     texas_mod = sys.modules["app.states.texas"]
@@ -265,4 +283,8 @@ def test_prepare_stops_at_first_failing_stage(
 def test_download_unknown_state_usage_error() -> None:
     result = runner.invoke(app, ["download", "utah"])
     assert result.exit_code != 0
-    assert result.exception is not None or "texas" in result.stdout.lower() or "utah" in result.stdout.lower()
+    assert (
+        result.exception is not None
+        or "texas" in result.stdout.lower()
+        or "utah" in result.stdout.lower()
+    )

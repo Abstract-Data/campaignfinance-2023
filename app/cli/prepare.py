@@ -22,16 +22,18 @@ def run_prepare(
     skip_download: bool = False,
     out: Path | None = None,
 ) -> int:
+    ctx_folder = out.expanduser().resolve() if out is not None else None
+
     if not skip_download:
         if run_download(state, overwrite=overwrite, headless=headless, out=out) != 0:
             console.print("[red]Prepare failed at download stage.[/red]")
             return 1
 
-    if run_convert(state, overwrite=overwrite) != 0:
+    if run_convert(state, overwrite=overwrite, folder=ctx_folder) != 0:
         console.print("[red]Prepare failed at convert stage.[/red]")
         return 1
 
-    if run_verify(state) != 0:
+    if run_verify(state, folder=ctx_folder) != 0:
         console.print("[red]Prepare failed at verify stage.[/red]")
         return 1
 
@@ -59,6 +61,10 @@ def prepare(
             help="Skip the download stage and run convert then verify only.",
         ),
     ] = False,
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="Output directory for downloaded and converted files."),
+    ] = None,
 ) -> None:
     raise typer.Exit(
         run_prepare(
@@ -66,5 +72,6 @@ def prepare(
             overwrite=overwrite,
             headless=headless,
             skip_download=skip_download,
+            out=out,
         )
     )

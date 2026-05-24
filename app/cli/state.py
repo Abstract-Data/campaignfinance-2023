@@ -17,13 +17,18 @@ class StateContext:
     temp_folder: Path
 
 
-def resolve_state(state: State) -> StateContext:
+def resolve_state(state: State, *, data_folder: Path | None = None) -> StateContext:
     if state is State.texas:
         from app.states.texas import TEXAS_CONFIGURATION
 
+        temp_folder = (
+            data_folder.expanduser().resolve()
+            if data_folder is not None
+            else TEXAS_CONFIGURATION.TEMP_FOLDER
+        )
         return StateContext(
             config=TEXAS_CONFIGURATION,
-            temp_folder=TEXAS_CONFIGURATION.TEMP_FOLDER,
+            temp_folder=temp_folder,
         )
     msg = f"Unsupported state: {state.value}"
     raise ValueError(msg)

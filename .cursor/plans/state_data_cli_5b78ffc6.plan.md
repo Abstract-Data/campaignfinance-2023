@@ -4,19 +4,19 @@ overview: "Implement the `cf` umbrella Typer CLI for Texas campaign-finance data
 todos:
   - id: task-a-downloader
     content: "Task A: Refactor TECDownloader + abc_download — non-interactive, headless, timeout, DownloadError, tests"
-    status: in_progress
+    status: completed
   - id: task-b-converter
     content: "Task B: Create texas_converter.py + convert_folder/ConvertResult + tests"
-    status: in_progress
+    status: completed
   - id: task-c-verifier
     content: "Task C: Create texas_coverage.py + verify_coverage/CoverageReport + tests"
-    status: in_progress
+    status: completed
   - id: task-d-cli
     content: "Task D: Create app/cli/ Typer package, uv add typer, [project.scripts] cf, command tests"
-    status: in_progress
+    status: completed
   - id: task-z-integration
     content: "Task Z: Merge A–D, wire real imports, prepare integration test, README CLI section"
-    status: pending
+    status: completed
 isProject: false
 ---
 

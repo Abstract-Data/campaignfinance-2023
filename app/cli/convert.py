@@ -17,8 +17,9 @@ def run_convert(
     *,
     overwrite: bool = False,
     keep_csv: bool = True,
+    folder: Path | None = None,
 ) -> int:
-    ctx = resolve_state(state)
+    ctx = resolve_state(state, data_folder=folder)
 
     from app.states.texas.texas_converter import convert_folder
 

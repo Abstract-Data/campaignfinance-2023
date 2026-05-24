@@ -18,22 +18,25 @@ def run_download(
     headless: bool = False,
     out: Path | None = None,
 ) -> int:
-    ctx = resolve_state(state)
-    target = out.expanduser().resolve() if out else ctx.temp_folder
+    ctx = resolve_state(state, data_folder=out)
 
-    from app.states.texas import TEXAS_CONFIGURATION, DownloadError, TECDownloader
+    from app.states.texas import DownloadError, TECDownloader
 
-    downloader = TECDownloader(config=TEXAS_CONFIGURATION)
+    downloader = TECDownloader(config=ctx.config)
 
     try:
         with console.status(f"[bold green]Downloading {state.value} campaign finance data..."):
-            result_path = downloader.download(overwrite=overwrite, headless=headless)
+            result_path = downloader.download(
+                overwrite=overwrite,
+                headless=headless,
+                output_dir=ctx.temp_folder,
+            )
     except DownloadError as exc:
         console.print(f"[red]Download failed:[/red] {exc}")
         return 1
 
     destination = Path(result_path) if not isinstance(result_path, Path) else result_path
-    console.print(f"[green]Download complete.[/green] Files saved to {destination or target}")
+    console.print(f"[green]Download complete.[/green] Files saved to {destination}")
     return 0
 
 

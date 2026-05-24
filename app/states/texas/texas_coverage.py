@@ -31,6 +31,7 @@ PREFIX_MAP: dict[str, str] = {
     "assets": "ASSET",
     "cand": "CAND",
     "filers": "FILER",
+    "final": "FINL",
     "finals": "FINL",
     "spacs": "SPAC",
 }
@@ -60,9 +61,7 @@ class CoverageReport:
     @property
     def ok(self) -> bool:
         return all(
-            row.status == "present"
-            for row in self.rows
-            if row.record_type in REQUIRED_RECORD_TYPES
+            row.status == "present" for row in self.rows if row.record_type in REQUIRED_RECORD_TYPES
         )
 
 

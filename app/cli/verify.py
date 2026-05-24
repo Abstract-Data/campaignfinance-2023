@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -11,8 +12,8 @@ from app.cli.state import State, resolve_state
 console = Console()
 
 
-def run_verify(state: State) -> int:
-    ctx = resolve_state(state)
+def run_verify(state: State, *, folder: Path | None = None) -> int:
+    ctx = resolve_state(state, data_folder=folder)
 
     from app.states.texas.texas_coverage import verify_coverage
 

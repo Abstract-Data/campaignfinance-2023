@@ -53,7 +53,7 @@ def build_report(
     raw: dict,
     *,
     state_id: int,
-    file_origin_id: str | None,
+    file_origin_id: str | None = None,
 ) -> UnifiedReport:
     """Map a raw TEC CVR1 (CoverSheetData) record to a ``UnifiedReport``.
 
@@ -121,8 +121,7 @@ def link_transactions_to_reports(session: Session) -> int:
         SET report_id = (
             SELECT r.id
             FROM unified_reports r
-            WHERE r.state_id = unified_transactions.state_id
-              AND r.report_ident = unified_transactions.report_ident
+            WHERE r.report_ident = unified_transactions.report_ident
             LIMIT 1
         )
         WHERE unified_transactions.report_id IS NULL
@@ -130,8 +129,7 @@ def link_transactions_to_reports(session: Session) -> int:
           AND EXISTS (
               SELECT 1
               FROM unified_reports r
-              WHERE r.state_id = unified_transactions.state_id
-                AND r.report_ident = unified_transactions.report_ident
+              WHERE r.report_ident = unified_transactions.report_ident
           )
         """
     )

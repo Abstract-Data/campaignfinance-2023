@@ -87,3 +87,14 @@ def test_missing_non_required_type_does_not_flip_ok(coverage_folder: Path) -> No
     assert report.ok is True
     asset_row = next(r for r in report.rows if r.record_type == "ASSET")
     assert asset_row.status == "missing"
+
+
+def test_final_prefix_maps_to_finl(coverage_folder: Path) -> None:
+    _seed_required_types(coverage_folder, rows=1)
+    pl.DataFrame({"id": [1]}).write_parquet(coverage_folder / "final.parquet")
+
+    report = verify_coverage(coverage_folder)
+
+    finl_row = next(r for r in report.rows if r.record_type == "FINL")
+    assert finl_row.status == "present"
+    assert finl_row.row_count == 1
