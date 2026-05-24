@@ -188,7 +188,7 @@ def test_every_match_decision_has_nonempty_explanation_json():
             assert payload.get("rule")
 
 
-def test_identical_address_alone_emits_deterministic_rule_merge():
+def test_identical_address_alone_does_not_merge():
     engine = _make_engine()
     with Session(engine) as session:
         _seed_run(session)
@@ -211,15 +211,14 @@ def test_identical_address_alone_emits_deterministic_rule_merge():
         session.commit()
 
         result = run_fastpath_stage(session, run_id=1, config={})
-        assert result == {"auto_merges": 1}
+        assert result == {"auto_merges": 0}
 
+        edges = session.exec(select(MergeEdge).where(MergeEdge.run_id == 1)).all()
         decisions = session.exec(
             select(MatchDecision).where(MatchDecision.run_id == 1)
         ).all()
-        assert len(decisions) == 1
-        assert decisions[0].method == MatchMethod.deterministic_rule
-        payload = json.loads(decisions[0].explanation_json or "{}")
-        assert payload["rule"] == "identical_standardized_address"
+        assert edges == []
+        assert decisions == []
 
 
 def test_fastpath_does_not_write_crosswalk_rows():

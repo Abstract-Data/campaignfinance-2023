@@ -8,8 +8,10 @@ from dataclasses import dataclass
 from itertools import combinations
 import logging
 
+from sqlalchemy import Column, String
 from sqlmodel import Field, SQLModel, delete, select
 
+from app.resolve.models.resolution import SOURCE_ID_MAX_LENGTH
 from app.resolve.standardize.staging import ResolutionInput
 
 LOGGER = logging.getLogger(__name__)
@@ -56,9 +58,13 @@ class CandidatePair(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     run_id: int = Field(index=True)
     source_a_type: str
-    source_a_id: str
+    source_a_id: str = Field(
+        sa_column=Column(String(SOURCE_ID_MAX_LENGTH), nullable=False)
+    )
     source_b_type: str
-    source_b_id: str
+    source_b_id: str = Field(
+        sa_column=Column(String(SOURCE_ID_MAX_LENGTH), nullable=False)
+    )
     rule_name: str
 
 

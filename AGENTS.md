@@ -7,6 +7,7 @@
 - Use GitButler (`but` commands) for branch/commit workflow; consolidate worker output on one phase branch with one commit per task
 - Prefer incremental fixes over redesigns; describe structural or provider changes and wait for explicit approval before implementing
 - Do not reiterate or summarize subagent results to the user unless asked or multi-task synthesis is required
+- After `/review`, split recommended fixes across parallel agents partitioned by file ownership (same wave pattern as pipeline tasks)
 
 ## Learned Workspace Facts
 
@@ -15,7 +16,11 @@
 - Phase 0 Wave 0 gate failures commonly involve stubbed transaction loading in `scripts/loaders/production_loader.py`, incomplete DB bootstrap (e.g. `states`/`file_origins`), and missing report reconciliation per `task-0z-integration.md`
 - Before Phase 1 integration, run `uv run cf prepare texas` then full load via `scripts/loaders/production_loader.py`
 - State Data CLI prerequisite is done: `app/cli/` with `cf prepare texas` and related commands
-- Phase 0 code paths live under `app/core/source_models/`, `scripts/loaders/`, and `tests/resolve/`; Phases 1–4 target `app/resolve/` (not started as of plan authoring)
+- Phase 0 code paths live under `app/core/source_models/`, `scripts/loaders/`, and `tests/resolve/`; Phase 1 foundation lives under `app/resolve/` (`models/`, `standardize/`, `stages/`, `cli.py`, `run.py`)
+- Wave 0 integration agents must not create or edit `app/resolve/`; stop after PASS/FAIL gate report and let the coordinator spawn Wave 1 parallel agents (1a, 1b, 1c)
+- Phase 0 Wave 0 verification gate passed; task 1z wired Phase 1 stages 1→2→3→7 (`build_resolution_input` → blocking → fastpath → survivorship)
+- `scripts/loaders/production_loader.py` applies `max_records` per file (not globally) so subset loads reach all record types; nullable pledge entity FKs allow PLDG rows without Wave 1 entity resolution
+- Texas CSV→parquet conversion (`app/states/texas/texas_converter.py`) uses `infer_schema_length=0` (all-string columns) and skips `CFS-Codes`/`CFS-ReadMe` metadata `.txt` files
 - Legacy codebase imports (e.g. `from abcs import …`) expect `app/` on `sys.path`; CLI entry points must bootstrap paths so `uv run cf` and `python -m app.cli` work without manual `PYTHONPATH`
 
 <!-- gitnexus:start -->

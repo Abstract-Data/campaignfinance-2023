@@ -6,7 +6,7 @@ import pytest
 from hypothesis import given, strategies as st
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.core.source_models.reports import UnifiedReport  # noqa: F401
+import app.resolve.models  # noqa: F401 — central ORM registry (UnifiedReport)
 from app.core.unified_sqlmodels import (
     EntityType,
     State,

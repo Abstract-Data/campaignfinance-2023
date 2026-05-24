@@ -25,6 +25,10 @@ from enum import Enum
 from sqlalchemy import Column, Float, Integer, Text, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
+# Shared width for source identifiers flowing staging → crosswalk → decisions.
+# Must match ``ResolutionInput.source_id`` and ``CandidatePair`` source columns.
+SOURCE_ID_MAX_LENGTH = 128
+
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -162,7 +166,7 @@ class EntityCrosswalk(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     source_type: SourceType
-    source_id: str = Field(max_length=100, index=True)
+    source_id: str = Field(max_length=SOURCE_ID_MAX_LENGTH, index=True)
     # Plain integer; FK → canonical_entity.id wired by task-1z.
     canonical_entity_id: int = Field(
         sa_column=Column(Integer, nullable=False, index=True)
@@ -198,7 +202,7 @@ class AddressCrosswalk(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     source_type: SourceType
-    source_id: str = Field(max_length=100, index=True)
+    source_id: str = Field(max_length=SOURCE_ID_MAX_LENGTH, index=True)
     # Plain integer; FK → canonical_address.id wired by task-1z.
     canonical_address_id: int = Field(
         sa_column=Column(Integer, nullable=False, index=True)
@@ -234,7 +238,7 @@ class CampaignCrosswalk(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     source_type: SourceType
-    source_id: str = Field(max_length=100, index=True)
+    source_id: str = Field(max_length=SOURCE_ID_MAX_LENGTH, index=True)
     # Plain integer; FK → canonical_campaign.id wired by task-1z.
     canonical_campaign_id: int = Field(
         sa_column=Column(Integer, nullable=False, index=True)
@@ -271,9 +275,9 @@ class MatchDecision(SQLModel, table=True):
         default=None, foreign_key="match_run.id", index=True
     )
     source_a_type: SourceType
-    source_a_id: str = Field(max_length=100)
+    source_a_id: str = Field(max_length=SOURCE_ID_MAX_LENGTH)
     source_b_type: SourceType
-    source_b_id: str = Field(max_length=100)
+    source_b_id: str = Field(max_length=SOURCE_ID_MAX_LENGTH)
     score: float | None = Field(
         default=None, sa_column=Column(Float, nullable=True)
     )
@@ -307,9 +311,9 @@ class MergeReview(SQLModel, table=True):
         default=None, foreign_key="match_run.id", index=True
     )
     source_a_type: SourceType
-    source_a_id: str = Field(max_length=100)
+    source_a_id: str = Field(max_length=SOURCE_ID_MAX_LENGTH)
     source_b_type: SourceType
-    source_b_id: str = Field(max_length=100)
+    source_b_id: str = Field(max_length=SOURCE_ID_MAX_LENGTH)
     score: float | None = Field(
         default=None, sa_column=Column(Float, nullable=True)
     )

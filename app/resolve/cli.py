@@ -5,6 +5,7 @@ Usage
     python -m app.resolve run --state TX
     python -m app.resolve run --state TX --config /path/to/config.json
     python -m app.resolve run --state TX --pass-type address
+    python -m app.resolve run --state TX --sqlite
 
 The stage list is injected by ``task-1z``.  Until then, an empty list
 runs a no-op pipeline (open match_run, complete it, exit 0).
@@ -15,18 +16,23 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import text
+from sqlalchemy.engine import URL
+
 logger = logging.getLogger(__name__)
+
+_SQLITE_URL = "sqlite://"
 
 # Canonical name → 2-letter code for states supported in this project.
 _STATE_NAME_TO_CODE: dict[str, str] = {
     "texas": "TX",
     "oklahoma": "OK",
 }
-
 
 def _resolve_state_code(state: str) -> str:
     """Return a 2-letter uppercase state code from a name or code."""
@@ -40,6 +46,92 @@ def _resolve_state_code(state: str) -> str:
             "Pass a 2-letter code (TX) or a supported state name (texas)."
         )
     return code
+
+
+# ---------------------------------------------------------------------------
+# Database URL resolution
+# ---------------------------------------------------------------------------
+
+
+def postgres_env_configured() -> bool:
+    """Return True when Postgres connection settings are present in the environment."""
+    database_url = os.environ.get("DATABASE_URL", "").strip()
+    if database_url:
+        return not database_url.startswith("sqlite")
+    return bool(os.environ.get("POSTGRES_USER") and os.environ.get("POSTGRES_DB"))
+
+
+def build_postgres_url_from_env() -> str:
+    """Build a PostgreSQL URL from ``DATABASE_URL`` or ``POSTGRES_*`` env vars.
+
+    Uses SQLAlchemy ``URL.create`` so special characters in credentials are
+  encoded correctly (never interpolated via f-string).
+    """
+    database_url = os.environ.get("DATABASE_URL", "").strip()
+    if database_url:
+        return database_url
+
+    user = os.environ["POSTGRES_USER"]
+    password = os.environ.get("POSTGRES_PASSWORD", "")
+    host = os.environ.get("POSTGRES_HOST", "localhost")
+    port = int(os.environ.get("POSTGRES_PORT", "5432"))
+    database = os.environ["POSTGRES_DB"]
+
+    url = URL.create(
+        drivername="postgresql+psycopg2",
+        username=user,
+        password=password,
+        host=host,
+        port=port,
+        database=database,
+    )
+    return url.render_as_string(hide_password=False)
+
+
+def resolve_database_url(*, use_sqlite: bool = False) -> str:
+    """Return the database URL for a resolution run.
+
+    SQLite is used only when ``use_sqlite`` is True or when no Postgres
+    configuration is present (no ``DATABASE_URL`` and no ``POSTGRES_*`` vars).
+    """
+    if use_sqlite:
+        return _SQLITE_URL
+    if not postgres_env_configured():
+        return _SQLITE_URL
+    return build_postgres_url_from_env()
+
+
+def validate_database_connection(db_url: str) -> None:
+    """Verify that *db_url* is reachable; raise on failure."""
+    from sqlmodel import create_engine
+
+    engine = create_engine(db_url)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    finally:
+        engine.dispose()
+
+
+def resolve_engine_url(*, use_sqlite: bool = False) -> str:
+    """Resolve and validate the database URL for the CLI.
+
+    Raises
+    ------
+    RuntimeError
+        When Postgres is configured but the connection cannot be opened.
+    """
+    db_url = resolve_database_url(use_sqlite=use_sqlite)
+    if db_url.startswith("postgresql"):
+        try:
+            validate_database_connection(db_url)
+        except Exception as exc:
+            raise RuntimeError(
+                "PostgreSQL is configured but the connection failed. "
+                "Refusing to fall back to SQLite (data loss risk). "
+                f"Original error: {exc}"
+            ) from exc
+    return db_url
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +184,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Which entity dimension to resolve (default: entity).",
     )
     run_p.add_argument(
+        "--sqlite",
+        action="store_true",
+        help="Use in-memory SQLite instead of Postgres (local smoke tests).",
+    )
+    run_p.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -103,6 +200,23 @@ def _build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 # 'run' sub-command
 # ---------------------------------------------------------------------------
+
+
+def _get_run_stages():
+    """Return the Phase 1 stage callables for ``run``."""
+    from app.resolve.stages import (
+        run_blocking_stage,
+        run_fastpath_stage,
+        run_survivorship_stage,
+        stage1_build_resolution_input,
+    )
+
+    return [
+        stage1_build_resolution_input,  # stage 1 — build resolution_input (1c)
+        run_blocking_stage,  # stage 2 — candidate pair blocking  (1e)
+        run_fastpath_stage,  # stage 3 — deterministic fast-path  (1f)
+        run_survivorship_stage,  # stage 7 — clustering + publish     (1g)
+    ]
 
 
 def _run_command(args: argparse.Namespace) -> int:
@@ -127,33 +241,21 @@ def _run_command(args: argparse.Namespace) -> int:
     config.setdefault("pass_type", args.pass_type)
     config.setdefault("state_code", state_code)
 
-    # Deferred imports keep parse-time overhead low.
-    from sqlmodel import Session, SQLModel, create_engine
-
-    from app.resolve.run import ResolutionRun
-
-    # Resolve DB URL from project settings; fall back to in-memory SQLite.
     try:
-        from app.states.postgres_config import PostgresConfig
+        db_url = resolve_engine_url(use_sqlite=args.sqlite)
+    except RuntimeError as exc:
+        logger.error("%s", exc)
+        return 1
 
-        pg = PostgresConfig()
-        db_url = (
-            f"postgresql+psycopg2://{pg.user}:{pg.password}" f"@{pg.host}:{pg.port}/{pg.database}"
-        )
-    except Exception:
-        logger.warning("Could not load PostgresConfig; using in-memory SQLite.")
-        db_url = "sqlite://"
+    # Deferred imports keep parse-time overhead low.
+    from sqlmodel import Session, create_engine
+
+    from app.resolve.run import ResolutionRun, ensure_resolution_schema
 
     engine = create_engine(db_url)
+    ensure_resolution_schema(engine)
 
-    # Ensure resolution tables exist.
-    import app.resolve.models.canonical  # noqa: F401  (registers tables)
-    import app.resolve.models.resolution  # noqa: F401
-
-    SQLModel.metadata.create_all(engine)
-
-    # task-1z injects the concrete stage list; until then run no-op.
-    stages: list = []
+    stages = _get_run_stages()
 
     resolution_run = ResolutionRun(state_code=state_code, config=config)
 

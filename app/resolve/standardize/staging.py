@@ -11,6 +11,7 @@ from app.resolve.models.canonical import (
     UnmappedEntityTypeError,
     map_unified_to_canonical_entity_type,
 )
+from app.resolve.models.resolution import SOURCE_ID_MAX_LENGTH
 
 
 def _utc_now() -> datetime:
@@ -35,7 +36,9 @@ class ResolutionInput(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     run_id: int = Field(index=True)
     source_type: str = Field(sa_column=Column(String(64), nullable=False, index=True))
-    source_id: str = Field(sa_column=Column(String(128), nullable=False, index=True))
+    source_id: str = Field(
+        sa_column=Column(String(SOURCE_ID_MAX_LENGTH), nullable=False, index=True)
+    )
     entity_type: str = Field(sa_column=Column(String(64), nullable=False, index=True))
 
     first_name: str | None = Field(default=None, sa_column=Column(String(200)))

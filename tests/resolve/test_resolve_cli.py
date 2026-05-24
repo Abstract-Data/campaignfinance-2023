@@ -4,23 +4,137 @@ Tests for app/resolve/cli.py covering:
 
 - _resolve_state_code: name/code/invalid inputs
 - _load_config: None / valid JSON file / non-dict JSON / bad path
+- Database URL resolution: special-char passwords, Postgres fail-loud, SQLite fallback
 - main(): argument parsing, good runs, bad state, missing config
-- smoke: main(["run", "--state", "texas"]) completes with exit-code 0
-          using the SQLite fallback (no Postgres credentials in CI).
-
-The CLI's internal create_engine falls back to "sqlite://" whenever
-PostgresConfig cannot be loaded, so these tests run without any DB setup.
+- smoke: main(["run", "--state", "texas"]) completes with exit-code 0 using SQLite when no
+  ``DATABASE_URL`` is configured.
 """
 
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import inspect as sa_inspect
+from sqlmodel import create_engine
 
-from app.resolve.cli import _load_config, _resolve_state_code, main
+from app.resolve.cli import (
+    _load_config,
+    _resolve_state_code,
+    build_postgres_url_from_env,
+    main,
+    postgres_env_configured,
+    resolve_database_url,
+    resolve_engine_url,
+)
+from app.resolve.run import ensure_resolution_schema, resolution_schema_table_names
 
 # ---------------------------------------------------------------------------
-# _resolve_state_code
+# Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clear_postgres_env(monkeypatch):
+    """Ensure smoke tests use SQLite unless a test sets Postgres env explicitly."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    for key in (
+        "POSTGRES_HOST",
+        "POSTGRES_PORT",
+        "POSTGRES_DB",
+        "POSTGRES_USER",
+        "POSTGRES_PASSWORD",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
+# ---------------------------------------------------------------------------
+# Database URL resolution
+# ---------------------------------------------------------------------------
+
+
+class TestDatabaseUrlResolution:
+    def test_no_postgres_env_uses_sqlite(self):
+        assert resolve_database_url() == "sqlite://"
+
+    def test_explicit_sqlite_flag(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg2://u:p@localhost/db")
+        assert resolve_database_url(use_sqlite=True) == "sqlite://"
+
+    def test_postgres_env_configured_from_database_url(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg2://u:p@localhost/db")
+        assert postgres_env_configured() is True
+
+    def test_postgres_env_configured_from_postgres_vars(self, monkeypatch):
+        monkeypatch.setenv("POSTGRES_USER", "user")
+        monkeypatch.setenv("POSTGRES_DB", "campaign_finance")
+        assert postgres_env_configured() is True
+
+    def test_sqlite_database_url_not_postgres_configured(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", "sqlite:///tmp.db")
+        assert postgres_env_configured() is False
+
+    def test_build_postgres_url_encodes_special_password(self, monkeypatch):
+        monkeypatch.setenv("POSTGRES_USER", "user")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "p@ss:word/foo")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
+        monkeypatch.setenv("POSTGRES_PORT", "5432")
+        monkeypatch.setenv("POSTGRES_DB", "testdb")
+
+        url = build_postgres_url_from_env()
+        assert "p%40ss%3Aword%2Ffoo" in url
+        assert "postgresql+psycopg2://user:" in url
+
+    def test_build_postgres_url_uses_database_url_when_set(self, monkeypatch):
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql+psycopg2://user:secret@db.example.com:5432/prod",
+        )
+        assert build_postgres_url_from_env() == (
+            "postgresql+psycopg2://user:secret@db.example.com:5432/prod"
+        )
+
+    def test_postgres_connection_failure_raises(self, monkeypatch):
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql+psycopg2://bad:bad@127.0.0.1:59999/nodb",
+        )
+        with pytest.raises(RuntimeError, match="Refusing to fall back to SQLite"):
+            resolve_engine_url()
+
+    def test_postgres_connection_failure_main_returns_1(self, monkeypatch):
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql+psycopg2://bad:bad@127.0.0.1:59999/nodb",
+        )
+        code = main(["run", "--state", "texas"])
+        assert code == 1
+
+    def test_explicit_sqlite_main_succeeds_despite_database_url(self, monkeypatch):
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql+psycopg2://bad:bad@127.0.0.1:59999/nodb",
+        )
+        monkeypatch.setattr(
+            "app.resolve.cli._get_run_stages",
+            lambda: [lambda session, run_id, config: {}],
+        )
+        code = main(["run", "--state", "texas", "--sqlite"])
+        assert code == 0
+
+
+class TestEnsureResolutionSchema:
+    def test_create_all_scoped_to_resolve_tables_only(self):
+        import app.core.unified_sqlmodels  # noqa: F401 — registers unified tables
+
+        engine = create_engine("sqlite:///:memory:", echo=False)
+        ensure_resolution_schema(engine)
+
+        created = set(sa_inspect(engine).get_table_names())
+        expected = resolution_schema_table_names()
+        assert expected <= created
+        assert "unified_transactions" not in created
+        assert "states" not in created
+
+        engine.dispose()
 
 
 class TestResolveStateCode:
@@ -151,8 +265,17 @@ class TestMainBadInputs:
 class TestMainSmoke:
     """End-to-end: the CLI opens a match_run, completes it, and exits 0.
 
-    No Postgres credentials in CI — the CLI falls back to sqlite://.
+    No ``DATABASE_URL`` in the environment — the CLI uses in-memory SQLite.
+    Stages are stubbed to a no-op so smoke tests do not require unified source
+    tables (those live in Postgres; see ``test_phase1_integration.py``).
     """
+
+    @pytest.fixture(autouse=True)
+    def _noop_stages(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.resolve.cli._get_run_stages",
+            lambda: [lambda session, run_id, config: {}],
+        )
 
     def test_run_texas_no_stages_returns_0(self):
         code = main(["run", "--state", "texas"])

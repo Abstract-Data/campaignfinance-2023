@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import UniqueConstraint, inspect as sa_inspect
 from sqlmodel import SQLModel, create_engine
 
+from app.resolve.models import SOURCE_ID_MAX_LENGTH
 from app.resolve.models.resolution import (
     AddressCrosswalk,
     CampaignCrosswalk,
@@ -80,6 +81,26 @@ def test_all_six_tables_created_by_create_all(engine):
 # ---------------------------------------------------------------------------
 # Step 5 — column constraints
 # ---------------------------------------------------------------------------
+
+
+def test_source_id_width_aligned_with_staging_constant():
+    """Crosswalk and decision source_id columns share SOURCE_ID_MAX_LENGTH."""
+    from app.resolve.blocking import CandidatePair
+    from app.resolve.standardize.staging import ResolutionInput
+
+    assert SOURCE_ID_MAX_LENGTH == 128
+
+    def _varchar_length(column) -> int | None:
+        return getattr(column.type, "length", None)
+
+    assert _varchar_length(ResolutionInput.__table__.c.source_id) == SOURCE_ID_MAX_LENGTH
+
+    for model in (EntityCrosswalk, AddressCrosswalk, CampaignCrosswalk):
+        assert _varchar_length(model.__table__.c.source_id) == SOURCE_ID_MAX_LENGTH
+
+    for col_name in ("source_a_id", "source_b_id"):
+        for model in (MatchDecision, MergeReview, CandidatePair):
+            assert _varchar_length(model.__table__.c[col_name]) == SOURCE_ID_MAX_LENGTH
 
 
 def test_source_id_is_string_column_on_all_crosswalks(engine):

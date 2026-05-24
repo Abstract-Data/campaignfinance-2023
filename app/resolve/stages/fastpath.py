@@ -181,20 +181,6 @@ def _collect_name_address_candidates(
     return candidates
 
 
-def _collect_address_candidates(rows: list[ResolutionInput]) -> list[_MergeCandidate]:
-    groups = _group_records(rows, _address_key)
-    candidates: list[_MergeCandidate] = []
-    for refs in groups.values():
-        candidates.extend(
-            _star_edges(
-                refs,
-                method=MatchMethod.deterministic_rule,
-                rule="identical_standardized_address",
-            )
-        )
-    return candidates
-
-
 def _dedupe_candidates(candidates: list[_MergeCandidate]) -> list[_MergeCandidate]:
     seen_pairs: set[tuple[str, str, str, str]] = set()
     deduped: list[_MergeCandidate] = []
@@ -212,7 +198,6 @@ def _collect_merge_candidates(rows: list[ResolutionInput]) -> list[_MergeCandida
     ordered_rules = (
         _collect_filer_id_candidates,
         _collect_name_address_candidates,
-        _collect_address_candidates,
     )
     candidates: list[_MergeCandidate] = []
     for rule_fn in ordered_rules:

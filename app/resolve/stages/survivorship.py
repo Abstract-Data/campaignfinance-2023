@@ -21,6 +21,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
+from sqlalchemy import delete
 from sqlmodel import Session, select
 
 from app.resolve.models.canonical import (
@@ -32,12 +33,13 @@ from app.resolve.models.canonical import (
 )
 from app.resolve.models.resolution import (
     ConfidenceBand,
-    DecisionOutcome,
     EntityCrosswalk,
-    MatchDecision,
     MatchMethod,
+    MergeReview,
+    ReviewStatus,
     SourceType,
 )
+from app.resolve.stages.fastpath import MergeEdge
 from app.resolve.standardize.orgs import normalize_org_name
 from app.resolve.standardize.staging import ResolutionInput
 
@@ -296,6 +298,80 @@ def _build_name_history_rows(
 
 
 # ---------------------------------------------------------------------------
+# Private: merge-edge loading + staging helpers
+# ---------------------------------------------------------------------------
+
+
+def _edge_key(edge: Edge) -> frozenset[tuple[str, str]]:
+    """Undirected key for deduplicating pairwise merge edges."""
+    return frozenset(
+        {
+            (edge.source_type_a, edge.source_id_a),
+            (edge.source_type_b, edge.source_id_b),
+        }
+    )
+
+
+def _source_type_str(value: object) -> str:
+    return value.value if hasattr(value, "value") else str(value)
+
+
+def load_cluster_edges(session: Session, run_id: int) -> list[Edge]:
+    """Load merge edges for clustering from ``merge_edges`` and approved reviews.
+
+    Phase 1 fast-path writes deterministic edges to ``merge_edges``; Phase 2
+    appends probabilistic and approved-review edges there as well.  Approved
+    ``merge_review`` rows are included when present so human decisions merge
+    even before a classify stage re-emits them as ``merge_edges``.
+    """
+    seen: set[frozenset[tuple[str, str]]] = set()
+    edges: list[Edge] = []
+
+    def add(edge: Edge) -> None:
+        key = _edge_key(edge)
+        if key in seen:
+            return
+        seen.add(key)
+        edges.append(edge)
+
+    for row in session.exec(select(MergeEdge).where(MergeEdge.run_id == run_id)).all():
+        add(
+            Edge(
+                source_type_a=row.source_a_type,
+                source_id_a=row.source_a_id,
+                source_type_b=row.source_b_type,
+                source_id_b=row.source_b_id,
+            )
+        )
+
+    for review in session.exec(
+        select(MergeReview).where(MergeReview.status == ReviewStatus.approved)
+    ).all():
+        add(
+            Edge(
+                source_type_a=_source_type_str(review.source_a_type),
+                source_id_a=review.source_a_id,
+                source_type_b=_source_type_str(review.source_b_type),
+                source_id_b=review.source_b_id,
+            )
+        )
+
+    return edges
+
+
+def _clear_live_canonical_snapshot(session: Session) -> None:
+    """Remove the prior live canonical snapshot before publishing this run.
+
+    Each successful survivorship stage replaces the full live canonical layer
+    so reruns do not accumulate duplicate golden records.  Historical per-run
+    mappings remain in ``entity_crosswalk`` keyed by ``run_id``.
+    """
+    session.exec(delete(CanonicalNameHistory))
+    session.exec(delete(CanonicalEntity))
+    session.flush()
+
+
+# ---------------------------------------------------------------------------
 # Stage entry point
 # ---------------------------------------------------------------------------
 
@@ -307,18 +383,15 @@ def run_survivorship_stage(
 ) -> dict[str, Any]:
     """Stage 7 entry point: cluster → survivorship → canonical publish.
 
-    Reads this run's merge edges from ``match_decision``, builds clusters
-    (including singletons for all unlinked source records), applies
-    survivorship rules, and writes:
+    Reads this run's merge edges from ``merge_edges`` (plus approved
+    ``merge_review`` rows when present), builds clusters (including singletons
+    for all unlinked source records), applies survivorship rules, clears the
+    prior live canonical snapshot, and writes:
 
     - ``canonical_entity`` rows (one per cluster),
     - ``canonical_name_history`` rows (one per distinct normalized name per
       cluster),
     - ``entity_crosswalk`` rows (one per source record in each cluster).
-
-    Note: the atomic staging-table swap (staging → live) is performed by
-    ``task-1d``'s ``app.resolve.staging`` helpers and is wired in by
-    ``task-1z``.  Phase 1 writes directly to the live tables.
 
     Parameters
     ----------
@@ -335,7 +408,7 @@ def run_survivorship_stage(
     -------
     dict
         ``{"canonical_out": <n>}`` where *n* is the number of canonical
-        entity rows written or refreshed.
+        entity rows written for this run (live table row count after publish).
     """
     state_code: str = config.get("state_code", "TX")
 
@@ -344,34 +417,15 @@ def run_survivorship_stage(
     )
 
     all_source_keys: list[tuple[str, str]] = [(r.source_type, r.source_id) for r in input_rows]
-
-    decisions: list[MatchDecision] = list(
-        session.exec(
-            select(MatchDecision)
-            .where(MatchDecision.run_id == run_id)
-            .where(MatchDecision.outcome == DecisionOutcome.merged)
-        ).all()
-    )
-
-    edges: list[Edge] = [
-        Edge(
-            source_type_a=(
-                d.source_a_type.value if hasattr(d.source_a_type, "value") else str(d.source_a_type)
-            ),
-            source_id_a=d.source_a_id,
-            source_type_b=(
-                d.source_b_type.value if hasattr(d.source_b_type, "value") else str(d.source_b_type)
-            ),
-            source_id_b=d.source_b_id,
-        )
-        for d in decisions
-    ]
-
+    edges = load_cluster_edges(session, run_id)
     clusters = cluster_edges(edges, all_source_keys=all_source_keys)
 
     row_by_key: dict[tuple[str, str], ResolutionInput] = {
         (r.source_type, r.source_id): r for r in input_rows
     }
+
+    _clear_live_canonical_snapshot(session)
+    session.exec(delete(EntityCrosswalk).where(EntityCrosswalk.run_id == run_id))
 
     canonical_count = 0
     for cluster in clusters:

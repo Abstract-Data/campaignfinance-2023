@@ -231,6 +231,18 @@ class TestRun:
             run.run(session, stages)
         assert call_log == ["first", "second"]
 
+    def test_run_later_stage_overwrites_same_counter_key(self, engine):
+        """Duplicate counter keys use last-stage overwrite, not summation."""
+        run = ResolutionRun(state_code="TX", config={})
+        stages = [
+            self._make_stage("s1", {"records_in": 10, "pairs_compared": 3}, []),
+            self._make_stage("s2", {"records_in": 5, "pairs_compared": 8}, []),
+        ]
+        with Session(engine) as session:
+            result = run.run(session, stages)
+        assert result.records_in == 5
+        assert result.pairs_compared == 8
+
     def test_run_merges_stage_count_dicts(self, engine):
         run = ResolutionRun(state_code="TX", config={})
         stages = [
@@ -452,3 +464,24 @@ class TestDropRunStaging:
             session.commit()
 
         assert stg_name not in sa_inspect(engine).get_table_names()
+
+
+# ---------------------------------------------------------------------------
+# ensure_resolution_schema — scoped DDL
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_resolution_schema_creates_match_run_only_from_resolve_models():
+    """ensure_resolution_schema must not create unified source tables."""
+    import app.core.unified_sqlmodels  # noqa: F401
+    from app.resolve.run import ensure_resolution_schema, resolution_schema_table_names
+
+    engine = create_engine("sqlite:///:memory:", echo=False)
+    ensure_resolution_schema(engine)
+
+    created = set(sa_inspect(engine).get_table_names())
+    assert "match_run" in created
+    assert resolution_schema_table_names() <= created
+    assert "unified_persons" not in created
+
+    engine.dispose()

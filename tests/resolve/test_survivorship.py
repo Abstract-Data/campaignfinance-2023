@@ -27,20 +27,20 @@ from app.resolve.models.canonical import (
 )
 from app.resolve.models.resolution import (
     ConfidenceBand,
-    DecisionBand,
-    DecisionOutcome,
     EntityCrosswalk,
-    MatchDecision,
-    MatchMethod,
     MatchRun,
+    MergeReview,
     PassType,
+    ReviewStatus,
     SourceType,
 )
+from app.resolve.stages.fastpath import MergeEdge
 from app.resolve.stages.survivorship import (
     Cluster,
     Edge,
     build_golden_record,
     cluster_edges,
+    load_cluster_edges,
     run_survivorship_stage,
 )
 from app.resolve.standardize.staging import ResolutionInput
@@ -55,7 +55,8 @@ _TABLES = [
     CanonicalEntity.__table__,
     CanonicalNameHistory.__table__,
     EntityCrosswalk.__table__,
-    MatchDecision.__table__,
+    MergeEdge.__table__,
+    MergeReview.__table__,
     ResolutionInput.__table__,
 ]
 
@@ -135,27 +136,48 @@ def _add_input(
     return row
 
 
-def _add_edge(
+def _add_merge_edge(
     session: Session,
     run_id: int,
     src_type_a: str,
     src_id_a: str,
     src_type_b: str,
     src_id_b: str,
-) -> MatchDecision:
-    decision = MatchDecision(
+    *,
+    edge_source: str = "deterministic",
+) -> MergeEdge:
+    edge = MergeEdge(
+        run_id=run_id,
+        source_a_type=src_type_a,
+        source_a_id=src_id_a,
+        source_b_type=src_type_b,
+        source_b_id=src_id_b,
+        edge_source=edge_source,
+    )
+    session.add(edge)
+    session.commit()
+    return edge
+
+
+def _add_approved_review(
+    session: Session,
+    run_id: int,
+    src_type_a: str,
+    src_id_a: str,
+    src_type_b: str,
+    src_id_b: str,
+) -> MergeReview:
+    review = MergeReview(
         run_id=run_id,
         source_a_type=SourceType(src_type_a),
         source_a_id=src_id_a,
         source_b_type=SourceType(src_type_b),
         source_b_id=src_id_b,
-        band=DecisionBand.auto,
-        outcome=DecisionOutcome.merged,
-        method=MatchMethod.deterministic_rule,
+        status=ReviewStatus.approved,
     )
-    session.add(decision)
+    session.add(review)
     session.commit()
-    return decision
+    return review
 
 
 def _build_rows(specs: list[dict], run_id: int = 1) -> list[ResolutionInput]:
@@ -381,7 +403,66 @@ class TestBuildGoldenRecord:
 # ===========================================================================
 
 
+class TestLoadClusterEdges:
+    def test_reads_merge_edges_for_run(self, session: Session, run_id: int):
+        _add_merge_edge(session, run_id, "unified_person", "A", "unified_person", "B")
+        edges = load_cluster_edges(session, run_id)
+        assert len(edges) == 1
+        assert edges[0].source_id_a == "A"
+        assert edges[0].source_id_b == "B"
+
+    def test_includes_approved_review_edges(self, session: Session, run_id: int):
+        _add_approved_review(session, run_id, "unified_person", "X", "unified_person", "Y")
+        edges = load_cluster_edges(session, run_id)
+        assert len(edges) == 1
+        assert {edges[0].source_id_a, edges[0].source_id_b} == {"X", "Y"}
+
+
 class TestRunSurvivorshipStage:
+    def test_clusters_from_merge_edges_not_match_decision(self, session: Session, run_id: int):
+        """Clustering must follow merge_edges; match_decision alone is not enough."""
+        _add_input(session, run_id, "unified_person", "P1", first_name="Alice", last_name="Smith")
+        _add_input(session, run_id, "unified_person", "P2", first_name="Alice", last_name="Smith")
+        _add_merge_edge(session, run_id, "unified_person", "P1", "unified_person", "P2")
+
+        result = run_survivorship_stage(session, run_id, {"state_code": "TX"})
+
+        assert result["canonical_out"] == 1
+        entities = session.exec(select(CanonicalEntity)).all()
+        assert len(entities) == 1
+        assert entities[0].source_record_count == 2
+
+    def test_approved_review_edge_merges_without_merge_edges_row(
+        self, session: Session, run_id: int
+    ):
+        _add_input(session, run_id, "unified_person", "P1", first_name="A", last_name="B")
+        _add_input(session, run_id, "unified_person", "P2", first_name="A", last_name="B")
+        _add_approved_review(session, run_id, "unified_person", "P1", "unified_person", "P2")
+
+        result = run_survivorship_stage(session, run_id, {"state_code": "TX"})
+
+        assert result["canonical_out"] == 1
+
+    def test_second_run_replaces_live_canonical_entities(self, session: Session, run_id: int):
+        """Staging swap keeps live canonical row count stable across reruns."""
+        _add_input(session, run_id, "unified_person", "P1", first_name="A", last_name="B")
+        _add_input(session, run_id, "unified_person", "P2", first_name="C", last_name="D")
+
+        run_survivorship_stage(session, run_id, {"state_code": "TX"})
+        assert len(session.exec(select(CanonicalEntity)).all()) == 2
+
+        run2 = MatchRun(state_code="TX", pass_type=PassType.entity)
+        session.add(run2)
+        session.commit()
+        session.refresh(run2)
+        assert run2.id is not None
+
+        _add_input(session, run2.id, "unified_person", "P1", first_name="A", last_name="B")
+        _add_input(session, run2.id, "unified_person", "P2", first_name="C", last_name="D")
+        run_survivorship_stage(session, run2.id, {"state_code": "TX"})
+
+        assert len(session.exec(select(CanonicalEntity)).all()) == 2
+
     def test_every_source_record_gets_exactly_one_crosswalk_row(
         self, session: Session, run_id: int
     ):
@@ -403,7 +484,7 @@ class TestRunSurvivorshipStage:
         """Two source records connected by a merge edge → one canonical entity."""
         _add_input(session, run_id, "unified_person", "P1", first_name="Alice", last_name="Smith")
         _add_input(session, run_id, "unified_person", "P2", first_name="Alice", last_name="Smith")
-        _add_edge(session, run_id, "unified_person", "P1", "unified_person", "P2")
+        _add_merge_edge(session, run_id, "unified_person", "P1", "unified_person", "P2")
 
         result = run_survivorship_stage(session, run_id, {"state_code": "TX"})
 
@@ -429,8 +510,8 @@ class TestRunSurvivorshipStage:
         _add_input(session, run_id, "unified_person", "A", first_name="John", last_name="Smith")
         _add_input(session, run_id, "unified_person", "B", first_name="John", last_name="Smith")
         _add_input(session, run_id, "unified_person", "C", first_name="J", last_name="Smith")
-        _add_edge(session, run_id, "unified_person", "A", "unified_person", "B")
-        _add_edge(session, run_id, "unified_person", "B", "unified_person", "C")
+        _add_merge_edge(session, run_id, "unified_person", "A", "unified_person", "B")
+        _add_merge_edge(session, run_id, "unified_person", "B", "unified_person", "C")
 
         result = run_survivorship_stage(session, run_id, {"state_code": "TX"})
 
@@ -443,7 +524,7 @@ class TestRunSurvivorshipStage:
         _add_input(session, run_id, "unified_person", "P1", first_name="X", last_name="Y")
         _add_input(session, run_id, "unified_person", "P2", first_name="X", last_name="Y")
         _add_input(session, run_id, "unified_person", "P3", first_name="Z", last_name="Q")
-        _add_edge(session, run_id, "unified_person", "P1", "unified_person", "P2")
+        _add_merge_edge(session, run_id, "unified_person", "P1", "unified_person", "P2")
 
         result = run_survivorship_stage(session, run_id, {"state_code": "TX"})
 
@@ -508,7 +589,7 @@ class TestCanonicalNameHistory:
             raw_name="Johnny Doe",
             created_at=_utc(),
         )
-        _add_edge(session, run_id, "unified_person", "P1", "unified_person", "P2")
+        _add_merge_edge(session, run_id, "unified_person", "P1", "unified_person", "P2")
 
         run_survivorship_stage(session, run_id, {"state_code": "TX"})
 
@@ -540,7 +621,7 @@ class TestCanonicalNameHistory:
             last_name="Doe",
             raw_name="John Doe",
         )
-        _add_edge(session, run_id, "unified_person", "P1", "unified_person", "P2")
+        _add_merge_edge(session, run_id, "unified_person", "P1", "unified_person", "P2")
 
         run_survivorship_stage(session, run_id, {"state_code": "TX"})
 
@@ -575,7 +656,7 @@ class TestCanonicalNameHistory:
             raw_name="John Doe",
             created_at=newer,
         )
-        _add_edge(session, run_id, "unified_person", "P1", "unified_person", "P2")
+        _add_merge_edge(session, run_id, "unified_person", "P1", "unified_person", "P2")
 
         run_survivorship_stage(session, run_id, {"state_code": "TX"})
 

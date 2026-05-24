@@ -10,13 +10,13 @@ todos:
     status: completed
   - id: wave-2-p1-r2
     content: "Wave 2: Dispatch 4 parallel agents — tasks 1d (CLI/run), 1e (blocking), 1f (fastpath), 1g (survivorship)"
-    status: in_progress
+    status: completed
   - id: wave-3-p1-z
     content: "Wave 3: Serial integration — task 1z wires stages 1→2→3→7, idempotency + Texas E2E"
-    status: pending
+    status: completed
   - id: wave-4-p2-r1
     content: "Wave 4: Dispatch 4 parallel agents — tasks 2a (Splink), 2b (classify), 2c (cluster), 2e (golden set)"
-    status: pending
+    status: in_progress
   - id: wave-5-p2-r2
     content: "Wave 5: Serial — task 2d updates survivorship for probabilistic clusters"
     status: pending

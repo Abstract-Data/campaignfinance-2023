@@ -7,6 +7,7 @@ from typing import Any
 import polars as pl
 from sqlmodel import Session, delete, select
 
+import app.resolve.models  # noqa: F401 — registers UnifiedReport before ORM use
 from app.core.unified_sqlmodels import (
     State,
     UnifiedAddress,
@@ -83,9 +84,7 @@ def _collect_source_rows(session: Session, state_id: int) -> list[dict[str, Any]
     output: list[dict[str, Any]] = []
     for row in person_rows:
         raw_name = " ".join(
-            part
-            for part in [row.first_name, row.middle_name, row.last_name, row.suffix]
-            if part
+            part for part in [row.first_name, row.middle_name, row.last_name, row.suffix] if part
         ).strip()
         if not raw_name:
             raw_name = row.organization or ""
@@ -198,18 +197,24 @@ def _compute_features(rows: list[dict[str, Any]], run_id: int) -> list[Resolutio
     # map_elements required here: standardize_name/standardize_address wrap
     # probablepeople, usaddress, and scourgify — no native Polars equivalent.
     enriched = frame.with_columns(
-        pl.col("raw_name").map_elements(
+        pl.col("raw_name")
+        .map_elements(
             standardize_name,
             return_dtype=pl.Object,
-        ).alias("std_name"),
-        pl.col("raw_address").map_elements(
+        )
+        .alias("std_name"),
+        pl.col("raw_address")
+        .map_elements(
             standardize_address,
             return_dtype=pl.Object,
-        ).alias("std_address"),
-        pl.col("raw_name").map_elements(
+        )
+        .alias("std_address"),
+        pl.col("raw_name")
+        .map_elements(
             normalize_org_name,
             return_dtype=pl.String,
-        ).alias("normalized_org"),
+        )
+        .alias("normalized_org"),
     )
 
     staged: list[ResolutionInput] = []
@@ -239,9 +244,7 @@ def _compute_features(rows: list[dict[str, Any]], run_id: int) -> list[Resolutio
 
 def build_resolution_input(session: Session, run_id: int, state_code: str) -> int:
     """Build stage-1 standardized records for one state and run id."""
-    state = session.exec(
-        select(State).where(State.code == state_code.upper())
-    ).one_or_none()
+    state = session.exec(select(State).where(State.code == state_code.upper())).one_or_none()
     if state is None or state.id is None:
         return 0
 
