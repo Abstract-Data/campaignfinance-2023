@@ -1,0 +1,39 @@
+name: Tool Config Verify
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify AGENTS.md required sections
+        run: python tests/verify/check_agents_md.py
+
+      - name: Verify enforcement hooks are present and executable
+        run: |
+          fail=0
+          for h in block-dangerous block-env-writes pre-commit verify-completion \
+                   block-op-read domain-purity-check sql-injection-check \
+                   router-boundary-check no-print-check env-leak-check; do
+            if [ ! -x ".claude/hooks/${h}.sh" ]; then
+              echo "MISSING or not executable: .claude/hooks/${h}.sh"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Verify cross-tool symlinks resolve to AGENTS.md
+        run: |
+          test "$(readlink GEMINI.md)" = "AGENTS.md" || { echo "GEMINI.md not linked"; exit 1; }
+          test "$(readlink .github/copilot-instructions.md)" = "../AGENTS.md" \
+            || { echo "copilot-instructions.md not linked"; exit 1; }
+          echo "Symlinks OK."

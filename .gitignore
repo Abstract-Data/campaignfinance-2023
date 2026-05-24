@@ -2,10 +2,18 @@
 *.csv
 *.log
 *.zip
-*.DS_Store
+.DS_Store
+**/.DS_Store
 *.env
 *.__pycache__/
 /logs/
+
+# Claude Code / agent session state (do not commit)
+.claude/handoffs/
+.claude/command-log.txt
+.claude/settings.local.json
+.claude/notion-ledger.json
+HANDOFF.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

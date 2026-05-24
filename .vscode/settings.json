@@ -12,4 +12,5 @@
             "args": ["--single-instance"]
         }
     },
+    "snyk.advanced.autoSelectOrganization": true,
 }

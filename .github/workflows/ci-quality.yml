@@ -1,0 +1,19 @@
+name: CI Quality
+
+on:
+  workflow_call:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Ruff lint
+        run: uvx ruff@latest check .
+
+      - name: Ruff format check
+        run: uvx ruff@latest format --check .

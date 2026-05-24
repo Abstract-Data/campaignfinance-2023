@@ -1,0 +1,38 @@
+---
+description: Data-pipeline and Polars conventions for campaignfinance.
+globs: app/core/**,app/ingest/**,app/abcs/**,app/states/**,app/funcs/**
+alwaysApply: false
+---
+
+# Pipeline & Polars Conventions
+
+The pipeline is: state-portal download → schema-driven ingest → per-state
+validation → unified cross-state model → PostgreSQL load.
+
+## Polars
+
+- Prefer `LazyFrame` over eager `DataFrame`; defer `.collect()` to the end of a
+  pipeline.
+- Never `.collect()` mid-pipeline then re-wrap as a `LazyFrame`.
+- Write fluent method chains — one operation per line, readable top to bottom.
+  Avoid intermediate-variable sprawl.
+- Compose pipeline stages with `.pipe()`; each stage is a pure transform.
+- Use Polars expressions for transforms — no `iterrows()`-style row iteration.
+- pandas is for legacy interop only; new transforms use Polars.
+
+## Ingestion & unification
+
+- File parsing goes through `GenericFileReader` with schemas built via
+  `build_schema_for_states([...])` — header normalization and type conversion
+  are automatic.
+- Every column a state file produces must have a mapping in the unified field
+  library. Unmapped columns are a bug, not a silent drop.
+- New state implementations inherit `StateCategoryClass` /
+  `StateFileValidation` from `app/abcs/`.
+
+## Data integrity
+
+- Log row counts at every pipeline stage — never drop rows silently.
+- Validate records with Pydantic/SQLModel before load.
+- Attach `file_origin` and `download_date` metadata to loaded records.
+- Parameterize all file paths; never hardcode them.
