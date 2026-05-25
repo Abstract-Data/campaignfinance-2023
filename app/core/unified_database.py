@@ -819,22 +819,32 @@ class UnifiedDatabaseManager:
         start_date: Optional[date] = None,
         notes: Optional[str] = None,
         user: Optional[str] = None,
+        *,
+        session: Session | None = None,
     ) -> UnifiedCommitteePerson:
         """
         Add a person to a committee with a specific role.
+
+        When *session* is provided the caller owns the transaction boundary
+        (no commit/refresh here) so batch loaders avoid N+1 session churn.
         """
-        with self.get_session() as session:
-            committee_person = UnifiedCommitteePerson(
-                person_id=person_id,
-                committee_id=committee_id,
-                role=role,
-                start_date=start_date,
-                notes=notes,
-                last_modified_by=user,
-            )
+        committee_person = UnifiedCommitteePerson(
+            person_id=person_id,
+            committee_id=committee_id,
+            role=role,
+            start_date=start_date,
+            notes=notes,
+            last_modified_by=user,
+        )
+        if session is not None:
             session.add(committee_person)
-            session.commit()
-            session.refresh(committee_person)
+            session.flush()
+            return committee_person
+
+        with self.get_session() as owned_session:
+            owned_session.add(committee_person)
+            owned_session.commit()
+            owned_session.refresh(committee_person)
             return committee_person
 
     def remove_person_from_committee(

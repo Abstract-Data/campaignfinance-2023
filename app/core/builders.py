@@ -24,6 +24,7 @@ from app.core.models import (
     UnifiedTransaction,
 )
 from app.core.unified_field_library import field_library
+from app.core.value_objects import AddressParts, PersonName
 
 
 class UnifiedSQLModelBuilder:
@@ -93,91 +94,98 @@ class UnifiedSQLModelBuilder:
 
         return transaction
 
+    def _parse_person_name(self, raw_data: dict[str, Any]) -> PersonName:
+        """Extract normalized person name parts from raw state data."""
+        return PersonName(
+            first=self._get_field_value(raw_data, "person_first_name"),
+            middle=self._get_field_value(raw_data, "person_middle_name"),
+            last=self._get_field_value(raw_data, "person_last_name"),
+            suffix=self._get_field_value(raw_data, "person_suffix"),
+            organization=self._get_field_value(raw_data, "person_organization"),
+        )
+
+    def _parse_address_parts(self, raw_data: dict[str, Any]) -> AddressParts:
+        """Extract normalized address components from raw state data."""
+        return AddressParts(
+            street_1=self._get_field_value(raw_data, "address_street_1"),
+            street_2=self._get_field_value(raw_data, "address_street_2"),
+            city=self._get_field_value(raw_data, "address_city"),
+            state=self._get_field_value(raw_data, "address_state"),
+            zip_code=self._get_field_value(raw_data, "address_zip"),
+        ).normalized()
+
     def build_person(self, raw_data: dict[str, Any], role: PersonRole) -> UnifiedPerson | None:
         """Build a unified person from raw data"""
-        person_data = {}
+        name = self._parse_person_name(raw_data)
+        if not name.full_name:
+            return None
 
-        # Map person fields using the unified field names from the field library
-        person_fields = {
-            "first_name": "person_first_name",
-            "last_name": "person_last_name",
-            "middle_name": "person_middle_name",
-            "suffix": "person_suffix",
-            "organization": "person_organization",
-            "employer": "person_employer",
-            "occupation": "person_occupation",
+        person_data: dict[str, Any] = {
+            "first_name": name.first,
+            "last_name": name.last,
+            "middle_name": name.middle,
+            "suffix": name.suffix,
+            "organization": name.organization,
         }
-
-        for unified_field, field_name in person_fields.items():
-            value = self._get_field_value(raw_data, field_name)
+        for extra_field in ("employer", "occupation"):
+            value = self._get_field_value(raw_data, f"person_{extra_field}")
             if value:
-                person_data[unified_field] = value
+                person_data[extra_field] = value
 
-        # If we found any person data, create the person
-        if person_data:
-            # Determine person type
+        # Determine person type
+        person_type = PersonType.UNKNOWN
+        last_name = (name.last or "").strip()
+        first_name = (name.first or "").strip()
+
+        if last_name.upper() in PLACEHOLDER_NAMES:
+            person_type = PersonType.UNKNOWN
+        elif name.organization:
+            person_type = PersonType.ORGANIZATION
+        elif first_name and last_name:
+            person_type = PersonType.INDIVIDUAL
+        elif last_name and not first_name:
             person_type = PersonType.UNKNOWN
 
-            # Check for special cases first
-            last_name = person_data.get("last_name", "").strip()
-            first_name = person_data.get("first_name", "").strip()
+        address = self.build_address(raw_data, role.value)
 
-            # Handle special placeholder cases
-            if last_name.upper() in PLACEHOLDER_NAMES:
-                person_type = PersonType.UNKNOWN
-            elif person_data.get("organization"):
-                person_type = PersonType.ORGANIZATION
-            elif first_name and last_name:
-                person_type = PersonType.INDIVIDUAL
-            elif last_name and not first_name:
-                # Only last name - could be organization or incomplete individual
-                person_type = PersonType.UNKNOWN
+        person = UnifiedPerson(
+            **person_data, person_type=person_type, state_id=self.state_id, address=address
+        )
 
-            # Build address
-            address = self.build_address(raw_data, role.value)
+        entity_type = (
+            EntityType.ORGANIZATION
+            if person_type == PersonType.ORGANIZATION
+            else EntityType.PERSON
+        )
+        entity_name = person.organization if person.organization else person.full_name
+        entity = self._get_or_create_entity(
+            entity_type=entity_type, name=entity_name, address=address, person=person
+        )
+        if entity:
+            person.entity = entity
 
-            person = UnifiedPerson(
-                **person_data, person_type=person_type, state_id=self.state_id, address=address
-            )
-
-            entity_type = (
-                EntityType.ORGANIZATION
-                if person_type == PersonType.ORGANIZATION
-                else EntityType.PERSON
-            )
-            entity_name = person.organization if person.organization else person.full_name
-            entity = self._get_or_create_entity(
-                entity_type=entity_type, name=entity_name, address=address, person=person
-            )
-            if entity:
-                person.entity = entity
-
-            return person
-
-        return None
+        return person
 
     def build_address(self, raw_data: dict[str, Any], entity_role: str) -> UnifiedAddress | None:
         """Build a unified address from raw data"""
-        address_data = {}
-
-        # Map address fields using the unified field names from the field library
-        address_fields = {
-            "street_1": "address_street_1",
-            "street_2": "address_street_2",
-            "city": "address_city",
-            "state": "address_state",
-            "zip_code": "address_zip",
-            "country": "address_country",
-            "county": "address_county",
+        _ = entity_role
+        parts = self._parse_address_parts(raw_data)
+        address_data: dict[str, Any] = {
+            "street_1": parts.street_1,
+            "street_2": parts.street_2,
+            "city": parts.city,
+            "state": parts.state,
+            "zip_code": parts.zip_code,
         }
-
-        for unified_field, field_name in address_fields.items():
-            value = self._get_field_value(raw_data, field_name)
+        for extra_field, unified_field in (
+            ("country", "address_country"),
+            ("county", "address_county"),
+        ):
+            value = self._get_field_value(raw_data, unified_field)
             if value:
-                address_data[unified_field] = value
+                address_data[extra_field] = value
 
-        # If we found any address data, create or find the address
-        if address_data:
+        if any(address_data.get(field) for field in ("street_1", "city", "state", "zip_code")):
             # Check if address already exists
             existing_address = self._find_address_by_fields(address_data)
             if existing_address:

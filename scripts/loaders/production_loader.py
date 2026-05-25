@@ -103,31 +103,13 @@ def _ensure_file_origin(session: Any, state_id: int, path: Path) -> str:
     return origin_id
 
 
-def _persist_transaction(
-    session: Any,
+def _finalize_transaction_for_persist(
+    transaction: Any,
     raw: dict[str, Any],
     *,
-    state: str,
-    state_id: int,
-    state_code: str,
     file_origin_id: str | None,
 ) -> Any:
-    """Process one raw row through ``unified_sql_processor`` and persist it.
-
-    The local ``session`` is forwarded to the processor so the builder's
-    ``_find_*`` lookups dedupe against this transaction instead of reaching
-    for the (now-removed) module-level ``db_manager`` singleton (RF-SMELL-005).
-    """
-    from app.core.processor import unified_sql_processor
-
-    transaction = unified_sql_processor.process_record(
-        raw,
-        state,
-        state_id=state_id,
-        state_code=state_code,
-        session=session,
-    )
-
+    """Apply loader-specific FK/metadata overrides before session.add."""
     committee_filer = transaction.committee_id
     if not committee_filer:
         filer = raw.get("filerIdent")
@@ -148,7 +130,31 @@ def _persist_transaction(
 
     if file_origin_id:
         transaction.file_origin_id = file_origin_id
+    return transaction
 
+
+def _persist_transaction(
+    session: Any,
+    raw: dict[str, Any],
+    *,
+    state: str,
+    state_id: int,
+    state_code: str,
+    file_origin_id: str | None,
+) -> Any:
+    """Process one raw row through ``process_record_stream`` and persist it."""
+    from app.core.processor import unified_sql_processor
+
+    transaction = next(
+        unified_sql_processor.process_record_stream(
+            iter([raw]),
+            state,
+            state_id=state_id,
+            state_code=state_code,
+            session=session,
+        )
+    )
+    _finalize_transaction_for_persist(transaction, raw, file_origin_id=file_origin_id)
     session.add(transaction)
     session.flush()
     return transaction
@@ -288,6 +294,27 @@ def discover_and_load(
     return {"discovered": len(discovered), "loaded": loaded, "skipped": skipped}
 
 
+def _scan_file(path: Path):
+    """Return a Polars LazyFrame for *path* (parquet or CSV)."""
+    import polars as pl
+
+    if path.suffix.lower() == ".parquet":
+        return pl.scan_parquet(path)
+    if path.suffix.lower() in {".csv", ".txt"}:
+        return pl.scan_csv(path, infer_schema_length=0)
+    return None
+
+
+def _iter_row_batches(path: Path, batch_size: int):
+    """Yield DataFrame slices bounded by *batch_size* using lazy scan + streaming collect."""
+    lf = _scan_file(path)
+    if lf is None:
+        return
+    df = lf.collect(streaming=True)
+    for batch in df.iter_slices(n_rows=batch_size):
+        yield batch
+
+
 def _load_file(
     path: Path,
     record_type: str | None,
@@ -300,71 +327,71 @@ def _load_file(
     max_remaining: int | None = None,
 ) -> int:
     """Load a single parquet/CSV file, routing by record type."""
-    import polars as pl
-
-    logger.info(f"[loader] loading {path.name} (record_type={record_type!r}) ...")
-
-    if path.suffix.lower() == ".parquet":
-        df = pl.read_parquet(path)
-    elif path.suffix.lower() in {".csv", ".txt"}:
-        df = pl.read_csv(path, infer_schema_length=0)
-    else:
+    if _scan_file(path) is None:
         logger.warning(f"[loader] skipping unsupported file type: {path.suffix}")
         return 0
+
+    logger.info(f"[loader] loading {path.name} (record_type={record_type!r}) ...")
 
     file_origin_id = _ensure_file_origin(session, state_id, path)
     rows_loaded = 0
     effective_type = record_type
     batch_count = 0
 
-    for row_dict in df.to_dicts():
+    for batch_df in _iter_row_batches(path, config.batch_size):
+        for row_dict in batch_df.to_dicts():
+            if max_remaining is not None and rows_loaded >= max_remaining:
+                break
+
+            if effective_type is None:
+                effective_type = str(row_dict.get("recordType", "")).strip().upper() or None
+
+            if effective_type in TRANSACTION_RECORD_TYPES:
+                if effective_type == "PLDG":
+                    _persist_pldg_row(
+                        session,
+                        row_dict,
+                        state=state,
+                        state_id=state_id,
+                        state_code=state_code,
+                        file_origin_id=file_origin_id,
+                    )
+                else:
+                    _persist_transaction(
+                        session,
+                        row_dict,
+                        state=state,
+                        state_id=state_id,
+                        state_code=state_code,
+                        file_origin_id=file_origin_id,
+                    )
+                rows_loaded += 1
+
+                batch_count += 1
+                if batch_count >= config.commit_frequency:
+                    session.commit()
+                    batch_count = 0
+                continue
+
+            if effective_type and _dispatch_source_record(
+                row_dict,
+                effective_type,
+                state_id,
+                session,
+                file_origin_id=file_origin_id,
+            ):
+                rows_loaded += 1
+                batch_count += 1
+                if batch_count >= config.commit_frequency:
+                    session.commit()
+                    batch_count = 0
+            else:
+                logger.warning(
+                    f"[loader] unrecognized record_type={effective_type!r} in {path.name}"
+                )
+
         if max_remaining is not None and rows_loaded >= max_remaining:
             break
-
-        if effective_type is None:
-            effective_type = str(row_dict.get("recordType", "")).strip().upper() or None
-
-        if effective_type in TRANSACTION_RECORD_TYPES:
-            if effective_type == "PLDG":
-                _persist_pldg_row(
-                    session,
-                    row_dict,
-                    state=state,
-                    state_id=state_id,
-                    state_code=state_code,
-                    file_origin_id=file_origin_id,
-                )
-            else:
-                _persist_transaction(
-                    session,
-                    row_dict,
-                    state=state,
-                    state_id=state_id,
-                    state_code=state_code,
-                    file_origin_id=file_origin_id,
-                )
-            rows_loaded += 1
-
-            batch_count += 1
-            if batch_count >= config.commit_frequency:
-                session.commit()
-                batch_count = 0
-            continue
-
-        if effective_type and _dispatch_source_record(
-            row_dict,
-            effective_type,
-            state_id,
-            session,
-            file_origin_id=file_origin_id,
-        ):
-            rows_loaded += 1
-            batch_count += 1
-            if batch_count >= config.commit_frequency:
-                session.commit()
-                batch_count = 0
-        else:
-            logger.warning(f"[loader] unrecognized record_type={effective_type!r} in {path.name}")
 
     if batch_count:
         session.commit()

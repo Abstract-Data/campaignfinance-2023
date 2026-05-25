@@ -570,6 +570,7 @@ class UnifiedStateLoader:
                                     start_date=date.today(),
                                     user="state_loader",
                                     notes=f"Auto-created from {self.state} data",
+                                    session=session,
                                 )
                                 self.stats["committee_relationships_created"] += 1
 
