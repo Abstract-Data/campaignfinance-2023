@@ -1,11 +1,13 @@
 from __future__ import annotations
+
+import abc
+import itertools
 from dataclasses import dataclass, field
 from pathlib import Path
-import abc
-from abcs.abc_state_config import StateConfig, CategoryTypes
 from typing import Annotated, Generator
+
+from abcs.abc_state_config import CategoryTypes, StateConfig
 from pydantic import Field as PydanticField
-import itertools
 
 from app.logger import Logger
 

@@ -1,15 +1,16 @@
 import abc
-from dataclasses import dataclass, field
-from typing import Type, Tuple, Iterator, Dict, Generator
-import itertools
-from sqlmodel import SQLModel
 import csv
-from tqdm import tqdm
-from pydantic import ValidationError
+import itertools
+from dataclasses import dataclass, field
+from typing import Dict, Generator, Iterator, Tuple, Type
+
 from abcs.abc_validation_errors import ValidationErrorList
 from funcs.validator_functions import create_record_id
-from logger import Logger
 from icecream import ic
+from logger import Logger
+from pydantic import ValidationError
+from sqlmodel import SQLModel
+from tqdm import tqdm
 
 ValidatorType = Type[SQLModel]
 PassedRecord = Tuple[str, SQLModel]

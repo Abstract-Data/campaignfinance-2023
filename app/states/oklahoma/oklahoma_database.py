@@ -1,5 +1,5 @@
-from snowflake.snowpark import Session
 from op import OnePasswordItem
+from snowflake.snowpark import Session
 
 """ Database connection notes:
 - Must use psycopg2-binary for postgresql

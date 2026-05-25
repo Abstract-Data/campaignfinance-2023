@@ -1,10 +1,12 @@
-from typing import Optional
-from pydantic import field_validator, model_validator
-from sqlmodel import Field
-from pydantic_core import PydanticCustomError
 from datetime import date
-from .ok_settings import OklahomaSettings
+from typing import Optional
+
 import funcs.validator_functions as funcs
+from pydantic import field_validator, model_validator
+from pydantic_core import PydanticCustomError
+from sqlmodel import Field
+
+from .ok_settings import OklahomaSettings
 
 """
 Oklahoma Expenditure Model/Validator 
