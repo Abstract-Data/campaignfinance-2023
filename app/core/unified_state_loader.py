@@ -4,29 +4,65 @@ Unified State Loader - Comprehensive pipeline for loading state campaign finance
 into the unified database with automatic relationship linking.
 """
 
+from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
+from pydantic import ValidationError
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from sqlalchemy.exc import SQLAlchemyError
-from sqlmodel import select, update
+from sqlmodel import Session, select, update
 
-from app.funcs.csv_reader import FileReader
-from app.logger import Logger
-
-from .unified_database import db_manager
 from app.core.enums import CommitteeRole
 from app.core.models import (
     UnifiedAddress,
+    UnifiedCommittee,
     UnifiedCommitteePerson,
     UnifiedPerson,
     UnifiedTransaction,
     UnifiedTransactionPerson,
 )
-from app.core.processor import unified_sql_processor
+from app.core.processor import ProcessStats, unified_sql_processor
+from app.funcs.csv_reader import FileReader
+from app.logger import Logger
+
+from .unified_database import db_manager
 
 logger = Logger(__name__)
+
+CommitteeIndex = dict[str, str]
+PersonIndex = dict[tuple[str, str], int]
+
+
+def _load_committee_index(session: Session, state_id: int | None) -> CommitteeIndex:
+    """Return ``{committee_name_lower: filer_id}`` for committees in the state."""
+    if state_id is None:
+        return {}
+    rows = session.exec(
+        select(UnifiedCommittee.name, UnifiedCommittee.filer_id).where(
+            UnifiedCommittee.state_id == state_id
+        )
+    ).all()
+    return {(name or "").lower(): filer_id for name, filer_id in rows if name}
+
+
+def _load_person_index(session: Session, state_id: int | None) -> PersonIndex:
+    """Return ``{(first_lower, last_lower): person_id}`` for persons in the state."""
+    if state_id is None:
+        return {}
+    rows = session.exec(
+        select(
+            UnifiedPerson.first_name,
+            UnifiedPerson.last_name,
+            UnifiedPerson.id,
+        ).where(UnifiedPerson.state_id == state_id)
+    ).all()
+    index: PersonIndex = {}
+    for first, last, person_id in rows:
+        if first and last and person_id is not None:
+            index[(first.lower(), last.lower())] = person_id
+    return index
 
 
 class UnifiedStateLoader:
@@ -64,11 +100,13 @@ class UnifiedStateLoader:
         # Committee officer mappings from state data
         self.committee_officers = {}  # committee_id -> List[officer_data]
 
-    def load_state_data(self,
-                       auto_link_officers: bool = True,
-                       create_relationships: bool = True,
-                       progress_callback: Optional[callable] = None,
-                       max_records: Optional[int] = None) -> Dict[str, Any]:
+    def load_state_data(
+        self,
+        auto_link_officers: bool = True,
+        create_relationships: bool = True,
+        progress_callback: Callable[..., Any] | None = None,
+        max_records: int | None = None,
+    ) -> dict[str, Any]:
         """
         Main pipeline to load all state data with automatic relationship linking.
 
@@ -146,7 +184,7 @@ class UnifiedStateLoader:
             logger.error(error_msg)
             raise
 
-    def _discover_data_files(self) -> List[Path]:
+    def _discover_data_files(self) -> list[Path]:
         """Discover all data files for the state."""
         files = []
 
@@ -169,7 +207,7 @@ class UnifiedStateLoader:
 
         return files
 
-    def _extract_committee_officers(self, files: List[Path]):
+    def _extract_committee_officers(self, files: list[Path]) -> None:
         """Extract committee officer information from state data files."""
         logger.info("Extracting committee officer information...")
 
@@ -200,7 +238,7 @@ class UnifiedStateLoader:
                 logger.error(f"Error extracting officers from {file_path}: {e}")
                 continue
 
-    def _extract_officer_from_record(self, record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _extract_officer_from_record(self, record: dict[str, Any]) -> dict[str, Any] | None:
         """Extract officer information from a data record based on state-specific mappings."""
 
         # State-specific field mappings for officer extraction
@@ -268,239 +306,304 @@ class UnifiedStateLoader:
             'officers': officers
         }
 
-    def _extract_field(self, record: Dict[str, Any], field_names: List[str]) -> Optional[str]:
+    def _extract_field(self, record: dict[str, Any], field_names: list[str]) -> str | None:
         """Extract a field value from a record using multiple possible field names."""
         for field in field_names:
             if field in record and record[field]:
                 return str(record[field]).strip()
         return None
 
-    def _process_data_file(self, file_path: Path, auto_link_officers: bool, max_records: Optional[int] = None) -> Dict[str, Any]:
+    def _process_data_file(
+        self,
+        file_path: Path,
+        auto_link_officers: bool,
+        max_records: int | None = None,
+    ) -> dict[str, Any]:
         """Process a single data file and create unified models."""
-        file_stats = {
+        file_stats: dict[str, Any] = {
             "file": file_path.name,
             "transactions": 0,
             "persons": 0,
             "committees": 0,
             "addresses": 0,
-            "errors": []
+            "errors": [],
         }
 
         try:
-            # Read the file
             file_reader = FileReader()
-            if file_path.suffix.lower() == '.parquet':
+            if file_path.suffix.lower() == ".parquet":
                 data_generator = file_reader.read_parquet(file_path)
             else:
                 data_generator = file_reader.read_csv(file_path)
 
-            # Process each record
-            records_processed = 0
+            records: list[dict[str, Any]] = []
             for record in data_generator:
-                try:
-                    # Add state and file origin information
-                    record['state'] = self.state
-                    record['file_origin'] = file_path.name
+                records.append(record)
+                if max_records and len(records) >= max_records:
+                    break
 
-                    # Create unified models
-                    transaction = self._create_transaction_from_record(record)
-                    if transaction:
-                        file_stats["transactions"] += 1
+            batch_stats = self.process_records_batch(
+                records,
+                file_path=file_path,
+                auto_link_officers=auto_link_officers,
+            )
+            file_stats["transactions"] = batch_stats.success
+            if batch_stats.failures or batch_stats.db_errors:
+                file_stats["errors"].append(str(batch_stats))
 
-                        # Auto-link to officers if enabled
-                        if auto_link_officers:
-                            self._link_transaction_to_officers(transaction, record)
-
-                    records_processed += 1
-
-                    # Check if we've hit the record limit
-                    if max_records and records_processed >= max_records:
-                        break
-
-                except (ValueError, KeyError, SQLAlchemyError) as e:
-                    error_msg = f"Error processing record in {file_path.name}: {str(e)}"
-                    file_stats["errors"].append(error_msg)
-                    continue
-
-            # Update global stats
             self.stats["files_processed"] += 1
-            self.stats["transactions_created"] += file_stats["transactions"]
-
+            self.stats["transactions_created"] += batch_stats.success
             return file_stats
 
         except (OSError, ValueError, SQLAlchemyError) as e:
-            error_msg = f"Error processing file {file_path}: {str(e)}"
+            error_msg = f"Error processing file {file_path}: {e}"
             file_stats["errors"].append(error_msg)
             self.stats["errors"].append(error_msg)
             return file_stats
 
-    def _create_transaction_from_record(self, record: Dict[str, Any]) -> Optional[UnifiedTransaction]:
-        """Create a unified transaction from a state-specific record."""
-        try:
-            # Use the unified processor to create the transaction
-            transaction = unified_sql_processor.process_record(record, self.state)
+    def _load_batch_indexes(
+        self, session: Session
+    ) -> tuple[CommitteeIndex, PersonIndex, int | None]:
+        """Resolve state id and pre-load committee/person lookup dicts for a batch."""
+        state_record = db_manager._resolve_state_record(session, self.state)
+        state_id = state_record.id if state_record else None
+        return (
+            _load_committee_index(session, state_id),
+            _load_person_index(session, state_id),
+            state_id,
+        )
 
-            # Save everything in one session
-            with db_manager.get_session() as session:
-                # Save committee first if it exists
-                if transaction.committee_id:
-                    committee = unified_sql_processor.get_builder(self.state).build_committee(record)
-                    if committee:
-                        # Use merge to handle existing committees automatically
-                        session.merge(committee)
-                        session.flush()  # Flush to ensure committee is available
+    def process_records_batch(
+        self,
+        records: list[dict[str, Any]],
+        *,
+        file_path: Path | None = None,
+        auto_link_officers: bool = False,
+    ) -> ProcessStats:
+        """Process records under a single DB session; return per-batch counters."""
+        stats = ProcessStats()
+        if not records:
+            return stats
 
-                # Save addresses for all persons in the transaction
-                for tx_person in transaction.persons:
-                    if tx_person.person and tx_person.person.address:
-                        # Check if address already exists in session
-                        existing_address = session.exec(
-                            select(UnifiedAddress).where(
-                                UnifiedAddress.street_1 == tx_person.person.address.street_1,
-                                UnifiedAddress.city == tx_person.person.address.city,
-                                UnifiedAddress.state == tx_person.person.address.state,
-                                UnifiedAddress.zip_code == tx_person.person.address.zip_code
-                            )
-                        ).first()
+        file_name = file_path.name if file_path else "batch"
 
-                        if existing_address:
-                            # Use existing address
-                            tx_person.person.address_id = existing_address.id
-                            tx_person.person.address = existing_address
-                        else:
-                            # Save new address
-                            session.add(tx_person.person.address)
-                            session.flush()  # Flush to get the ID
+        with db_manager.get_session() as session:
+            _committees, _persons, state_id = self._load_batch_indexes(session)
+            state_code = None
+            if state_id is not None:
+                state_record = db_manager._resolve_state_record(session, self.state)
+                state_code = state_record.code if state_record else None
 
-                # Save the transaction
-                session.add(transaction)
-                session.commit()
-                session.refresh(transaction)
+            for record in records:
+                record = dict(record)
+                record["state"] = self.state
+                record["file_origin"] = file_name
+                try:
+                    transaction = self._persist_transaction_from_record(
+                        record,
+                        session,
+                        state_id=state_id,
+                        state_code=state_code,
+                    )
+                    if transaction is None:
+                        stats.skipped += 1
+                        continue
+                    stats.success += 1
+                    if auto_link_officers:
+                        self._link_transaction_to_officers(transaction, record, session)
+                except (ValidationError, KeyError, ValueError) as exc:
+                    logger.error(f"Record failed: {exc} — {record!r}")
+                    stats.failures += 1
+                except SQLAlchemyError as exc:
+                    logger.error(f"DB error on record: {exc}")
+                    session.rollback()
+                    stats.db_errors += 1
 
-            return transaction
+        return stats
 
-        except (SQLAlchemyError, ValueError, KeyError) as e:
-            logger.error(f"Error creating transaction: {e}")
-            return None
+    def _persist_transaction_from_record(
+        self,
+        record: dict[str, Any],
+        session: Session,
+        *,
+        state_id: int | None,
+        state_code: str | None,
+    ) -> UnifiedTransaction | None:
+        """Build and persist one transaction using the batch session."""
+        transaction = unified_sql_processor.process_record(
+            record,
+            self.state,
+            state_id=state_id,
+            state_code=state_code,
+            session=session,
+        )
 
-    def _link_transaction_to_officers(self, transaction: UnifiedTransaction, record: Dict[str, Any]):
+        if transaction.committee_id:
+            committee = unified_sql_processor.get_builder(
+                self.state, state_id=state_id, state_code=state_code, session=session
+            ).build_committee(record)
+            if committee:
+                session.merge(committee)
+                session.flush()
+
+        for tx_person in transaction.persons:
+            if tx_person.person and tx_person.person.address:
+                existing_address = session.exec(
+                    select(UnifiedAddress).where(
+                        UnifiedAddress.street_1 == tx_person.person.address.street_1,
+                        UnifiedAddress.city == tx_person.person.address.city,
+                        UnifiedAddress.state == tx_person.person.address.state,
+                        UnifiedAddress.zip_code == tx_person.person.address.zip_code,
+                    )
+                ).first()
+
+                if existing_address:
+                    tx_person.person.address_id = existing_address.id
+                    tx_person.person.address = existing_address
+                else:
+                    session.add(tx_person.person.address)
+                    session.flush()
+
+        session.add(transaction)
+        session.commit()
+        session.refresh(transaction)
+        return transaction
+
+    def _link_transaction_to_officers(
+        self,
+        transaction: UnifiedTransaction,
+        record: dict[str, Any],
+        session: Session,
+    ) -> None:
         """Link a transaction to committee officers if applicable."""
+        _ = record
         try:
-            # Get the committee ID from the transaction
             committee_id = transaction.committee_id
             if not committee_id:
                 return
 
-            # Check if we have officer information for this committee
             committee_officers = self.committee_officers.get(str(committee_id), [])
+            tx_persons = session.exec(
+                select(UnifiedTransactionPerson).where(
+                    UnifiedTransactionPerson.transaction_id == transaction.id
+                )
+            ).all()
 
-            # Get transaction-person relationships for this transaction
-            # Parameterized SQLModel query — no f-string interpolation (P1-SEC-001 / RF-ARCH-001).
-            with db_manager.get_session() as session:
-                tx_persons = session.exec(
-                    select(UnifiedTransactionPerson).where(
-                        UnifiedTransactionPerson.transaction_id == transaction.id
-                    )
-                ).all()
-
-                for tx_person in tx_persons:
-                    # Check if this person is an officer for this committee
-                    for officer_data in committee_officers:
-                        for officer in officer_data.get('officers', []):
-                            if self._person_matches_officer(tx_person.person_id, officer):
-                                # Link the transaction to this officer role
-                                self._create_officer_link(tx_person.id, officer, committee_id)
-                                self.stats["transaction_links_created"] += 1
-                                break
+            for tx_person in tx_persons:
+                for officer_data in committee_officers:
+                    for officer in officer_data.get("officers", []):
+                        if self._person_matches_officer(
+                            tx_person.person_id, officer, session
+                        ):
+                            self._create_officer_link(
+                                tx_person.id, officer, committee_id, session
+                            )
+                            self.stats["transaction_links_created"] += 1
+                            break
 
         except (SQLAlchemyError, KeyError) as e:
             logger.error(f"Error linking transaction to officers: {e}")
 
-    def _person_matches_officer(self, person_id: int, officer: Dict[str, Any]) -> bool:
+    def _person_matches_officer(
+        self, person_id: int, officer: dict[str, Any], session: Session
+    ) -> bool:
         """Check if a person matches an officer based on name."""
         try:
-            with db_manager.get_session() as session:
-                person = session.get(UnifiedPerson, person_id)
-                if not person:
-                    return False
+            person = session.get(UnifiedPerson, person_id)
+            if not person:
+                return False
 
-                person_name = f"{person.first_name} {person.last_name}".lower().strip()
-                officer_name = officer['name'].lower().strip()
+            person_name = f"{person.first_name} {person.last_name}".lower().strip()
+            officer_name = officer["name"].lower().strip()
+            return person_name == officer_name
 
-                return person_name == officer_name
-
-        except (SQLAlchemyError, KeyError):
+        except (SQLAlchemyError, KeyError) as e:
+            logger.error(f"Error matching person to officer: {e}")
             return False
 
-    def _create_officer_link(self, tx_person_id: int, officer: Dict[str, Any], committee_id: int):
+    def _create_officer_link(
+        self,
+        tx_person_id: int,
+        officer: dict[str, Any],
+        committee_id: str | int,
+        session: Session,
+    ) -> None:
         """Create a link between a transaction-person relationship and an officer role."""
         try:
-            # Find the committee-person relationship — parameterized (P1-SEC-001).
-            with db_manager.get_session() as session:
-                committee_person = session.exec(
-                    select(UnifiedCommitteePerson).where(
-                        UnifiedCommitteePerson.committee_id == committee_id,
-                        UnifiedCommitteePerson.role == officer['role']
-                    )
-                ).first()
+            committee_person = session.exec(
+                select(UnifiedCommitteePerson).where(
+                    UnifiedCommitteePerson.committee_id == str(committee_id),
+                    UnifiedCommitteePerson.role == officer['role'],
+                )
+            ).first()
 
-                if committee_person:
-                    # Update the transaction-person relationship — parameterized.
-                    session.exec(
-                        update(UnifiedTransactionPerson)
-                        .where(UnifiedTransactionPerson.id == tx_person_id)
-                        .values(committee_person_id=committee_person.id)
-                    )
-                    session.commit()
+            if committee_person:
+                session.exec(
+                    update(UnifiedTransactionPerson)
+                    .where(UnifiedTransactionPerson.id == tx_person_id)
+                    .values(committee_person_id=committee_person.id)
+                )
+                session.commit()
 
         except (SQLAlchemyError, KeyError) as e:
             logger.error(f"Error creating officer link: {e}")
 
-    def _create_committee_relationships(self):
+    def _create_committee_relationships(self) -> None:
         """Create committee-person relationships from extracted officer data."""
         logger.info("Creating committee-person relationships...")
 
-        for committee_id, officers_data in self.committee_officers.items():
-            try:
-                for officer_data in officers_data:
-                    for officer in officer_data.get('officers', []):
-                        # Find or create the person
-                        person = self._find_or_create_person(officer['name'])
-                        if person:
-                            # Add person to committee
-                            db_manager.add_person_to_committee(
-                                person_id=person.id,
-                                committee_id=int(committee_id),
-                                role=officer['role'],
-                                start_date=date.today(),  # Default to today
-                                user="state_loader",
-                                notes=f"Auto-created from {self.state} data"
+        with db_manager.get_session() as session:
+            _, persons, state_id = self._load_batch_indexes(session)
+
+            for committee_id, officers_data in self.committee_officers.items():
+                try:
+                    for officer_data in officers_data:
+                        for officer in officer_data.get("officers", []):
+                            person = self._find_or_create_person(
+                                officer["name"], session, persons, state_id=state_id
                             )
-                            self.stats["committee_relationships_created"] += 1
+                            if person:
+                                db_manager.add_person_to_committee(
+                                    person_id=person.id,
+                                    committee_id=int(committee_id),
+                                    role=officer["role"],
+                                    start_date=date.today(),
+                                    user="state_loader",
+                                    notes=f"Auto-created from {self.state} data",
+                                )
+                                self.stats["committee_relationships_created"] += 1
 
-            except (SQLAlchemyError, KeyError, ValueError) as e:
-                logger.error(f"Error creating committee relationship for {committee_id}: {e}")
-                continue
+                except (SQLAlchemyError, KeyError, ValueError) as e:
+                    logger.error(
+                        f"Error creating committee relationship for {committee_id}: {e}"
+                    )
+                    continue
 
-    def _find_or_create_person(self, name: str) -> Optional[UnifiedPerson]:
-        """Find or create a person by name."""
+    def _find_or_create_person(
+        self,
+        name: str,
+        session: Session,
+        persons: PersonIndex,
+        *,
+        state_id: int | None = None,
+    ) -> UnifiedPerson | None:
+        """Find or create a person by name using the batch session and person index."""
         try:
-            # Parse name into first and last
             name_parts = name.strip().split()
             if len(name_parts) < 2:
                 return None
 
             first_name = name_parts[0]
             last_name = " ".join(name_parts[1:])
-
-            # Check cache first
             cache_key = f"{first_name}_{last_name}".lower()
             if cache_key in self.person_cache:
                 return self.person_cache[cache_key]
 
-            # Check database — parameterized query, case-insensitive comparison via ilike
-            # (replaces line-491 bare-string crash + injection vector — P1-SEC-001).
-            with db_manager.get_session() as session:
+            index_key = (first_name.lower(), last_name.lower())
+            person_id = persons.get(index_key)
+            person = session.get(UnifiedPerson, person_id) if person_id else None
+
+            if not person:
                 person = session.exec(
                     select(UnifiedPerson).where(
                         UnifiedPerson.first_name.ilike(first_name),
@@ -508,21 +611,22 @@ class UnifiedStateLoader:
                     )
                 ).first()
 
-                if not person:
-                    # Create new person
-                    person = UnifiedPerson(
-                        first_name=first_name,
-                        last_name=last_name,
-                        person_type="individual"
-                    )
-                    session.add(person)
-                    session.commit()
-                    session.refresh(person)
-                    self.stats["persons_created"] += 1
+            if not person:
+                person = UnifiedPerson(
+                    first_name=first_name,
+                    last_name=last_name,
+                    person_type="individual",
+                    state_id=state_id,
+                )
+                session.add(person)
+                session.commit()
+                session.refresh(person)
+                self.stats["persons_created"] += 1
+                if person.id is not None:
+                    persons[index_key] = person.id
 
-                # Cache the person
-                self.person_cache[cache_key] = person
-                return person
+            self.person_cache[cache_key] = person
+            return person
 
         except (SQLAlchemyError, KeyError, ValueError) as e:
             logger.error(f"Error finding/creating person {name}: {e}")
@@ -542,7 +646,7 @@ class UnifiedStateLoader:
                 logger.error(f"Error auto-linking transactions for committee {committee_id}: {e}")
                 continue
 
-    def _generate_summary_report(self) -> Dict[str, Any]:
+    def _generate_summary_report(self) -> dict[str, Any]:
         """Generate a comprehensive summary report."""
         return {
             "state": self.state.upper(),
@@ -561,11 +665,13 @@ class UnifiedStateLoader:
         }
 
 
-def load_state_data(state: str,
-                   data_directory: Path,
-                   auto_link_officers: bool = True,
-                   create_relationships: bool = True,
-                   progress_callback: Optional[callable] = None) -> Dict[str, Any]:
+def load_state_data(
+    state: str,
+    data_directory: Path,
+    auto_link_officers: bool = True,
+    create_relationships: bool = True,
+    progress_callback: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
     """
     Convenience function to load state data with a single call.
 

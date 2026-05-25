@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
-import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -26,6 +24,7 @@ from app.core.models import (
     UnifiedTransaction,
 )
 from app.core.unified_field_library import field_library
+
 
 class UnifiedSQLModelBuilder:
     """
@@ -305,7 +304,7 @@ class UnifiedSQLModelBuilder:
                 return overlap >= 2
 
             return False
-        except Exception:
+        except (TypeError, ValueError, AttributeError):
             return False
 
     def _find_committee_by_filer_id(self, filer_id: str) -> UnifiedCommittee | None:
@@ -521,7 +520,7 @@ class UnifiedSQLModelBuilder:
             normalized = re.sub(r"[^a-z0-9]", "_", normalized)
             normalized = re.sub(r"_+", "_", normalized)
             return normalized.strip("_")
-        except Exception:
+        except (TypeError, ValueError, AttributeError):
             return ""
 
     def _parse_amount(self, value: Any) -> Decimal | None:

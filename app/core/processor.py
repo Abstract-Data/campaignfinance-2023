@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from typing import Any
 
 from sqlmodel import Session
@@ -20,6 +21,28 @@ from app.core.models import (
     UnifiedTransactionPerson,
     UnifiedTravel,
 )
+
+
+@dataclass
+class ProcessStats:
+    """Per-batch processing counters for unified record ingestion."""
+
+    success: int = 0
+    failures: int = 0
+    db_errors: int = 0
+    skipped: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.success + self.failures + self.db_errors + self.skipped
+
+    def __str__(self) -> str:
+        return (
+            f"Processed {self.total}: {self.success} OK, "
+            f"{self.failures} validation failures, "
+            f"{self.db_errors} DB errors, {self.skipped} skipped"
+        )
+
 
 DetailContext = dict[str, Any]
 DetailBuilder = Callable[
