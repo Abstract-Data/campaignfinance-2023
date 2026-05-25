@@ -35,6 +35,50 @@ from app.core.processor import unified_sql_processor
 _logger = Logger(__name__)
 
 
+def _to_json_safe(value: Any) -> Any:
+    """Serialize entity field values for version snapshots (RF-DRY-001)."""
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, dict):
+        return {k: _to_json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_to_json_safe(v) for v in value]
+    return value
+
+
+def _entity_snapshot(entity: Any) -> dict[str, Any]:
+    field_names = getattr(entity, "model_fields", None) or entity.__fields__
+    return {k: _to_json_safe(getattr(entity, k)) for k in field_names.keys()}
+
+
+def _record_version(
+    session: Session,
+    *,
+    entity: Any,
+    version_model: type,
+    fk_field: str,
+    fk_value: int,
+    version_number: int,
+    user: str | None,
+    reason: str | None,
+    amendment_details: str | None,
+) -> None:
+    version = version_model(
+        **{
+            fk_field: fk_value,
+            "version_number": version_number,
+            "data": json.dumps(_entity_snapshot(entity)),
+            "changed_at": datetime.utcnow(),
+            "changed_by": user,
+            "change_reason": reason,
+            "amendment_details": amendment_details,
+        }
+    )
+    session.add(version)
+
+
 class UnifiedDatabaseManager:
     """
     Database manager for unified campaign finance data.
@@ -567,35 +611,24 @@ class UnifiedDatabaseManager:
             if not tx:
                 return None
             # Get current version number
-            version_count = session.exec(
-                select(UnifiedTransactionVersion).where(
-                    UnifiedTransactionVersion.transaction_id == tx.id
-                )
-            ).count()
-            # Save current state as version
-            # Convert data to JSON-serializable format
-            data_dict = {}
-            for k in tx.__fields__.keys():
-                value = getattr(tx, k)
-                if isinstance(value, date):
-                    data_dict[k] = value.isoformat()
-                elif isinstance(value, datetime):
-                    data_dict[k] = value.isoformat()
-                elif isinstance(value, Decimal):
-                    data_dict[k] = float(value)
-                else:
-                    data_dict[k] = value
-
-            version = UnifiedTransactionVersion(
-                transaction_id=tx.id,
+            version_count = len(
+                session.exec(
+                    select(UnifiedTransactionVersion).where(
+                        UnifiedTransactionVersion.transaction_id == tx.id
+                    )
+                ).all()
+            )
+            _record_version(
+                session,
+                entity=tx,
+                version_model=UnifiedTransactionVersion,
+                fk_field="transaction_id",
+                fk_value=tx.id,
                 version_number=version_count + 1,
-                data=json.dumps(data_dict),
-                changed_at=datetime.utcnow(),
-                changed_by=user,
-                change_reason=reason,
+                user=user,
+                reason=reason,
                 amendment_details=amendment_details,
             )
-            session.add(version)
             # Update fields
             for k, v in updates.items():
                 setattr(tx, k, v)
@@ -639,19 +672,22 @@ class UnifiedDatabaseManager:
             person = session.get(UnifiedPerson, person_id)
             if not person:
                 return None
-            version_count = session.exec(
-                select(UnifiedPersonVersion).where(UnifiedPersonVersion.person_id == person.id)
-            ).count()
-            version = UnifiedPersonVersion(
-                person_id=person.id,
+            version_count = len(
+                session.exec(
+                    select(UnifiedPersonVersion).where(UnifiedPersonVersion.person_id == person.id)
+                ).all()
+            )
+            _record_version(
+                session,
+                entity=person,
+                version_model=UnifiedPersonVersion,
+                fk_field="person_id",
+                fk_value=person.id,
                 version_number=version_count + 1,
-                data=json.dumps({k: getattr(person, k) for k in person.__fields__.keys()}),
-                changed_at=datetime.utcnow(),
-                changed_by=user,
-                change_reason=reason,
+                user=user,
+                reason=reason,
                 amendment_details=amendment_details,
             )
-            session.add(version)
             for k, v in updates.items():
                 setattr(person, k, v)
             session.add(person)
@@ -686,21 +722,24 @@ class UnifiedDatabaseManager:
             committee = session.get(UnifiedCommittee, committee_id)
             if not committee:
                 return None
-            version_count = session.exec(
-                select(UnifiedCommitteeVersion).where(
-                    UnifiedCommitteeVersion.committee_id == committee.id
-                )
-            ).count()
-            version = UnifiedCommitteeVersion(
-                committee_id=committee.id,
+            version_count = len(
+                session.exec(
+                    select(UnifiedCommitteeVersion).where(
+                        UnifiedCommitteeVersion.committee_id == committee.id
+                    )
+                ).all()
+            )
+            _record_version(
+                session,
+                entity=committee,
+                version_model=UnifiedCommitteeVersion,
+                fk_field="committee_id",
+                fk_value=committee.id,
                 version_number=version_count + 1,
-                data=json.dumps({k: getattr(committee, k) for k in committee.__fields__.keys()}),
-                changed_at=datetime.utcnow(),
-                changed_by=user,
-                change_reason=reason,
+                user=user,
+                reason=reason,
                 amendment_details=amendment_details,
             )
-            session.add(version)
             for k, v in updates.items():
                 setattr(committee, k, v)
             session.add(committee)
@@ -735,19 +774,24 @@ class UnifiedDatabaseManager:
             address = session.get(UnifiedAddress, address_id)
             if not address:
                 return None
-            version_count = session.exec(
-                select(UnifiedAddressVersion).where(UnifiedAddressVersion.address_id == address.id)
-            ).count()
-            version = UnifiedAddressVersion(
-                address_id=address.id,
+            version_count = len(
+                session.exec(
+                    select(UnifiedAddressVersion).where(
+                        UnifiedAddressVersion.address_id == address.id
+                    )
+                ).all()
+            )
+            _record_version(
+                session,
+                entity=address,
+                version_model=UnifiedAddressVersion,
+                fk_field="address_id",
+                fk_value=address.id,
                 version_number=version_count + 1,
-                data=json.dumps({k: getattr(address, k) for k in address.__fields__.keys()}),
-                changed_at=datetime.utcnow(),
-                changed_by=user,
-                change_reason=reason,
+                user=user,
+                reason=reason,
                 amendment_details=amendment_details,
             )
-            session.add(version)
             for k, v in updates.items():
                 setattr(address, k, v)
             session.add(address)
@@ -891,27 +935,17 @@ class UnifiedDatabaseManager:
                 ).all()
             )
 
-            # Convert data to JSON-serializable format
-            data_dict = {}
-            for k in cp.__fields__.keys():
-                value = getattr(cp, k)
-                if isinstance(value, date):
-                    data_dict[k] = value.isoformat()
-                elif isinstance(value, datetime):
-                    data_dict[k] = value.isoformat()
-                else:
-                    data_dict[k] = value
-
-            version = UnifiedCommitteePersonVersion(
-                committee_person_id=cp.id,
+            _record_version(
+                session,
+                entity=cp,
+                version_model=UnifiedCommitteePersonVersion,
+                fk_field="committee_person_id",
+                fk_value=cp.id,
                 version_number=version_count + 1,
-                data=json.dumps(data_dict),
-                changed_at=datetime.utcnow(),
-                changed_by=user,
-                change_reason=reason,
+                user=user,
+                reason=reason,
                 amendment_details=amendment_details,
             )
-            session.add(version)
 
             # Apply updates
             for k, v in updates.items():

@@ -613,27 +613,21 @@ class UnifiedSQLModelBuilder:
 
         # Infer from field names
         field_names = [k.lower() for k in raw_data.keys()]
-
-        if any("contribution" in name for name in field_names):
-            return TransactionType.CONTRIBUTION
-        elif any("expenditure" in name or "expend" in name for name in field_names):
-            return TransactionType.EXPENDITURE
-        elif any("loan" in name for name in field_names):
-            return TransactionType.LOAN
-        elif any("pledge" in name for name in field_names):
-            return TransactionType.PLEDGE
-        elif any("debt" in name for name in field_names):
-            return TransactionType.DEBT
-        elif any("credit" in name for name in field_names):
-            return TransactionType.CREDIT
-        elif any("travel" in name for name in field_names):
-            return TransactionType.TRAVEL
-        elif any("asset" in name for name in field_names):
-            return TransactionType.ASSET
-        elif any("refund" in name for name in field_names):
-            return TransactionType.REFUND
-        elif any("transfer" in name for name in field_names):
-            return TransactionType.TRANSFER
+        field_type_rules: list[tuple[tuple[str, ...], TransactionType]] = [
+            (("contribution",), TransactionType.CONTRIBUTION),
+            (("expenditure", "expend"), TransactionType.EXPENDITURE),
+            (("loan",), TransactionType.LOAN),
+            (("pledge",), TransactionType.PLEDGE),
+            (("debt",), TransactionType.DEBT),
+            (("credit",), TransactionType.CREDIT),
+            (("travel",), TransactionType.TRAVEL),
+            (("asset",), TransactionType.ASSET),
+            (("refund",), TransactionType.REFUND),
+            (("transfer",), TransactionType.TRANSFER),
+        ]
+        for keywords, transaction_type in field_type_rules:
+            if any(any(keyword in name for keyword in keywords) for name in field_names):
+                return transaction_type
 
         return TransactionType.OTHER
 

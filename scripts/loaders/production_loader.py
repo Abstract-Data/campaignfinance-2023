@@ -141,12 +141,6 @@ def _persist_transaction(
 
     transaction.committee = None
     transaction.campaign = None
-    transaction.contribution = None
-    transaction.loan = None
-    transaction.debt = None
-    transaction.credit = None
-    transaction.travel = None
-    transaction.asset = None
     transaction.persons = []
     transaction.committee_id = committee_filer
     transaction.report_ident = report_ident
