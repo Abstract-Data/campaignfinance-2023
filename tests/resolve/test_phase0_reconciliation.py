@@ -12,7 +12,8 @@ import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.core.source_models import UnifiedReport, reconcile_report_totals
-from app.core.unified_sqlmodels import TransactionType, UnifiedTransaction
+from app.core.enums import TransactionType
+from app.core.models import UnifiedTransaction
 from tests.resolve.conftest import (
     StubState,
     create_stub_tables,

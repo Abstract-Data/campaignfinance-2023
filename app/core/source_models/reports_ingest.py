@@ -164,7 +164,8 @@ def reconcile_report_totals(
     dict[str, int]
         Summary counts: ``checked``, ``matched``, ``mismatched``, ``skipped``.
     """
-    from app.core.unified_sqlmodels import TransactionType, UnifiedTransaction
+    from app.core.enums import TransactionType
+    from app.core.models import UnifiedTransaction
 
     stmt = text(
         """

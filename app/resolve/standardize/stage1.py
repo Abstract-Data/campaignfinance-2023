@@ -8,7 +8,7 @@ import polars as pl
 from sqlmodel import Session, delete, select
 
 import app.resolve.models  # noqa: F401 — registers UnifiedReport before ORM use
-from app.core.unified_sqlmodels import (
+from app.core.models import (
     State,
     UnifiedAddress,
     UnifiedCommittee,

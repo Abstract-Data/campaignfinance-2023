@@ -123,7 +123,7 @@ class TestDatabaseUrlResolution:
 
 class TestEnsureResolutionSchema:
     def test_create_all_scoped_to_resolve_tables_only(self):
-        import app.core.unified_sqlmodels  # noqa: F401 — registers unified tables
+        import app.core.models  # noqa: F401 — registers unified tables
 
         engine = create_engine("sqlite:///:memory:", echo=False)
         ensure_resolution_schema(engine)

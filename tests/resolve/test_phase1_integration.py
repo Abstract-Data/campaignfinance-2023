@@ -30,7 +30,7 @@ import app.resolve.models  # noqa: F401 — central ORM registry (UnifiedReport)
 # We do NOT call SQLModel.metadata.create_all() without a table list because
 # the global metadata spans the entire project.  Instead, _TABLES_TO_CREATE
 # below enumerates exactly the tables needed for these tests.
-from app.core.unified_sqlmodels import (
+from app.core.models import (
     State,
     UnifiedAddress,
     UnifiedCommittee,

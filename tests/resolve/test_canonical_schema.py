@@ -13,7 +13,7 @@ from sqlalchemy import UniqueConstraint, create_engine, inspect
 from sqlmodel import SQLModel
 
 from app.core.source_models.reports import UnifiedReport  # noqa: F401
-from app.core.unified_sqlmodels import EntityType as UnifiedEntityType
+from app.core.enums import EntityType as UnifiedEntityType
 from app.resolve.models.canonical import (
     CanonicalAddress,
     CanonicalCampaign,

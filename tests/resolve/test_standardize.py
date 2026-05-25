@@ -8,8 +8,8 @@ from hypothesis import strategies as st
 from sqlmodel import Session, SQLModel, create_engine, select
 
 import app.resolve.models  # noqa: F401 — central ORM registry (UnifiedReport)
-from app.core.unified_sqlmodels import (
-    EntityType,
+from app.core.enums import EntityType
+from app.core.models import (
     State,
     UnifiedAddress,
     UnifiedCommittee,

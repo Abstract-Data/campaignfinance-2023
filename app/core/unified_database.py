@@ -15,11 +15,9 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from app.logger import Logger
 from app.states.postgres_config import PostgresConfig
 
-from .unified_sqlmodels import (
-    CommitteeRole,
-    PersonRole,
+from app.core.enums import CommitteeRole, PersonRole, TransactionType
+from app.core.models import (
     State,
-    TransactionType,
     UnifiedAddress,
     UnifiedAddressVersion,
     UnifiedCommittee,
@@ -31,8 +29,8 @@ from .unified_sqlmodels import (
     UnifiedTransaction,
     UnifiedTransactionPerson,
     UnifiedTransactionVersion,
-    unified_sql_processor,
 )
+from app.core.processor import unified_sql_processor
 
 _logger = Logger(__name__)
 

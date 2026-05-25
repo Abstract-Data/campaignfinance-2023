@@ -16,15 +16,15 @@ from app.funcs.csv_reader import FileReader
 from app.logger import Logger
 
 from .unified_database import db_manager
-from .unified_sqlmodels import (
-    CommitteeRole,
+from app.core.enums import CommitteeRole
+from app.core.models import (
     UnifiedAddress,
     UnifiedCommitteePerson,
     UnifiedPerson,
     UnifiedTransaction,
     UnifiedTransactionPerson,
-    unified_sql_processor,
 )
+from app.core.processor import unified_sql_processor
 
 logger = Logger(__name__)
 

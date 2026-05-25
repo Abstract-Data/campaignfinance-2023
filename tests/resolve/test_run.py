@@ -473,7 +473,7 @@ class TestDropRunStaging:
 
 def test_ensure_resolution_schema_creates_match_run_only_from_resolve_models():
     """ensure_resolution_schema must not create unified source tables."""
-    import app.core.unified_sqlmodels  # noqa: F401
+    import app.core.models  # noqa: F401
     from app.resolve.run import ensure_resolution_schema, resolution_schema_table_names
 
     engine = create_engine("sqlite:///:memory:", echo=False)
@@ -490,7 +490,7 @@ def test_ensure_resolution_schema_creates_match_run_only_from_resolve_models():
 def test_ensure_resolution_schema_creates_scored_pairs_and_clusters():
     """ensure_resolution_schema must create the Phase 2 staging tables
     scored_pairs and clusters so that stages 4 and 6 can write to them."""
-    import app.core.unified_sqlmodels  # noqa: F401
+    import app.core.models  # noqa: F401
     from app.resolve.run import ensure_resolution_schema
 
     engine = create_engine("sqlite:///:memory:", echo=False)

@@ -142,7 +142,7 @@ def test_persist_pldg_row_rolls_back_transaction_on_pledge_failure(monkeypatch) 
     from sqlmodel import Session, SQLModel, create_engine, select
 
     from app.core.source_models.pledges import UnifiedPledge
-    from app.core.unified_sqlmodels import UnifiedTransaction
+    from app.core.models import UnifiedTransaction
     from scripts.loaders.production_loader import _persist_pldg_row
 
     engine = create_engine(

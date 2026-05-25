@@ -20,7 +20,8 @@ from itertools import combinations
 
 from sqlmodel import Session, select
 
-from app.core.unified_sqlmodels import AssociationType, UnifiedEntityAssociation
+from app.core.enums import AssociationType
+from app.core.models import UnifiedEntityAssociation
 from app.resolve.models.canonical import CanonicalAddress, CanonicalEntity
 
 

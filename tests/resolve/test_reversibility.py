@@ -20,7 +20,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 import app.resolve.models  # noqa: F401 — central ORM registry
-from app.core.unified_sqlmodels import (
+from app.core.models import (
     State,
     UnifiedAddress,
     UnifiedCommittee,

@@ -23,6 +23,7 @@ from typing import Any
 # Allow ``uv run python scripts/loaders/production_loader.py`` from project root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from app.core.constants import RECORD_TYPE_CODES
 from app.logger import Logger
 from scripts.loaders.file_discovery import discover_state_files
 from scripts.loaders.loader_config import (
@@ -31,24 +32,10 @@ from scripts.loaders.loader_config import (
     get_config,
 )
 
-logger = Logger(__name__)
+# Transaction types handled by unified_sql_processor (CAND uses a separate path).
+TRANSACTION_RECORD_TYPES = RECORD_TYPE_CODES | frozenset({"CAND"})
 
-# ---------------------------------------------------------------------------
-# Transaction record types handled by the existing unified_sql_processor path
-# ---------------------------------------------------------------------------
-TRANSACTION_RECORD_TYPES = frozenset(
-    {
-        "RCPT",
-        "EXPN",
-        "LOAN",
-        "PLDG",
-        "DEBT",
-        "CRED",
-        "TRVL",
-        "ASSET",
-        "CAND",
-    }
-)
+logger = Logger(__name__)
 
 _STATE_CODES: dict[str, tuple[str, str]] = {
     "texas": ("TX", "Texas"),
@@ -60,7 +47,7 @@ def _get_session(db_url: str | None = None):
     """Create a SQLModel session with all source + unified tables registered."""
     from sqlmodel import Session, SQLModel, create_engine
 
-    from app.core import unified_sqlmodels  # noqa: F401 — registers unified_* tables
+    from app.core import models  # noqa: F401 — registers unified_* tables
     from app.core.source_models import (  # noqa: F401 — registers Phase-0 tables
         CommitteePurpose,
         ExpenditureCategory,
@@ -82,7 +69,7 @@ def _ensure_state(session: Any, state_name: str) -> Any:
     """Return the ``states`` row for *state_name*, creating it if needed."""
     from sqlmodel import select
 
-    from app.core.unified_sqlmodels import State
+    from app.core.models import State
 
     code, name = _STATE_CODES.get(state_name.lower(), (state_name[:2].upper(), state_name.title()))
     existing = session.exec(select(State).where(State.code == code)).first()
@@ -97,15 +84,13 @@ def _ensure_state(session: Any, state_name: str) -> Any:
 
 
 def _file_origin_id(state_id: int, path: Path) -> str:
-    from app.core.unified_sqlmodels import FileOrigin
+    from app.core.models import FileOrigin
 
     return FileOrigin.build_key(state_id, path.name)
 
 
 def _ensure_file_origin(session: Any, state_id: int, path: Path) -> str:
-    from sqlmodel import select
-
-    from app.core.unified_sqlmodels import FileOrigin
+    from app.core.models import FileOrigin
 
     origin_id = _file_origin_id(state_id, path)
     existing = session.get(FileOrigin, origin_id)
@@ -126,14 +111,20 @@ def _persist_transaction(
     state_code: str,
     file_origin_id: str | None,
 ) -> Any:
-    """Process one raw row through ``unified_sql_processor`` and persist it."""
-    from app.core.unified_sqlmodels import unified_sql_processor
+    """Process one raw row through ``unified_sql_processor`` and persist it.
+
+    The local ``session`` is forwarded to the processor so the builder's
+    ``_find_*`` lookups dedupe against this transaction instead of reaching
+    for the (now-removed) module-level ``db_manager`` singleton (RF-SMELL-005).
+    """
+    from app.core.processor import unified_sql_processor
 
     transaction = unified_sql_processor.process_record(
         raw,
         state,
         state_id=state_id,
         state_code=state_code,
+        session=session,
     )
 
     committee_filer = transaction.committee_id
@@ -374,9 +365,7 @@ def _load_file(
                 session.commit()
                 batch_count = 0
         else:
-            logger.warning(
-                f"[loader] unrecognized record_type={effective_type!r} in {path.name}"
-            )
+            logger.warning(f"[loader] unrecognized record_type={effective_type!r} in {path.name}")
 
     if batch_count:
         session.commit()

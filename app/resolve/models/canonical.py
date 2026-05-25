@@ -18,7 +18,7 @@ from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 if TYPE_CHECKING:
-    from app.core.unified_sqlmodels import EntityType as UnifiedEntityType
+    from app.core.enums import EntityType as UnifiedEntityType
 
 
 def _utc_now() -> datetime:

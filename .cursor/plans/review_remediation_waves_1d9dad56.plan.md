@@ -4,25 +4,25 @@ overview: "Execute the full [prompts/review-remediation/](prompts/review-remedia
 todos:
   - id: wave-0-prep
     content: Create GitButler phase branch remediation/review-fixes; confirm resolve CI still green; run gitnexus analyze if stale
-    status: in_progress
+    status: completed
   - id: wave-1-parallel
     content: "Dispatch multitask batch: TASK-1a through 1h (8 agents) with full task briefs"
-    status: in_progress
+    status: completed
   - id: wave-1-integrate
     content: Merge wave-1 branches; run TASK-1z integration agent; run global pytest/ruff gates
-    status: pending
+    status: completed
   - id: wave-1-review
     content: Orchestrator /review loop until PASS; fix partitioned findings; re-gate
-    status: pending
+    status: completed
   - id: wave-2-parallel
     content: Dispatch TASK-2a, 2b, 2c (3 agents) after Wave 1 PASS
-    status: pending
+    status: completed
   - id: wave-2-integrate-review
     content: TASK-2z absolute-import migration; /review loop until PASS
-    status: pending
+    status: completed
   - id: wave-3-parallel
     content: GitNexus impact on unified_sqlmodels; dispatch TASK-3a, 3b
-    status: pending
+    status: in_progress
   - id: wave-3-integrate-review
     content: TASK-3z importer rewire; /review loop until PASS
     status: pending
