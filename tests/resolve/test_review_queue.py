@@ -465,3 +465,89 @@ class TestCliSmoke:
 
         captured = capsys.readouterr()
         assert captured.out  # some output was produced
+
+
+class TestCliErrorExitCodes:
+    """Approve/reject helpers return 1 on error; main() propagates without sys.exit."""
+
+    def test_approve_missing_id_returns_1(self):
+        from app.resolve.review.cli import _run_approve
+
+        engine = _make_engine()
+        with Session(engine) as session:
+            _seed_run(session)
+            code = _run_approve(session, 9999, reviewer="alice")
+
+        assert code == 1
+
+    def test_approve_already_decided_returns_1(self):
+        from app.resolve.review.cli import _run_approve
+
+        engine = _make_engine()
+        with Session(engine) as session:
+            _seed_run(session)
+            r = _seed_review(session)
+            approve(session, r.id, reviewer="alice")
+            code = _run_approve(session, r.id, reviewer="bob")
+
+        assert code == 1
+
+    def test_reject_missing_id_returns_1(self):
+        from app.resolve.review.cli import _run_reject
+
+        engine = _make_engine()
+        with Session(engine) as session:
+            _seed_run(session)
+            code = _run_reject(session, 9999, reviewer="carol")
+
+        assert code == 1
+
+    def test_reject_already_decided_returns_1(self):
+        from app.resolve.review.cli import _run_reject
+
+        engine = _make_engine()
+        with Session(engine) as session:
+            _seed_run(session)
+            r = _seed_review(session)
+            reject(session, r.id, reviewer="carol")
+            code = _run_reject(session, r.id, reviewer="dave")
+
+        assert code == 1
+
+    def test_approve_success_returns_0(self):
+        from app.resolve.review.cli import _run_approve
+
+        engine = _make_engine()
+        with Session(engine) as session:
+            _seed_run(session)
+            r = _seed_review(session)
+            code = _run_approve(session, r.id, reviewer="alice")
+
+        assert code == 0
+
+    def test_main_show_missing_returns_1(self):
+        from app.resolve.review.cli import main
+
+        code = main(["--sqlite", "show", "9999"])
+        assert code == 1
+
+    def test_main_approve_missing_returns_1(self):
+        from app.resolve.review.cli import main
+
+        code = main(["--sqlite", "approve", "9999", "--reviewer", "alice"])
+        assert code == 1
+
+    def test_error_paths_do_not_call_sys_exit(self, monkeypatch):
+        from app.resolve.review.cli import _run_approve
+
+        def _fail_exit(_code: int) -> None:
+            raise AssertionError("sys.exit must not be called from approve/reject helpers")
+
+        monkeypatch.setattr("app.resolve.review.cli.sys.exit", _fail_exit)
+
+        engine = _make_engine()
+        with Session(engine) as session:
+            _seed_run(session)
+            code = _run_approve(session, 9999, reviewer="alice")
+
+        assert code == 1

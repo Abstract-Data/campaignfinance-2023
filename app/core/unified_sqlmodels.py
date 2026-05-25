@@ -92,6 +92,7 @@ class AssociationType(str, Enum):
     OFFICER_OF = "officer_of"
     AFFILIATED_WITH = "affiliated_with"
     EMPLOYED_BY = "employed_by"
+    CO_LOCATED_WITH = "co_located_with"
     OTHER = "other"
 
 
@@ -1505,32 +1506,31 @@ class UnifiedSQLModelBuilder:
             from app.core.unified_database import db_manager
 
             with db_manager.get_session() as session:
-                # Build query based on available fields
-                conditions = []
-                params = {}
-                
+                # Build parameterised query using SQLModel select()
+                filter_count = 0
+                stmt = select(UnifiedAddress)
+
                 if address_data.get("street_1"):
-                    conditions.append("street_1 = :street_1")
-                    params["street_1"] = address_data["street_1"]
-                
+                    stmt = stmt.where(UnifiedAddress.street_1 == address_data["street_1"])
+                    filter_count += 1
+
                 if address_data.get("city"):
-                    conditions.append("city = :city")
-                    params["city"] = address_data["city"]
-                
+                    stmt = stmt.where(UnifiedAddress.city == address_data["city"])
+                    filter_count += 1
+
                 if address_data.get("state"):
-                    conditions.append("state = :state")
-                    params["state"] = address_data["state"]
-                
+                    stmt = stmt.where(UnifiedAddress.state == address_data["state"])
+                    filter_count += 1
+
                 if address_data.get("zip_code"):
-                    conditions.append("zip_code = :zip_code")
-                    params["zip_code"] = address_data["zip_code"]
-                
+                    stmt = stmt.where(UnifiedAddress.zip_code == address_data["zip_code"])
+                    filter_count += 1
+
                 # Need at least street_1 and city to find a match
-                if len(conditions) >= 2:
-                    query = f"SELECT * FROM unified_addresses WHERE {' AND '.join(conditions)} LIMIT 1"
-                    result = session.exec(text(query), params).first()
+                if filter_count >= 2:
+                    result = session.exec(stmt).first()
                     if result:
-                        return UnifiedAddress(**dict(result))
+                        return result
 
                 return None
         except Exception:

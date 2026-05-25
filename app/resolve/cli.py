@@ -24,7 +24,9 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.engine import URL
 
-logger = logging.getLogger(__name__)
+from app.logger import Logger
+
+logger = Logger(__name__)
 
 _SQLITE_URL = "sqlite://"
 
@@ -297,13 +299,13 @@ def _run_command(args: argparse.Namespace) -> int:
     try:
         state_code = _resolve_state_code(args.state)
     except ValueError as exc:
-        logger.error("%s", exc)
+        logger.error(str(exc))
         return 1
 
     try:
         config = _load_config(args.config)
     except (OSError, ValueError) as exc:
-        logger.error("Failed to load config: %s", exc)
+        logger.error(f"Failed to load config: {exc}")
         return 1
 
     config.setdefault("pass_type", args.pass_type)
@@ -318,7 +320,7 @@ def _run_command(args: argparse.Namespace) -> int:
     try:
         db_url = resolve_engine_url(use_sqlite=args.sqlite)
     except RuntimeError as exc:
-        logger.error("%s", exc)
+        logger.error(str(exc))
         return 1
 
     # Deferred imports keep parse-time overhead low.
@@ -337,9 +339,7 @@ def _run_command(args: argparse.Namespace) -> int:
         resolution_run.run(session, stages)
 
     logger.info(
-        "Resolution run complete: run_id=%s state=%s",
-        resolution_run.run_id,
-        state_code,
+        f"Resolution run complete: run_id={resolution_run.run_id} state={state_code}"
     )
     return 0
 
@@ -361,7 +361,7 @@ def _review_command(args: argparse.Namespace) -> int:
     try:
         db_url = resolve_engine_url(use_sqlite=args.sqlite)
     except RuntimeError as exc:
-        logger.error("%s", exc)
+        logger.error(str(exc))
         return 1
 
     from sqlmodel import Session, create_engine
@@ -383,12 +383,16 @@ def _review_command(args: argparse.Namespace) -> int:
             try:
                 _run_show(session, args.review_id)
             except KeyError as exc:
-                print(f"Error: {exc}", file=sys.stderr)
+                logger.error(f"Error: {exc}")
                 return 1
         elif args.review_command == "approve":
-            _run_approve(session, args.review_id, reviewer=args.reviewer, notes=args.notes)
+            return _run_approve(
+                session, args.review_id, reviewer=args.reviewer, notes=args.notes
+            )
         elif args.review_command == "reject":
-            _run_reject(session, args.review_id, reviewer=args.reviewer, notes=args.notes)
+            return _run_reject(
+                session, args.review_id, reviewer=args.reviewer, notes=args.notes
+            )
 
     return 0
 
@@ -403,29 +407,28 @@ def _unmerge_command(args: argparse.Namespace) -> int:
     try:
         db_url = resolve_engine_url(use_sqlite=args.sqlite)
     except RuntimeError as exc:
-        logger.error("%s", exc)
+        logger.error(str(exc))
         return 1
 
     from sqlmodel import Session, create_engine
 
-    from app.resolve.reverse import can_unmerge, unmerge_run
+    from app.resolve.reverse import unmerge_run
     from app.resolve.run import ensure_resolution_schema
 
     engine = create_engine(db_url)
     ensure_resolution_schema(engine)
 
     with Session(engine) as session:
-        ok, reason = can_unmerge(session, args.run_id)
-        if not ok:
-            logger.error("Cannot unmerge run_id=%d: %s", args.run_id, reason)
+        try:
+            reversal = unmerge_run(session, args.run_id)
+        except ValueError as exc:
+            logger.error(str(exc))
             return 1
-        reversal = unmerge_run(session, args.run_id)
 
     logger.info(
-        "Unmerged run_id=%d: removed %d entity crosswalk rows, rebuilt %d canonical rows",
-        reversal.run_id,
-        reversal.entity_crosswalk_removed,
-        reversal.canonical_rows_rebuilt,
+        "Unmerged run_id="
+        f"{reversal.run_id}: removed {reversal.entity_crosswalk_removed} entity crosswalk rows, "
+        f"rebuilt {reversal.canonical_rows_rebuilt} canonical rows"
     )
     return 0
 

@@ -10,13 +10,12 @@ from sqlalchemy import create_engine
 from sqlmodel import Session, select
 
 from app.core.source_models.notices import UnifiedNotice
+from app.core.source_models.notices_ingest import build_notice
 from tests.resolve.conftest import (
     StubState,
     StubUnifiedCommittee,
     create_resolve_tables,
 )
-from app.core.source_models.notices_ingest import build_notice
-
 
 SAMPLE_CVR2 = {
     "recordType": "CVR2",

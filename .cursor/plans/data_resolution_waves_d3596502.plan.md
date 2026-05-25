@@ -28,10 +28,10 @@ todos:
     status: completed
   - id: wave-8-p3-z
     content: "Wave 8: Serial integration — task 3z wires review subcommand + review→rerun test"
-    status: in_progress
+    status: completed
   - id: wave-9-p4-r1
     content: "Wave 9: Dispatch 4 parallel agents — tasks 4a (views), 4b (occupancy), 4c (colocation), 4d (crossstate hook)"
-    status: pending
+    status: in_progress
   - id: wave-10-p4-z
     content: "Wave 10: Serial integration — task 4z publishes views via CLI, updates DATA_RELATIONSHIPS.md"
     status: pending

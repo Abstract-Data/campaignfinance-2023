@@ -16,7 +16,6 @@ from tests.resolve.conftest import (
     create_resolve_tables,
 )
 
-
 SAMPLE_SPAC_WITH_SUPPORTED_ID = {
     "recordType": "SPAC",
     "spacFilerIdent": "00049300",

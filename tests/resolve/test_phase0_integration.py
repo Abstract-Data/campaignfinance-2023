@@ -7,10 +7,6 @@ record types.
 
 from __future__ import annotations
 
-from datetime import date
-from decimal import Decimal
-from types import SimpleNamespace
-
 import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -20,7 +16,6 @@ from app.core.source_models import (
     ExpenditureCategory,
     SpacLink,
     UnifiedNotice,
-    UnifiedPledge,
     UnifiedReport,
     build_report,
     link_transactions_to_reports,
@@ -30,15 +25,12 @@ from app.core.source_models.lookups_ingest import (
     build_expenditure_category,
 )
 from app.core.source_models.notices_ingest import build_notice
-from app.core.source_models.pledges_ingest import build_pledge
-from app.core.source_models.spac_ingest import build_spac_link
 from tests.resolve.conftest import (
     StubState,
     StubUnifiedTransaction,
     create_resolve_tables,
     drop_resolve_tables,
 )
-
 
 # ---------------------------------------------------------------------------
 # Registry tests

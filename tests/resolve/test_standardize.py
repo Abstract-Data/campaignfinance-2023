@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from hypothesis import given, strategies as st
+from hypothesis import given
+from hypothesis import strategies as st
 from sqlmodel import Session, SQLModel, create_engine, select
 
 import app.resolve.models  # noqa: F401 — central ORM registry (UnifiedReport)
@@ -15,12 +16,12 @@ from app.core.unified_sqlmodels import (
     UnifiedEntity,
     UnifiedPerson,
 )
+from app.resolve.models.canonical import UnmappedEntityTypeError
 from app.resolve.standardize.addresses import standardize_address
 from app.resolve.standardize.names import standardize_name
 from app.resolve.standardize.orgs import normalize_org_name
 from app.resolve.standardize.stage1 import build_resolution_input
 from app.resolve.standardize.staging import ResolutionInput, coerce_staging_entity_type
-from app.resolve.models.canonical import UnmappedEntityTypeError
 
 
 def _address_strategy():

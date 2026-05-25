@@ -415,7 +415,7 @@ class TestPhase1Idempotency:
     def test_canonical_entity_count_stable_across_runs(self, seeded_engine):
         """Two pipeline runs must not accumulate duplicate live canonical rows."""
         engine, seed = seeded_engine
-        run1 = _run_pipeline(engine)
+        _run_pipeline(engine)
         run2 = _run_pipeline(engine)
 
         with Session(engine) as session:

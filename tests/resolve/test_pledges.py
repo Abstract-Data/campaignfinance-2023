@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, create_engine
 
 from app.core.source_models.pledges import UnifiedPledge
+from app.core.source_models.pledges_ingest import build_pledge
 from tests.resolve.conftest import (
     StubState,
     StubUnifiedEntity,
@@ -18,8 +19,6 @@ from tests.resolve.conftest import (
     create_resolve_tables,
     drop_resolve_tables,
 )
-from app.core.source_models.pledges_ingest import build_pledge
-
 
 SAMPLE_PLDG_RAW = {
     "recordType": "PLDG",

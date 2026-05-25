@@ -9,6 +9,11 @@ import pytest
 from sqlmodel import Session, create_engine, select
 
 from app.core.source_models.reports import UnifiedReport
+from app.core.source_models.reports_ingest import (
+    _parse_date,
+    build_report,
+    link_transactions_to_reports,
+)
 from tests.resolve.conftest import (
     StubFileOrigin,
     StubState,
@@ -16,12 +21,6 @@ from tests.resolve.conftest import (
     StubUnifiedTransaction,
     create_resolve_tables,
 )
-from app.core.source_models.reports_ingest import (
-    _parse_date,
-    build_report,
-    link_transactions_to_reports,
-)
-
 
 SAMPLE_CVR1 = {
     "recordType": "CVR1",

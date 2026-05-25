@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.resolve.models.resolution import (
@@ -17,8 +16,8 @@ from app.resolve.models.resolution import (
     PassType,
     RunStatus,
 )
-from app.resolve.standardize.staging import ResolutionInput
 from app.resolve.stages.fastpath import MergeEdge, run_fastpath_stage
+from app.resolve.standardize.staging import ResolutionInput
 
 
 def _make_engine():

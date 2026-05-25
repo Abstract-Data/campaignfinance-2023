@@ -120,20 +120,21 @@ def _run_approve(
     *,
     reviewer: str,
     notes: str = "",
-) -> None:
-    """Approve a review item and print confirmation."""
+) -> int:
+    """Approve a review item and print confirmation. Returns 0 on success, 1 on error."""
     try:
         result = approve(session, review_id, reviewer=reviewer, notes=notes)
         print(
             f"Approved review {result.id} "
             f"(reviewer={result.reviewer!r}, decided_at={result.decided_at})"
         )
+        return 0
     except KeyError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        logger.error(f"Error: {exc}")
+        return 1
     except AlreadyDecidedError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        logger.error(f"Error: {exc}")
+        return 1
 
 
 def _run_reject(
@@ -142,20 +143,21 @@ def _run_reject(
     *,
     reviewer: str,
     notes: str = "",
-) -> None:
-    """Reject a review item and print confirmation."""
+) -> int:
+    """Reject a review item and print confirmation. Returns 0 on success, 1 on error."""
     try:
         result = reject(session, review_id, reviewer=reviewer, notes=notes)
         print(
             f"Rejected review {result.id} "
             f"(reviewer={result.reviewer!r}, decided_at={result.decided_at})"
         )
+        return 0
     except KeyError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        logger.error(f"Error: {exc}")
+        return 1
     except AlreadyDecidedError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        logger.error(f"Error: {exc}")
+        return 1
 
 
 # ---------------------------------------------------------------------------
@@ -257,12 +259,16 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 _run_show(session, args.review_id)
             except KeyError as exc:
-                print(f"Error: {exc}", file=sys.stderr)
+                logger.error(f"Error: {exc}")
                 return 1
         elif args.command == "approve":
-            _run_approve(session, args.review_id, reviewer=args.reviewer, notes=args.notes)
+            return _run_approve(
+                session, args.review_id, reviewer=args.reviewer, notes=args.notes
+            )
         elif args.command == "reject":
-            _run_reject(session, args.review_id, reviewer=args.reviewer, notes=args.notes)
+            return _run_reject(
+                session, args.review_id, reviewer=args.reviewer, notes=args.notes
+            )
 
     return 0
 

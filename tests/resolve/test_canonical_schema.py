@@ -9,7 +9,7 @@ TDD step 5: additional structural assertions from the interface contract.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine, inspect, UniqueConstraint
+from sqlalchemy import UniqueConstraint, create_engine, inspect
 from sqlmodel import SQLModel
 
 from app.core.source_models.reports import UnifiedReport  # noqa: F401

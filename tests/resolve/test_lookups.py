@@ -7,16 +7,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, create_engine, select
 
 from app.core.source_models.lookups import CommitteePurpose, ExpenditureCategory
+from app.core.source_models.lookups_ingest import (
+    build_committee_purpose,
+    build_expenditure_category,
+)
 from tests.resolve.conftest import (
     StubState,
     StubUnifiedCommittee,
     create_resolve_tables,
 )
-from app.core.source_models.lookups_ingest import (
-    build_committee_purpose,
-    build_expenditure_category,
-)
-
 
 SAMPLE_EXCAT = {
     "recordType": "EXCAT",

@@ -9,12 +9,10 @@ import pytest
 from scripts.loaders.loader_config import (
     GlobPattern,
     LoaderConfig,
-    LoaderPresets,
     StateGlobConfig,
     get_config,
 )
 from scripts.loaders.production_loader import discover_and_load
-
 
 # ---------------------------------------------------------------------------
 # LoaderConfig / presets
@@ -141,7 +139,7 @@ def test_discover_and_load_unknown_state_raises() -> None:
 
 def test_persist_pldg_row_rolls_back_transaction_on_pledge_failure(monkeypatch) -> None:
     """PLDG parent transaction and pledge detail share one savepoint (M-2)."""
-    from sqlmodel import SQLModel, Session, create_engine, select
+    from sqlmodel import Session, SQLModel, create_engine, select
 
     from app.core.source_models.pledges import UnifiedPledge
     from app.core.unified_sqlmodels import UnifiedTransaction

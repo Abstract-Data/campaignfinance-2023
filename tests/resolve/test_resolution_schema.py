@@ -8,7 +8,8 @@ create cleanly in SQLite, and satisfy column-level constraints.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import UniqueConstraint, inspect as sa_inspect
+from sqlalchemy import UniqueConstraint
+from sqlalchemy import inspect as sa_inspect
 from sqlmodel import SQLModel, create_engine
 
 from app.resolve.models import SOURCE_ID_MAX_LENGTH
