@@ -63,6 +63,7 @@ aligned = "2026-05-23"
 dev = [
     "hypothesis>=6.152.9",
     "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
 ]
 # Ruff configuration lives in .ruff.toml.
 
@@ -70,3 +71,13 @@ dev = [
 markers = [
     "integration: requires tmp/texas and/or Postgres; excluded from default CI",
 ]
+
+[tool.coverage.run]
+core = "sysmon"
+# Resolve pipeline has its own CI job (tests/resolve); omit from the main gate.
+omit = [
+    "app/resolve/*",
+]
+
+[tool.coverage.report]
+fail_under = 60
