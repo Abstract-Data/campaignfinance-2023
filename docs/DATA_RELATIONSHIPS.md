@@ -1,6 +1,6 @@
 # DATA_RELATIONSHIPS.md
 # Campaign Finance — Data Relationships & ERD
-# Last Updated: 2026-05-24
+# Last Updated: 2026-05-25
 
 This document describes the relationships between all tables in the campaign
 finance database, from raw source data through the unified layer to the
@@ -81,34 +81,41 @@ erDiagram
 
     unified_committees {
         string filer_id PK
+        string uuid
         string name
-        string state_code
+        int    address_id FK
+        int    state_id FK
     }
 
     unified_addresses {
         int    id PK
-        string line_1
-        string line_2
+        string uuid
+        string street_1
+        string street_2
         string city
         string state
-        string zip5
-        string zip4
+        string zip_code
     }
 
     unified_persons {
         int    id PK
+        string uuid
         string first_name
         string last_name
-        string name_prefix
-        string name_suffix
+        string middle_name
+        string suffix
+        int    address_id FK
+        int    state_id FK
     }
 
     unified_entities {
         int    id PK
         string uuid
         string entity_type
-        int    address_id FK
         int    person_id FK
+        string committee_id FK
+        int    address_id FK
+        int    state_id FK
     }
 
     unified_transactions {
@@ -120,7 +127,8 @@ erDiagram
         string  transaction_type
         int     state_id FK
         string  committee_id FK
-        int     report_id
+        string  file_origin_id FK
+        int     report_id FK
         string  report_ident
     }
 
@@ -132,19 +140,42 @@ erDiagram
         numeric amount
     }
 
+    unified_loans {
+        int     id PK
+        int     transaction_id FK
+        int     lender_entity_id FK
+        int     borrower_entity_id FK
+    }
+
+    unified_debts {
+        int     id PK
+        int     transaction_id FK
+        int     creditor_entity_id FK
+        int     debtor_entity_id FK
+    }
+
     unified_transaction_persons {
         int    id PK
         int    transaction_id FK
+        int    person_id FK
         int    entity_id FK
         string role
     }
 
     states ||--o{ file_origins : "has"
     states ||--o{ unified_transactions : "has"
+    states ||--o{ unified_persons : "has"
+    states ||--o{ unified_committees : "has"
+    unified_addresses ||--o{ unified_persons : "located"
+    unified_addresses ||--o{ unified_entities : "located"
     unified_committees ||--o{ unified_transactions : "committee"
+    unified_persons ||--o| unified_entities : "represents"
+    unified_committees ||--o| unified_entities : "represents"
     unified_entities ||--o{ unified_contributions : "contributor"
     unified_entities ||--o{ unified_contributions : "recipient"
-    unified_transactions ||--o{ unified_contributions : "is a"
+    unified_transactions ||--o| unified_contributions : "detail"
+    unified_transactions ||--o| unified_loans : "detail"
+    unified_transactions ||--o| unified_debts : "detail"
     unified_transactions ||--o{ unified_transaction_persons : "involves"
 
     %% ─────────────────────────────────────────────

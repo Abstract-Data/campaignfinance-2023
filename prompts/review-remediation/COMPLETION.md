@@ -46,12 +46,17 @@
 | 5a core tests | **Partial** | Processor, versioning, value-object, entrypoint tests; no full characterization suite per record type |
 | 5b scraper hardening | **Done** | Markup drift + fixture tests (`97fcabd`) |
 | 5c orchestration | **Done** | Production CLI entrypoint + scheduler (`3017f7c`) |
-| 5d docs/ADR | **Partial** | `docs/ARCHITECTURE-DIAGRAM.md`, ADR 0002; ERD / full ADR set incomplete |
+| 5d docs/ADR | **Done** | `ARCHITECTURE-DIAGRAM.md` (pipeline + unified ERD), `DATA_RELATIONSHIPS.md` field fixes + detail tables, ADR 0002/0003, `app/core/README.md`, root `README.md` overview |
 | 5z final audit | **Pending** | Backlog residue greps, coverage ≥60% gate, final `/review` PASS |
 
 ## Backlog items cleared (Wave 4)
 
 - RF-DRY-001/002, RF-CPLX-001/003, RF-SMELL-003/004, P2-PERF-001/002, P2-MNT-001, P2-ARC-001 (core path), R11 (streaming loader wired)
+
+## Backlog items cleared (Wave 5d)
+
+- **R3** — Architecture diagram (`docs/ARCHITECTURE-DIAGRAM.md`), unified ERD aligned to `app/core/models/tables.py`, `app/core/README.md` module index
+- **R12** — ADR 0002 (data classification/retention) + ADR 0003 (Splink / entity-resolution governance)
 
 ## Remaining blockers (Wave 5 / 5z)
 
@@ -59,7 +64,7 @@
 2. **Coverage gate** — `uv run pytest tests app/tests --cov=app --cov-fail-under=60` not verified in 5z
 3. **Residue greps** (5z scope) — `datetime.utcnow()` in versioning/DB paths; `except Exception` in `reports_ingest.py`; pre-existing ruff E712 in `unified_database.py`
 4. **5a** — Characterization tests for each record type via `process_record` / `process_record_stream`
-5. **5d** — Full ERD + ADR R3/R12 documentation
+5. ~~**5d** — Full ERD + ADR R3/R12 documentation~~ **Done** (TASK-5d)
 6. **GitButler** — overlapping wave branches may require `but` merge into phase branch before PR
 
 ## Commands to verify
@@ -74,5 +79,4 @@ uv run python -c "from app.core.processor import unified_sql_processor; from scr
 ## Recommended next agents
 
 1. **TASK-5a** — characterization tests for all record types (`remediation/wave-5/task-5a-core-tests`)
-2. **TASK-5d** — ERD + remaining ADRs (`remediation/wave-5/task-5d-docs-and-adrs`)
-3. **TASK-5z** — final backlog audit, residue greps, coverage gate, `/review` PASS
+2. **TASK-5z** — final backlog audit, residue greps, coverage gate, `/review` PASS

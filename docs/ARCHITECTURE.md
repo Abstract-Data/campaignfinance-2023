@@ -113,6 +113,6 @@ for probabilistic matching via Splink, `cluster` for connected components,
 - `docs/TESTING.md` — test strategy and how to run the suite
 - `docs/DEPLOYMENTS.md` — environments and rollout
 - `docs/GITBUTLER.md` — branch workflow
-- `docs/adr/` — recorded architecture / tooling decisions
+- `docs/adr/` — recorded architecture / tooling decisions (including data classification and Splink governance)
 - `docs/superpowers/specs/2026-05-23-data-resolution-pipeline-design.md` — the
   full design spec for the `app/resolve/` entity-resolution pipeline
