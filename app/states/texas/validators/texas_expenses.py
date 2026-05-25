@@ -1,12 +1,12 @@
 from datetime import date
 from typing import Optional
 
-import app.funcs.validator_functions as funcs
 import app.states.texas.funcs.tx_validation_funcs as tx_funcs
 from pydantic import field_validator, model_validator
 from pydantic_core import PydanticCustomError
 from sqlmodel import Field
 
+from ._mixins import format_individual_payee_name
 from .texas_settings import TECSettings
 
 # class TECExpenseCategory(TECSettings, table=True):
@@ -188,11 +188,8 @@ class TECExpense(TECSettings, table=True):
         description="Download date"
     )
 
-    clear_blank_strings = model_validator(mode='before')(funcs.clear_blank_strings)
-    check_dates = model_validator(mode='before')(tx_funcs.validate_dates)
-    check_zipcodes = model_validator(mode='before')(tx_funcs.check_zipcodes)
-    address_formatting = model_validator(mode='before')(tx_funcs.address_formatting)
-    phone_number_validation = model_validator(mode='before')(tx_funcs.phone_number_validation)
+    address_formatting = model_validator(mode="before")(tx_funcs.address_formatting)
+    phone_number_validation = model_validator(mode="before")(tx_funcs.phone_number_validation)
 
     @model_validator(mode="before")
     @classmethod
@@ -240,20 +237,7 @@ class TECExpense(TECSettings, table=True):
     @model_validator(mode="before")
     @classmethod
     def format_payee_name(cls, values):
-        if values["payeePersentTypeCd"] == "INDIVIDUAL":
-            _payee_name_fields = [
-                x for x in values.keys() if x.startswith("payeeName") and x != "payeeNameOrganization"
-            ]
-            _name_fields_not_empty = [values[x] for x in _payee_name_fields if values[x] != ""]
-            payee_name = funcs.person_name_parser(" ".join(_name_fields_not_empty))
-            payee_name.parse_full_name()
-            values["payeeNameLast"] = payee_name.last
-            values["payeeNameFirst"] = payee_name.first
-            values["payeeNameSuffixCd"] = payee_name.suffix
-            values["payeeNamePrefixCd"] = payee_name.title
-            values["payeeNameFull"] = payee_name.full_name
-
-        return values
+        return format_individual_payee_name(values)
 
     @field_validator('filerName', 'expendDescr', 'payeeStreetStateCd', 'expendDt', 'receivedDt', mode='before')
     @classmethod

@@ -1,13 +1,19 @@
 from datetime import date
 from typing import Optional
 
-import app.funcs.validator_functions as funcs
 import app.states.texas.funcs.tx_validation_funcs as tx_funcs
 from pydantic import model_validator
 from pydantic_core import PydanticCustomError
 from pydantic_extra_types.phone_numbers import PhoneNumber
 from sqlmodel import JSON, Field, Relationship
 
+from ._mixins import (
+    _tec_address,
+    bind_street_address_if_present,
+    bind_street_mailing_pair,
+    extract_address,
+    format_filer_check_name,
+)
 from .texas_address import TECAddress
 from .texas_settings import TECSettings
 
@@ -86,31 +92,22 @@ class TECFilerName(TECSettings, table=True):
 
     filer_name: Optional["TECFilerIdentity"] = Relationship(back_populates="filer_name", link_model=TECFilerLink)
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def validate_addresses(cls, values):
-        _filer_street = {k: v for k, v in values.items() if k.startswith('filerStreet')}
-        _filer_mailing = {k: v for k, v in values.items() if k.startswith('filerMailing')}
-        values['filerAddress'] = TECAddress(**_filer_street)
-        values['filerMailing'] = TECAddress(**_filer_mailing)
+        bind_street_mailing_pair(
+            values,
+            street_prefix="filerStreet",
+            street_key="filerAddress",
+            mailing_prefix="filerMailing",
+            mailing_key="filerMailing",
+        )
         return values
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def check_name(cls, values):
-        _first_name = next((values.get(x) for x in values.keys() if x.endswith('NameFirst')), None)
-        _last_name = next((values.get(x) for x in values.keys() if x.endswith('NameLast')), None)
-        if not _first_name and not _last_name:
-            return values
-
-        _name = funcs.person_name_parser(f"{_first_name} {_last_name}")
-        values['filerNameLast'] = _name.last
-        values['filerNameFirst'] = _name.first
-        values['filerNameMiddle'] = _name.middle.replace('.', '')
-        values['filerNameSuffixCd'] = _name.suffix
-        values['filerNamePrefixCd'] = _name.title
-        values['filerNameFull'] = _name.full_name
-        return values
+        return format_filer_check_name(values)
 
 
 
@@ -157,14 +154,17 @@ class TECTreasurer(TECSettings, table=True):
     treasurer: list["TECFiler"] = Relationship(back_populates="treasurer", link_model=TECTreasurerLink)
 
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def validate_addresses(cls, values):
-        _treas_street = {k: v for k, v in values.items() if k.startswith('treasStreet')}
-        _treas_mailing = {k: v for k, v in values.items() if k.startswith('treasMailing')}
-
-        values['treasAddress'] = TECAddress(**_treas_street) if _treas_street else None
-        values['treasMailing'] = TECAddress(**_treas_mailing) if _treas_mailing else None
+        bind_street_mailing_pair(
+            values,
+            street_prefix="treasStreet",
+            street_key="treasAddress",
+            mailing_prefix="treasMailing",
+            mailing_key="treasMailing",
+            optional=True,
+        )
         return values
 
     @model_validator(mode='after')
@@ -228,12 +228,14 @@ class TECAsstTreasurer(TECSettings):
 
 
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def validate_addresses(cls, values):
-        _assttreas_street = {k: v for k, v in values.items() if k.startswith('assttreasStreet')}
-        if _assttreas_street:
-            values['assttreasAddress'] = TECAddress(**_assttreas_street)
+        bind_street_address_if_present(
+            values,
+            prefix="assttreasStreet",
+            target_key="assttreasAddress",
+        )
         return values
 
 
@@ -261,11 +263,11 @@ class TECChair(TECSettings):
     chairPrimaryPhoneExt: Optional[str] = Field(
         default=None, description="Chair primary phone number extension")
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def validate_addresses(cls, values):
-        _chair_street = {k: v for k, v in values.items() if k.startswith('chair')}
-        values['chairAddress'] = TECAddress(**_chair_street)
+        chair_fields = extract_address(values, "chair")
+        values["chairAddress"] = _tec_address(**chair_fields)
         return values
 
 class TECFiler(TECSettings, table=True):
@@ -295,13 +297,10 @@ class TECFiler(TECSettings, table=True):
     download_date: date = Field(
         ..., description="Date the file was downloaded")
 
-    clear_blank_strings = model_validator(mode="before")(funcs.clear_blank_strings)
-    format_dates = model_validator(mode="before")(tx_funcs.validate_dates)
-    format_zipcodes = model_validator(mode="before")(tx_funcs.check_zipcodes)
     format_phone_numbers = model_validator(mode="before")(tx_funcs.phone_number_validation)
     format_address = model_validator(mode="before")(tx_funcs.address_formatting)
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def validate_addresses(cls, values):
         _filer_dict = {k: v for k, v in values.items() if k.startswith('filer') and v}
