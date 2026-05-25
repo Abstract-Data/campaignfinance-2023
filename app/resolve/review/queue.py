@@ -188,7 +188,10 @@ def _decide(
     notes: str,
 ) -> MergeReview:
     """Core implementation shared by approve() and reject()."""
-    row = get_review(session, review_id)
+    stmt = select(MergeReview).where(MergeReview.id == review_id).with_for_update()
+    row = session.exec(stmt).first()
+    if row is None:
+        raise KeyError(f"MergeReview {review_id!r} not found.")
 
     if row.status != ReviewStatus.pending:
         raise AlreadyDecidedError(review_id, row.status)

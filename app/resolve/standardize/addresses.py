@@ -65,7 +65,9 @@ def _stringify_address(raw: str | dict[str, str | None]) -> str:
     return ", ".join(part for part in parts if part)
 
 
-def standardize_address(raw: str | dict[str, str | None] | StandardizedAddress) -> StandardizedAddress:
+def standardize_address(
+    raw: str | dict[str, str | None] | StandardizedAddress,
+) -> StandardizedAddress:
     """Normalize and parse a raw address into comparable parts."""
     if isinstance(raw, StandardizedAddress):
         return raw

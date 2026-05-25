@@ -7,7 +7,7 @@ from itertools import combinations
 from typing import Any
 
 from sqlalchemy import Column, String, delete
-from sqlmodel import Field, SQLModel, Session, select
+from sqlmodel import Field, Session, SQLModel, select
 
 from app.resolve.models.resolution import MergeReview, SourceType
 from app.resolve.stages.fastpath import MergeEdge
@@ -94,9 +94,7 @@ def run_cluster_stage(
     """Run stage 6 clustering and write the `clusters` staging table."""
     max_cluster_size = int(config.get("max_cluster_size", 0))
 
-    rows = session.exec(
-        select(ResolutionInput).where(ResolutionInput.run_id == run_id)
-    ).all()
+    rows = session.exec(select(ResolutionInput).where(ResolutionInput.run_id == run_id)).all()
     edges = session.exec(select(MergeEdge).where(MergeEdge.run_id == run_id)).all()
 
     node_entity_type: dict[NodeKey, str] = {
@@ -109,9 +107,7 @@ def run_cluster_stage(
 
     components = _build_components(edges, all_nodes)
 
-    existing_reviews = session.exec(
-        select(MergeReview).where(MergeReview.run_id == run_id)
-    ).all()
+    existing_reviews = session.exec(select(MergeReview).where(MergeReview.run_id == run_id)).all()
     existing_pairs: set[tuple[str, str, str, str]] = set()
     for review in existing_reviews:
         pair = sorted(

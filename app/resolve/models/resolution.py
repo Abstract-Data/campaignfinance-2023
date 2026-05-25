@@ -124,9 +124,7 @@ class MatchRun(SQLModel, table=True):
     state_code: str = Field(max_length=2, index=True)
     pass_type: PassType
     engine_version: str | None = Field(default=None, max_length=50)
-    config_json: str | None = Field(
-        default=None, sa_column=Column(Text, nullable=True)
-    )
+    config_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     started_at: datetime = Field(default_factory=_utc_now)
     finished_at: datetime | None = Field(default=None)
     status: RunStatus = Field(default=RunStatus.running)
@@ -169,17 +167,11 @@ class EntityCrosswalk(SQLModel, table=True):
     source_type: SourceType
     source_id: str = Field(max_length=SOURCE_ID_MAX_LENGTH, index=True)
     # Plain integer; FK → canonical_entity.id wired by task-1z.
-    canonical_entity_id: int = Field(
-        sa_column=Column(Integer, nullable=False, index=True)
-    )
+    canonical_entity_id: int = Field(sa_column=Column(Integer, nullable=False, index=True))
     match_method: MatchMethod
-    match_score: float | None = Field(
-        default=None, sa_column=Column(Float, nullable=True)
-    )
+    match_score: float | None = Field(default=None, sa_column=Column(Float, nullable=True))
     confidence_band: ConfidenceBand
-    run_id: int | None = Field(
-        default=None, foreign_key="match_run.id", index=True
-    )
+    run_id: int | None = Field(default=None, foreign_key="match_run.id", index=True)
     decided_at: datetime | None = Field(default=None)
     decided_by: str | None = Field(default=None, max_length=100)
 
@@ -205,17 +197,11 @@ class AddressCrosswalk(SQLModel, table=True):
     source_type: SourceType
     source_id: str = Field(max_length=SOURCE_ID_MAX_LENGTH, index=True)
     # Plain integer; FK → canonical_address.id wired by task-1z.
-    canonical_address_id: int = Field(
-        sa_column=Column(Integer, nullable=False, index=True)
-    )
+    canonical_address_id: int = Field(sa_column=Column(Integer, nullable=False, index=True))
     match_method: MatchMethod
-    match_score: float | None = Field(
-        default=None, sa_column=Column(Float, nullable=True)
-    )
+    match_score: float | None = Field(default=None, sa_column=Column(Float, nullable=True))
     confidence_band: ConfidenceBand
-    run_id: int | None = Field(
-        default=None, foreign_key="match_run.id", index=True
-    )
+    run_id: int | None = Field(default=None, foreign_key="match_run.id", index=True)
     decided_at: datetime | None = Field(default=None)
     decided_by: str | None = Field(default=None, max_length=100)
 
@@ -241,17 +227,11 @@ class CampaignCrosswalk(SQLModel, table=True):
     source_type: SourceType
     source_id: str = Field(max_length=SOURCE_ID_MAX_LENGTH, index=True)
     # Plain integer; FK → canonical_campaign.id wired by task-1z.
-    canonical_campaign_id: int = Field(
-        sa_column=Column(Integer, nullable=False, index=True)
-    )
+    canonical_campaign_id: int = Field(sa_column=Column(Integer, nullable=False, index=True))
     match_method: MatchMethod
-    match_score: float | None = Field(
-        default=None, sa_column=Column(Float, nullable=True)
-    )
+    match_score: float | None = Field(default=None, sa_column=Column(Float, nullable=True))
     confidence_band: ConfidenceBand
-    run_id: int | None = Field(
-        default=None, foreign_key="match_run.id", index=True
-    )
+    run_id: int | None = Field(default=None, foreign_key="match_run.id", index=True)
     decided_at: datetime | None = Field(default=None)
     decided_by: str | None = Field(default=None, max_length=100)
 
@@ -272,22 +252,16 @@ class MatchDecision(SQLModel, table=True):
     __tablename__ = "match_decision"
 
     id: int | None = Field(default=None, primary_key=True)
-    run_id: int | None = Field(
-        default=None, foreign_key="match_run.id", index=True
-    )
+    run_id: int | None = Field(default=None, foreign_key="match_run.id", index=True)
     source_a_type: SourceType
     source_a_id: str = Field(max_length=SOURCE_ID_MAX_LENGTH)
     source_b_type: SourceType
     source_b_id: str = Field(max_length=SOURCE_ID_MAX_LENGTH)
-    score: float | None = Field(
-        default=None, sa_column=Column(Float, nullable=True)
-    )
+    score: float | None = Field(default=None, sa_column=Column(Float, nullable=True))
     method: MatchMethod | None = Field(default=None)
     band: DecisionBand
     outcome: DecisionOutcome
-    explanation_json: str | None = Field(
-        default=None, sa_column=Column(Text, nullable=True)
-    )
+    explanation_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
 
 
 # ---------------------------------------------------------------------------
@@ -308,22 +282,14 @@ class MergeReview(SQLModel, table=True):
     __tablename__ = "merge_review"
 
     id: int | None = Field(default=None, primary_key=True)
-    run_id: int | None = Field(
-        default=None, foreign_key="match_run.id", index=True
-    )
+    run_id: int | None = Field(default=None, foreign_key="match_run.id", index=True)
     source_a_type: SourceType
     source_a_id: str = Field(max_length=SOURCE_ID_MAX_LENGTH)
     source_b_type: SourceType
     source_b_id: str = Field(max_length=SOURCE_ID_MAX_LENGTH)
-    score: float | None = Field(
-        default=None, sa_column=Column(Float, nullable=True)
-    )
-    explanation_json: str | None = Field(
-        default=None, sa_column=Column(Text, nullable=True)
-    )
+    score: float | None = Field(default=None, sa_column=Column(Float, nullable=True))
+    explanation_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     status: ReviewStatus = Field(default=ReviewStatus.pending)
     reviewer: str | None = Field(default=None, max_length=100)
     decided_at: datetime | None = Field(default=None)
-    notes: str | None = Field(
-        default=None, sa_column=Column(Text, nullable=True)
-    )
+    notes: str | None = Field(default=None, sa_column=Column(Text, nullable=True))

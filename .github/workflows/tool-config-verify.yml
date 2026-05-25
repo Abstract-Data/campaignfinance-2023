@@ -22,7 +22,7 @@ jobs:
         run: |
           fail=0
           for h in block-dangerous block-env-writes pre-commit verify-completion \
-                   block-op-read domain-purity-check sql-injection-check \
+                   block-op-read block-raw-git domain-purity-check sql-injection-check \
                    router-boundary-check no-print-check env-leak-check; do
             if [ ! -x ".claude/hooks/${h}.sh" ]; then
               echo "MISSING or not executable: .claude/hooks/${h}.sh"

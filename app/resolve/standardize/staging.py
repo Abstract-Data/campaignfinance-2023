@@ -7,10 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, String
 from sqlmodel import Field, SQLModel
 
-from app.resolve.models.canonical import (
-    UnmappedEntityTypeError,
-    map_unified_to_canonical_entity_type,
-)
+from app.resolve.models.canonical import map_unified_to_canonical_entity_type
 from app.resolve.models.resolution import SOURCE_ID_MAX_LENGTH
 
 

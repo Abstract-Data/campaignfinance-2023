@@ -53,7 +53,9 @@ def _make_engine():
     return engine
 
 
-def _person_input(*, run_id: int, source_id: str, side: str, row: dict[str, Any]) -> ResolutionInput:
+def _person_input(
+    *, run_id: int, source_id: str, side: str, row: dict[str, Any]
+) -> ResolutionInput:
     suffix = "_a" if side == "a" else "_b"
     return ResolutionInput(
         run_id=run_id,
@@ -137,7 +139,6 @@ def _score_pairs(
         )
 
         for row in pairs:
-            pair_id = row["pair_id"]
             source_a_id, source_b_id = pair_ids(row)
             session.add(
                 build_input(
@@ -172,9 +173,7 @@ def _score_pairs(
             select(ScoredPair).where(ScoredPair.run_id == _GOLDEN_RUN_ID)
         ).all()
 
-    score_by_pair = {
-        (row.source_a_id, row.source_b_id): row.score for row in scored_rows
-    }
+    score_by_pair = {(row.source_a_id, row.source_b_id): row.score for row in scored_rows}
 
     predictions: list[str] = []
     for row in pairs:

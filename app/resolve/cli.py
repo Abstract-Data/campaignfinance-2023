@@ -7,8 +7,8 @@ Usage
     python -m app.resolve run --state TX --pass-type address
     python -m app.resolve run --state TX --sqlite
 
-The stage list is injected by ``task-1z``.  Until then, an empty list
-runs a no-op pipeline (open match_run, complete it, exit 0).
+The ``run`` sub-command executes the full Phase 2 stage list (stages 1→7)
+via :func:`app.resolve.run.ResolutionRun.run`.
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ _STATE_NAME_TO_CODE: dict[str, str] = {
     "texas": "TX",
     "oklahoma": "OK",
 }
+
 
 def _resolve_state_code(state: str) -> str:
     """Return a 2-letter uppercase state code from a name or code."""
@@ -64,8 +65,8 @@ def postgres_env_configured() -> bool:
 def build_postgres_url_from_env() -> str:
     """Build a PostgreSQL URL from ``DATABASE_URL`` or ``POSTGRES_*`` env vars.
 
-    Uses SQLAlchemy ``URL.create`` so special characters in credentials are
-  encoded correctly (never interpolated via f-string).
+      Uses SQLAlchemy ``URL.create`` so special characters in credentials are
+    encoded correctly (never interpolated via f-string).
     """
     database_url = os.environ.get("DATABASE_URL", "").strip()
     if database_url:
@@ -163,6 +164,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
+    # ------------------------------------------------------------------
+    # run
+    # ------------------------------------------------------------------
     run_p = sub.add_parser("run", help="Run the resolution pipeline for a state.")
     run_p.add_argument(
         "--state",
@@ -194,6 +198,64 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable verbose logging.",
     )
+
+    # ------------------------------------------------------------------
+    # review
+    # ------------------------------------------------------------------
+    review_p = sub.add_parser("review", help="Manage the human-review queue.")
+    review_p.add_argument(
+        "--sqlite",
+        action="store_true",
+        default=False,
+        help="Force an in-memory SQLite database (for local testing).",
+    )
+    review_sub = review_p.add_subparsers(dest="review_command", metavar="REVIEW_COMMAND")
+    review_sub.required = True
+
+    review_list_p = review_sub.add_parser("list", help="List pending review items.")
+    review_list_p.add_argument(
+        "--run", dest="run_id", type=int, default=None, help="Filter by run ID."
+    )
+    review_list_p.add_argument(
+        "--type",
+        dest="entity_type",
+        default=None,
+        metavar="TYPE",
+        help="Filter by entity type: person | committee | entity.",
+    )
+    review_list_p.add_argument("--limit", type=int, default=None, help="Maximum rows to display.")
+
+    review_show_p = review_sub.add_parser("show", help="Show a pair side by side with explanation.")
+    review_show_p.add_argument("review_id", type=int, help="ID of the MergeReview row.")
+
+    review_approve_p = review_sub.add_parser("approve", help="Approve a review item.")
+    review_approve_p.add_argument("review_id", type=int, help="ID of the MergeReview row.")
+    review_approve_p.add_argument("--reviewer", required=True, help="Reviewer name / ID.")
+    review_approve_p.add_argument("--notes", default="", help="Optional notes.")
+
+    review_reject_p = review_sub.add_parser("reject", help="Reject a review item.")
+    review_reject_p.add_argument("review_id", type=int, help="ID of the MergeReview row.")
+    review_reject_p.add_argument("--reviewer", required=True, help="Reviewer name / ID.")
+    review_reject_p.add_argument("--notes", default="", help="Optional notes.")
+
+    # ------------------------------------------------------------------
+    # unmerge
+    # ------------------------------------------------------------------
+    unmerge_p = sub.add_parser("unmerge", help="Revert a completed resolution run.")
+    unmerge_p.add_argument(
+        "--run",
+        dest="run_id",
+        type=int,
+        required=True,
+        help="ID of the match_run to revert.",
+    )
+    unmerge_p.add_argument(
+        "--sqlite",
+        action="store_true",
+        default=False,
+        help="Force an in-memory SQLite database (for local testing).",
+    )
+
     return parser
 
 
@@ -203,19 +265,25 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _get_run_stages():
-    """Return the Phase 1 stage callables for ``run``."""
+    """Return the full Phase 2 stage callables for ``run`` (stages 1→7)."""
     from app.resolve.stages import (
         run_blocking_stage,
+        run_classify_stage,
+        run_cluster_stage,
         run_fastpath_stage,
+        run_score_stage,
         run_survivorship_stage,
         stage1_build_resolution_input,
     )
 
     return [
-        stage1_build_resolution_input,  # stage 1 — build resolution_input (1c)
-        run_blocking_stage,  # stage 2 — candidate pair blocking  (1e)
-        run_fastpath_stage,  # stage 3 — deterministic fast-path  (1f)
-        run_survivorship_stage,  # stage 7 — clustering + publish     (1g)
+        stage1_build_resolution_input,  # stage 1 — standardize            (1c)
+        run_blocking_stage,  # stage 2 — candidate pair blocking (1e)
+        run_fastpath_stage,  # stage 3 — deterministic fast-path (1f)
+        run_score_stage,  # stage 4 — Splink scoring          (2a)
+        run_classify_stage,  # stage 5 — band classification     (2b)
+        run_cluster_stage,  # stage 6 — connected components    (2c)
+        run_survivorship_stage,  # stage 7 — survivorship + publish  (1g+2d)
     ]
 
 
@@ -240,6 +308,12 @@ def _run_command(args: argparse.Namespace) -> int:
 
     config.setdefault("pass_type", args.pass_type)
     config.setdefault("state_code", state_code)
+
+    # Phase 2 starting thresholds — stored in match_run.config_json.
+    config.setdefault("auto_threshold", 0.99)
+    config.setdefault("review_threshold", 0.80)
+    config.setdefault("max_cluster_size", 200)
+    config.setdefault("seed", 42)
 
     try:
         db_url = resolve_engine_url(use_sqlite=args.sqlite)
@@ -271,6 +345,92 @@ def _run_command(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# 'review' sub-command
+# ---------------------------------------------------------------------------
+
+
+def _review_command(args: argparse.Namespace) -> int:
+    """Execute the ``review`` sub-command.  Returns an exit code."""
+    from app.resolve.review.cli import (
+        _run_approve,
+        _run_list,
+        _run_reject,
+        _run_show,
+    )
+
+    try:
+        db_url = resolve_engine_url(use_sqlite=args.sqlite)
+    except RuntimeError as exc:
+        logger.error("%s", exc)
+        return 1
+
+    from sqlmodel import Session, create_engine
+
+    from app.resolve.run import ensure_resolution_schema
+
+    engine = create_engine(db_url)
+    ensure_resolution_schema(engine)
+
+    with Session(engine) as session:
+        if args.review_command == "list":
+            _run_list(
+                session,
+                run_id=args.run_id,
+                entity_type=args.entity_type,
+                limit=args.limit,
+            )
+        elif args.review_command == "show":
+            try:
+                _run_show(session, args.review_id)
+            except KeyError as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                return 1
+        elif args.review_command == "approve":
+            _run_approve(session, args.review_id, reviewer=args.reviewer, notes=args.notes)
+        elif args.review_command == "reject":
+            _run_reject(session, args.review_id, reviewer=args.reviewer, notes=args.notes)
+
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# 'unmerge' sub-command
+# ---------------------------------------------------------------------------
+
+
+def _unmerge_command(args: argparse.Namespace) -> int:
+    """Execute the ``unmerge`` sub-command.  Returns an exit code."""
+    try:
+        db_url = resolve_engine_url(use_sqlite=args.sqlite)
+    except RuntimeError as exc:
+        logger.error("%s", exc)
+        return 1
+
+    from sqlmodel import Session, create_engine
+
+    from app.resolve.reverse import can_unmerge, unmerge_run
+    from app.resolve.run import ensure_resolution_schema
+
+    engine = create_engine(db_url)
+    ensure_resolution_schema(engine)
+
+    with Session(engine) as session:
+        ok, reason = can_unmerge(session, args.run_id)
+        if not ok:
+            logger.error("Cannot unmerge run_id=%d: %s", args.run_id, reason)
+            return 1
+        reversal = unmerge_run(session, args.run_id)
+
+    logger.info(
+        "Unmerged run_id=%d: removed %d entity crosswalk rows, rebuilt %d canonical rows",
+        reversal.run_id,
+        reversal.entity_crosswalk_removed,
+        reversal.canonical_rows_rebuilt,
+    )
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -282,6 +442,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "run":
         return _run_command(args)
+    if args.command == "review":
+        return _review_command(args)
+    if args.command == "unmerge":
+        return _unmerge_command(args)
 
     parser.print_help()
     return 1

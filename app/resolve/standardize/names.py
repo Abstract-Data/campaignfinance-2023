@@ -50,15 +50,8 @@ def standardize_name(raw: str | StandardizedName) -> StandardizedName:
         is_organization = True
 
     first = _clean_token(tagged.get("GivenName"))
-    middle = _clean_token(
-        tagged.get("MiddleName")
-        or tagged.get("MiddleInitial")
-    )
-    last = _clean_token(
-        tagged.get("Surname")
-        or tagged.get("CorporationName")
-        or cleaned
-    )
+    middle = _clean_token(tagged.get("MiddleName") or tagged.get("MiddleInitial"))
+    last = _clean_token(tagged.get("Surname") or tagged.get("CorporationName") or cleaned)
     suffix = _clean_token(
         tagged.get("SuffixGenerational")
         or tagged.get("SuffixOther")

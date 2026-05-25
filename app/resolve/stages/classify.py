@@ -48,12 +48,8 @@ def _thresholds_for_entity(
     if isinstance(threshold_overrides, dict):
         entity_overrides = threshold_overrides.get(entity_type, {})
         if isinstance(entity_overrides, dict):
-            auto_threshold = float(
-                entity_overrides.get("auto_threshold", auto_threshold)
-            )
-            review_threshold = float(
-                entity_overrides.get("review_threshold", review_threshold)
-            )
+            auto_threshold = float(entity_overrides.get("auto_threshold", auto_threshold))
+            review_threshold = float(entity_overrides.get("review_threshold", review_threshold))
 
     if review_threshold > auto_threshold:
         raise ValueError("review_threshold cannot exceed auto_threshold")

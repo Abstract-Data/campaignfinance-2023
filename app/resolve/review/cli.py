@@ -13,10 +13,9 @@ in-memory SQLite when none are set.  Pass ``--sqlite`` to force SQLite
 explicitly (useful for testing).
 
 The ``show`` sub-command calls ``render_explanation`` from the task-3b explain
-module when it is available; it falls back to raw ``explanation_json`` output
-when that module has not yet been merged.
+module to render a human-readable explanation waterfall.
 
-Task: 3a | Branch: resolve/phase-3/task-3a-review-cli
+Task: 3z | Branch: resolve/phase-3/task-3z-integration
 """
 
 from __future__ import annotations
@@ -28,7 +27,9 @@ from typing import Any
 
 from sqlmodel import Session, create_engine
 
+from app.logger import Logger
 from app.resolve.models.resolution import MergeReview
+from app.resolve.review.explain import render_explanation as _render_explanation
 from app.resolve.review.queue import (
     AlreadyDecidedError,
     approve,
@@ -37,17 +38,7 @@ from app.resolve.review.queue import (
     reject,
 )
 
-# ---------------------------------------------------------------------------
-# Optional task-3b renderer — guarded import so this module is independently
-# committable regardless of whether 3b has been merged yet.
-# ---------------------------------------------------------------------------
-
-try:
-    from app.resolve.review.explain import (
-        render_explanation as _render_explanation,  # type: ignore[import]
-    )
-except ImportError:
-    _render_explanation = None
+logger = Logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -106,24 +97,21 @@ def _run_show(session: Session, review_id: int) -> None:
 
 
 def _print_explanation(row: MergeReview) -> None:
-    """Print the explanation block, using task-3b's renderer when available."""
+    """Print the explanation block via the task-3b renderer."""
     if row.explanation_json is None:
         print("(no explanation available)")
         return
 
-    if _render_explanation is not None:
-        try:
-            _render_explanation(row.explanation_json)
-            return
-        except Exception:
-            pass  # degrade gracefully
-
-    # Fallback: pretty-print raw JSON
     try:
-        data: Any = json.loads(row.explanation_json)
-        print(json.dumps(data, indent=2))
-    except (json.JSONDecodeError, TypeError):
-        print(row.explanation_json)
+        print(_render_explanation(row.explanation_json))
+    except Exception as exc:
+        logger.error(f"Failed to render explanation for review {row.id}: {exc}")
+        # Fallback: pretty-print raw JSON so reviewers still see data.
+        try:
+            data: Any = json.loads(row.explanation_json)
+            print(json.dumps(data, indent=2))
+        except (json.JSONDecodeError, TypeError):
+            print(row.explanation_json)
 
 
 def _run_approve(

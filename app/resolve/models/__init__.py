@@ -4,7 +4,6 @@
 # SQLAlchemy configures all mappers globally on first ORM use; importing reports
 # here ensures the class is registered before any resolution code opens a Session.
 import app.core.source_models.reports  # noqa: F401
-
 from app.resolve.models.canonical import (
     CanonicalAddress,
     CanonicalCampaign,

@@ -133,8 +133,7 @@ def _star_edges(
     ordered = sorted(refs, key=lambda ref: (ref.source_type, ref.source_id))
     anchor = ordered[0]
     return [
-        _MergeCandidate(left=anchor, right=ref, method=method, rule=rule)
-        for ref in ordered[1:]
+        _MergeCandidate(left=anchor, right=ref, method=method, rule=rule) for ref in ordered[1:]
     ]
 
 

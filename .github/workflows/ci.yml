@@ -1,0 +1,39 @@
+name: CI
+
+# Umbrella workflow. Triggers the reusable quality / tests / report workflows
+# on every push to a release branch and every pull request. The individual
+# jobs live in ci-quality.yml, ci-tests.yml, and ci-report.yml (all
+# `workflow_call`); this file is the single entry point that wires them.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  quality:
+    name: Quality
+    uses: ./.github/workflows/ci-quality.yml
+
+  tests:
+    name: Tests
+    uses: ./.github/workflows/ci-tests.yml
+    secrets: inherit
+
+  report:
+    name: Report
+    needs: [quality, tests]
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    uses: ./.github/workflows/ci-report.yml
+    with:
+      quality_result: ${{ needs.quality.result }}
+      tests_result: ${{ needs.tests.result }}

@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import create_engine
 from sqlmodel import Session
 
 from app.core.source_models.spac import SpacLink
+from app.core.source_models.spac_ingest import build_spac_link
 from tests.resolve.conftest import (
     StubState,
     StubUnifiedCommittee,
     create_resolve_tables,
 )
-from app.core.source_models.spac_ingest import build_spac_link
 
 
 SAMPLE_SPAC_WITH_SUPPORTED_ID = {
@@ -93,8 +93,8 @@ def test_spac_links_table_creates_via_metadata_create_all() -> None:
                 position="support",
                 state_id=44,
                 raw_data=json.dumps(SAMPLE_SPAC_NAME_ONLY),
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
         )
         session.commit()

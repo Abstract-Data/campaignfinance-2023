@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
 from itertools import combinations
-import logging
 
 from sqlalchemy import Column, String
 from sqlmodel import Field, SQLModel, delete, select
@@ -58,13 +58,9 @@ class CandidatePair(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     run_id: int = Field(index=True)
     source_a_type: str
-    source_a_id: str = Field(
-        sa_column=Column(String(SOURCE_ID_MAX_LENGTH), nullable=False)
-    )
+    source_a_id: str = Field(sa_column=Column(String(SOURCE_ID_MAX_LENGTH), nullable=False))
     source_b_type: str
-    source_b_id: str = Field(
-        sa_column=Column(String(SOURCE_ID_MAX_LENGTH), nullable=False)
-    )
+    source_b_id: str = Field(sa_column=Column(String(SOURCE_ID_MAX_LENGTH), nullable=False))
     rule_name: str
 
 
@@ -126,9 +122,7 @@ def generate_candidate_pairs(
     max_block_size: int,
 ) -> Iterable[CandidatePair]:
     """Emit unique candidate pairs for one run across all blocking rules."""
-    rows = session.exec(
-        select(ResolutionInput).where(ResolutionInput.run_id == run_id)
-    ).all()
+    rows = session.exec(select(ResolutionInput).where(ResolutionInput.run_id == run_id)).all()
     emitted: set[tuple[str, str, str, str]] = set()
 
     for rule in rules:

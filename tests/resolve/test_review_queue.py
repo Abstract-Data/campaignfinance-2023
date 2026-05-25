@@ -206,6 +206,13 @@ class TestListPending:
         # Non-null scores come before null scores
         assert results.index(non_null[0]) < results.index(null_rows[0])
 
+    def test_invalid_entity_type_raises_value_error(self):
+        engine = _make_engine()
+        with Session(engine) as session:
+            _seed_run(session)
+            with pytest.raises(ValueError, match="Unknown entity_type"):
+                list_pending(session, entity_type="invalid")
+
 
 # ---------------------------------------------------------------------------
 # get_review
