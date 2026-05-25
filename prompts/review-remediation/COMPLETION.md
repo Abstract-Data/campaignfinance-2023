@@ -43,7 +43,7 @@
 
 | Task | Status | Notes |
 |------|--------|-------|
-| 5a core tests | **Partial** | Processor, versioning, value-object, entrypoint tests; no full characterization suite per record type |
+| 5a core tests | **Done** | Processor, versioning, value-object, entrypoint tests + full characterization suite: TX/OK validators (fixture + Hypothesis), analytics SQL tests (in-memory SQLite), builder/processor/DB-manager characterization — 89 new tests (215 total, green) |
 | 5b scraper hardening | **Done** | Markup drift + fixture tests (`97fcabd`) |
 | 5c orchestration | **Done** | Production CLI entrypoint + scheduler (`3017f7c`) |
 | 5d docs/ADR | **Done** | `ARCHITECTURE-DIAGRAM.md` (pipeline + unified ERD), `DATA_RELATIONSHIPS.md` field fixes + detail tables, ADR 0002/0003, `app/core/README.md`, root `README.md` overview |
@@ -63,7 +63,7 @@
 1. **`models/tables.py` (~980 LOC)** — exceeds ~600 LOC target; relationship forward-ref split deferred
 2. **Coverage gate** — `uv run pytest tests app/tests --cov=app --cov-fail-under=60` not verified in 5z
 3. **Residue greps** (5z scope) — `datetime.utcnow()` in versioning/DB paths; `except Exception` in `reports_ingest.py`; pre-existing ruff E712 in `unified_database.py`
-4. **5a** — Characterization tests for each record type via `process_record` / `process_record_stream`
+4. ~~**5a** — Characterization tests for each record type~~ **Done** (TASK-5a)
 5. ~~**5d** — Full ERD + ADR R3/R12 documentation~~ **Done** (TASK-5d)
 6. **GitButler** — overlapping wave branches may require `but` merge into phase branch before PR
 

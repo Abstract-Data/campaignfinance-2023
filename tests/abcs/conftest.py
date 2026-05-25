@@ -38,7 +38,19 @@ def _ensure_ok_validator_packages() -> None:
 
 @pytest.fixture(scope="module")
 def ok_expenditure_models():
-    """Oklahoma expenditure Create/Read/Table classes (isolated import)."""
+    """Oklahoma expenditure Create/Read/Table classes (isolated import).
+
+    If the module was already loaded by another test file (e.g. tests/states/)
+    we reuse the cached module rather than re-loading it.  Re-loading triggers
+    SQLAlchemy's 'Table already defined' error because OklahomaExpenditure
+    (table=True, schema='oklahoma') cannot be registered in the same MetaData
+    instance twice.
+    """
+    mod_key = f"{_OK_PREFIX}.validators.ok_expenditure"
+    if mod_key in sys.modules and hasattr(sys.modules[mod_key], "OklahomaExpenditureBase"):
+        yield sys.modules[mod_key]
+        return
+
     saved = {
         key: sys.modules.pop(key)
         for key in list(sys.modules)
