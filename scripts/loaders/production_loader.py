@@ -17,6 +17,7 @@ Positional arguments:
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -226,6 +227,7 @@ def discover_and_load(
     dry_run: bool = False,
     state_id: int | None = None,
     db_url: str | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> dict[str, int]:
     """Discover all files for *state* and load them into the database."""
     glob_cfg = STATE_GLOB_CONFIGS.get(state)
@@ -255,6 +257,9 @@ def discover_and_load(
         state_code = state_row.code
 
         for path, record_type in discovered:
+            if should_stop is not None and should_stop():
+                logger.info("[loader] shutdown requested; stopping after last file")
+                break
             try:
                 n = _load_file(
                     path,

@@ -23,12 +23,28 @@ Environment-specific agent guardrails: see `AGENTS.md` (base, dev) and
 ## Running a load
 
 ```
-# tables
-uv run python scripts/db/recreate_tables.py
+# schema + connection (uses get_db_manager / POSTGRES_* from .env)
+uv run cf bootstrap
 
-# production loader with a preset (development | testing | production | high_performance | safe)
-uv run python scripts/loaders/production_loader.py testing oklahoma_2020
+# scrape → convert → verify (Texas today)
+uv run cf prepare texas
+
+# load discovered parquet under tmp/<state> into Postgres
+uv run cf load texas --preset production
+
+# optional in-process cadence (stdlib scheduler; SIGTERM finishes current cycle)
+uv run cf schedule texas --interval-hours 24
 ```
+
+Legacy script entry (still supported):
+
+```
+uv run python scripts/loaders/production_loader.py testing texas
+```
+
+Host cron is the preferred production scheduler: invoke `cf prepare` and
+`cf load` on a fixed schedule instead of a long-running `cf schedule` process
+when possible.
 
 Always run a load against **staging** at full volume before production. A
 production load is a human-only action (see `docs/GUARDRAILS.md` — Privilege
