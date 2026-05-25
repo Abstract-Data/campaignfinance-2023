@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import text
 from sqlmodel import Session, select
@@ -52,7 +52,7 @@ def _parse_amount(value: object) -> Decimal | None:
     raw = raw.replace(",", "").replace("$", "")
     try:
         return Decimal(raw)
-    except Exception:
+    except (InvalidOperation, ValueError):
         return None
 
 
