@@ -4,13 +4,15 @@ import itertools
 from dataclasses import dataclass, field
 from typing import Dict, Generator, Iterator, Tuple, Type
 
-from app.abcs.abc_validation_errors import ValidationErrorList
-from app.funcs.validator_functions import create_record_id
-from app.logger import Logger
-from icecream import ic
 from pydantic import ValidationError
 from sqlmodel import SQLModel
 from tqdm import tqdm
+
+from app.abcs.abc_validation_errors import ValidationErrorList
+from app.funcs.validator_functions import create_record_id
+from app.logger import Logger
+
+_logger = Logger(__name__)
 
 ValidatorType = Type[SQLModel]
 PassedRecord = Tuple[str, SQLModel]
@@ -82,7 +84,7 @@ class StateFileValidation(abc.ABC):
 
     def _create_error_report(self) -> ValidationErrorList:
         if not self.failed:
-            ic("No failed records found")
+            _logger.debug("No failed records found")
         if self.failed:
             self.failed, fails = itertools.tee(self.failed, 2)
             self.errors.create_error_list(list(fails))

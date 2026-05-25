@@ -7,13 +7,16 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Dict, Generator, Iterator, Optional, Type
 
-import app.funcs as funcs
 import polars as pl
 import sqlmodel
-from icecream import ic
 from pydantic import ConfigDict
 from pydantic import Field as PydanticField
 from pydantic.dataclasses import dataclass as pydantic_dataclass
+
+import app.funcs as funcs
+from app.logger import Logger
+
+_logger = Logger(__name__)
 
 
 def check_for_empty_gen(func):
@@ -24,7 +27,7 @@ def check_for_empty_gen(func):
             next(gen1)
             return gen2
         except StopIteration:
-            ic(f"Generator for {args[0].__class__.__name__} is empty")
+            _logger.debug(f"Generator for {args[0].__class__.__name__} is empty")
             return None
         finally:
             del gen1
