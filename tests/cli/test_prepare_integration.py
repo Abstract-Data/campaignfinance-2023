@@ -14,6 +14,10 @@ from app.cli.main import app
 from app.cli.state import StateContext
 from app.states.texas import TEXAS_CONFIGURATION
 
+_TEC_PORTAL_HTML = (
+    Path(__file__).resolve().parents[1] / "scrapers" / "fixtures" / "texas_tec_portal_good.html"
+).read_text(encoding="utf-8")
+
 runner = CliRunner()
 
 _REQUIRED_CSVS: dict[str, str] = {
@@ -65,6 +69,7 @@ def patch_selenium_download(texas_data_dir: Path):
     wait = MagicMock()
     wait.until.side_effect = lambda _: MagicMock(click=MagicMock())
     mock_driver = MagicMock()
+    mock_driver.page_source = _TEC_PORTAL_HTML
 
     def _fake_wait_for_download(_self: object, folder: Path) -> None:
         zip_path = folder / "TEC_CF_CSV.zip"

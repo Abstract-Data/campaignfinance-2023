@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from app.abcs import FileDownloaderABC, RecordGen, StateConfig
-from app.funcs.csv_reader import FileReader
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -15,7 +13,11 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from tqdm import tqdm
 
+from app.abcs import FileDownloaderABC, RecordGen, StateConfig
+from app.funcs.csv_reader import FileReader
 from app.logger import Logger
+from app.scrapers.drift_detector import ScraperMarkupError, verify_markup
+from app.scrapers.expectations import TEXAS_TEC_PORTAL
 
 logger = Logger(__name__)
 
@@ -43,6 +45,20 @@ class TECDownloader(FileDownloaderABC):
 
     def __post_init__(self) -> None:
         super().__post_init__()
+
+    def _verify_portal_markup(self, html: str, *, step: str) -> None:
+        """Assert TEC portal navigation markup is present before Selenium clicks."""
+        try:
+            verify_markup(
+                html,
+                expectation=TEXAS_TEC_PORTAL,
+                compare_fingerprint=False,
+                logger_instance=logger,
+            )
+        except ScraperMarkupError as exc:
+            msg = f"Texas TEC markup drift at {step}: {exc}"
+            logger.error(msg)
+            raise DownloadError(msg) from exc
 
     def download(
         self,
@@ -75,6 +91,7 @@ class TECDownloader(FileDownloaderABC):
             wait = WebDriverWait(driver, 10)
 
             driver.get("https://ethics.state.tx.us/")
+            self._verify_portal_markup(driver.page_source, step="landing")
             wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Search"))).click()
             wait.until(
                 EC.element_to_be_clickable((By.LINK_TEXT, "Campaign Finance Reports"))
@@ -110,7 +127,7 @@ class TECDownloader(FileDownloaderABC):
                     Path(tmp / file.filename).rename(tmp / rename)
             logger.info(f"Removing {latest_file}")
             latest_file.unlink()
-        except DownloadError:
+        except (DownloadError, ScraperMarkupError):
             raise
         except Exception as exc:
             msg = f"Texas TEC download failed: {exc}"

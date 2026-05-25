@@ -9,6 +9,10 @@ import pytest
 
 from app.states.texas.texas_downloader import DownloadError, TECDownloader, _is_safe_zip_member
 
+TEXAS_TEC_PORTAL_GOOD_HTML = (
+    Path(__file__).resolve().parents[1] / "scrapers" / "fixtures" / "texas_tec_portal_good.html"
+).read_text(encoding="utf-8")
+
 
 @pytest.fixture
 def downloader_config(tmp_path: Path) -> MagicMock:
@@ -38,7 +42,9 @@ def test_download_headless_adds_chrome_argument(downloader_config: MagicMock) ->
 
     def fake_chrome(*, options):  # noqa: ANN001
         captured_options.append(options)
-        return MagicMock()
+        driver = MagicMock()
+        driver.page_source = TEXAS_TEC_PORTAL_GOOD_HTML
+        return driver
 
     downloader = TECDownloader(config=downloader_config)
     tmp_path = downloader_config.TEMP_FOLDER
@@ -148,9 +154,10 @@ def test_download_overwrite_removes_existing_zip(downloader_config: MagicMock) -
     tmp_path.mkdir(parents=True, exist_ok=True)
     stale_zip = tmp_path / "stale.zip"
     stale_zip.write_bytes(b"old")
+    mock_driver = MagicMock()
+    mock_driver.page_source = TEXAS_TEC_PORTAL_GOOD_HTML
     wait = MagicMock()
     wait.until.side_effect = lambda _: MagicMock(click=MagicMock())
-    mock_driver = MagicMock()
 
     def _seed_download_zip(_self: TECDownloader, folder: Path) -> None:
         (folder / "TEC_CF_CSV.zip").write_bytes(b"fresh")
@@ -172,9 +179,10 @@ def test_download_returns_temp_folder_path(downloader_config: MagicMock) -> None
     downloader = TECDownloader(config=downloader_config)
     tmp_path = downloader_config.TEMP_FOLDER
     tmp_path.mkdir(parents=True, exist_ok=True)
+    mock_driver = MagicMock()
+    mock_driver.page_source = TEXAS_TEC_PORTAL_GOOD_HTML
     wait = MagicMock()
     wait.until.side_effect = lambda _: MagicMock(click=MagicMock())
-    mock_driver = MagicMock()
 
     with (
         patch("app.states.texas.texas_downloader.webdriver.Chrome", return_value=mock_driver),
@@ -195,9 +203,10 @@ def test_download_quits_driver_on_download_error(downloader_config: MagicMock) -
     downloader = TECDownloader(config=downloader_config)
     tmp_path = downloader_config.TEMP_FOLDER
     tmp_path.mkdir(parents=True, exist_ok=True)
+    mock_driver = MagicMock()
+    mock_driver.page_source = TEXAS_TEC_PORTAL_GOOD_HTML
     wait = MagicMock()
     wait.until.side_effect = lambda _: MagicMock(click=MagicMock())
-    mock_driver = MagicMock()
 
     with (
         patch("app.states.texas.texas_downloader.webdriver.Chrome", return_value=mock_driver),
@@ -214,9 +223,10 @@ def test_download_quits_driver_on_download_error(downloader_config: MagicMock) -
 def test_download_uses_output_dir_override(downloader_config: MagicMock, tmp_path: Path) -> None:
     downloader = TECDownloader(config=downloader_config)
     custom_dir = tmp_path / "custom_out"
+    mock_driver = MagicMock()
+    mock_driver.page_source = TEXAS_TEC_PORTAL_GOOD_HTML
     wait = MagicMock()
     wait.until.side_effect = lambda _: MagicMock(click=MagicMock())
-    mock_driver = MagicMock()
 
     with (
         patch("app.states.texas.texas_downloader.webdriver.Chrome", return_value=mock_driver),
