@@ -78,11 +78,25 @@ than letting it drift. Coverage detail is reported to Codecov.
 
 | Workflow | Runs |
 |----------|------|
-| `ci.yml` | Umbrella — triggers quality + tests + report on push/PR |
+| `ci.yml` | Umbrella — triggers quality + tests + resolve + report on push/PR |
 | `ci-quality.yml` | `ruff check` + `ruff format --check` |
-| `ci-tests.yml` | `pytest` with coverage on Python 3.12 and 3.13 |
+| `ci-tests.yml` | `pytest app/tests` with branch coverage (`--cov-fail-under=70`) on Python 3.12 and 3.13 |
+| `ci-resolve-tests.yml` | `pytest tests/resolve -m "not integration"` on Python 3.12 (fast resolve suite; no coverage gate) |
+| `ci-resolve-integration.yml` | `workflow_dispatch` only — `pytest tests/resolve -m integration` (Texas data + Postgres when configured) |
 | `ci-report.yml` | Posts a sticky CI summary comment on PRs |
 | `tool-config-verify.yml` | `check_agents_md.py`, hook presence, symlink integrity |
+
+PRs gate on `app/tests` coverage and the fast resolve suite. Full Texas load, Postgres-backed resolve, and publish are **not** PR blockers — see [`RUNBOOK.md`](RUNBOOK.md) → Phase 0 / resolution manual gate.
+
+## Resolve test tiers
+
+| Tier | Command | When |
+|------|---------|------|
+| **Fast (default CI)** | `uv run pytest tests/resolve -m "not integration" -v --tb=short` | Every PR; no `tmp/texas` or production DB required |
+| **Integration (optional)** | `uv run pytest tests/resolve -m integration` | Local or `ci-resolve-integration.yml` dispatch; requires `tmp/texas` and Postgres when tests need it |
+| **Full local** | `uv run pytest tests/resolve` | Developer machine with golden CSVs tracked in git |
+
+Tests marked `@pytest.mark.integration` are excluded from default CI. They smoke-check real state files and optional Postgres paths documented in the runbook.
 
 ## Definition of "tested"
 

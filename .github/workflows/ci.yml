@@ -29,9 +29,13 @@ jobs:
     uses: ./.github/workflows/ci-tests.yml
     secrets: inherit
 
+  resolve-tests:
+    name: Resolve Tests
+    uses: ./.github/workflows/ci-resolve-tests.yml
+
   report:
     name: Report
-    needs: [quality, tests]
+    needs: [quality, tests, resolve-tests]
     if: ${{ always() && github.event_name == 'pull_request' }}
     uses: ./.github/workflows/ci-report.yml
     with:

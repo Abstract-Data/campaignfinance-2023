@@ -240,6 +240,49 @@ def _build_parser() -> argparse.ArgumentParser:
     review_reject_p.add_argument("--reviewer", required=True, help="Reviewer name / ID.")
     review_reject_p.add_argument("--notes", default="", help="Optional notes.")
 
+    review_report_p = review_sub.add_parser(
+        "report",
+        help="Render a match explanation report for a run.",
+    )
+    review_report_p.add_argument(
+        "--run-id",
+        dest="run_id",
+        type=int,
+        required=True,
+        help="ID of the match_run to report on.",
+    )
+    review_report_p.add_argument(
+        "--band",
+        default=None,
+        choices=["auto", "review", "reject"],
+        help="Optional band filter: auto | review | reject.",
+    )
+
+    # ------------------------------------------------------------------
+    # publish
+    # ------------------------------------------------------------------
+    publish_p = sub.add_parser(
+        "publish",
+        help="Build resolved views and the address_occupancy view.",
+    )
+    publish_p.add_argument(
+        "--state",
+        required=True,
+        metavar="STATE",
+        help="State code or name (e.g. TX or texas).",
+    )
+    publish_p.add_argument(
+        "--sqlite",
+        action="store_true",
+        help="Use in-memory SQLite instead of Postgres (local smoke tests).",
+    )
+    publish_p.add_argument(
+        "--materialized",
+        action="store_true",
+        default=False,
+        help="Create PostgreSQL materialized views instead of regular views.",
+    )
+
     # ------------------------------------------------------------------
     # unmerge
     # ------------------------------------------------------------------
@@ -393,7 +436,55 @@ def _review_command(args: argparse.Namespace) -> int:
             return _run_reject(
                 session, args.review_id, reviewer=args.reviewer, notes=args.notes
             )
+        elif args.review_command == "report":
+            from app.resolve.review.explain import run_report
 
+            report = run_report(session, args.run_id, band=args.band)
+            print(report)
+
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# 'publish' sub-command
+# ---------------------------------------------------------------------------
+
+
+def _publish_command(args: argparse.Namespace) -> int:
+    """Execute the ``publish`` sub-command.  Returns an exit code."""
+    try:
+        state_code = _resolve_state_code(args.state)
+    except ValueError as exc:
+        logger.error(str(exc))
+        return 1
+
+    try:
+        db_url = resolve_engine_url(use_sqlite=args.sqlite)
+    except RuntimeError as exc:
+        logger.error(str(exc))
+        return 1
+
+    from sqlmodel import Session, create_engine
+
+    from app.resolve.publish import build_address_occupancy_view, build_resolved_views
+    from app.resolve.run import ensure_resolution_schema
+
+    engine = create_engine(db_url)
+    ensure_resolution_schema(engine)
+
+    with Session(engine) as session:
+        try:
+            view_names = build_resolved_views(session, materialized=args.materialized)
+        except ValueError as exc:
+            logger.error(str(exc))
+            return 1
+        occupancy_name = build_address_occupancy_view(session)
+
+    all_views = view_names + [occupancy_name]
+    for name in all_views:
+        logger.info(f"[publish] view created: {name} (state={state_code})")
+
+    print("\n".join(all_views))
     return 0
 
 
@@ -445,6 +536,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "run":
         return _run_command(args)
+    if args.command == "publish":
+        return _publish_command(args)
     if args.command == "review":
         return _review_command(args)
     if args.command == "unmerge":

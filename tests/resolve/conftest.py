@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 
+import pytest
 from sqlalchemy import Engine, MetaData, Table
 from sqlalchemy.orm import registry
 from sqlmodel import Field, SQLModel
@@ -43,7 +45,7 @@ class StubFileOrigin(StubSQLModel, table=True):
     id: str = Field(primary_key=True, max_length=64)
     state_id: int | None = Field(default=None, foreign_key="states.id")
     filename: str = Field(default="cover.parquet", max_length=500)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class StubUnifiedCommittee(StubSQLModel, table=True):
@@ -120,3 +122,50 @@ def drop_resolve_tables(engine: Engine) -> None:
     """Drop stub and application tables from an engine."""
     stub_metadata.drop_all(engine)
     SQLModel.metadata.drop_all(engine)
+
+
+# ---------------------------------------------------------------------------
+# Integration test helpers (TASK-7)
+# ---------------------------------------------------------------------------
+
+TEXAS_DATA_DIR = Path("tmp") / "texas"
+
+
+def texas_data_available() -> bool:
+    """Return True when prepared Texas parquet/CSV files exist under ``tmp/texas``."""
+    return TEXAS_DATA_DIR.is_dir() and any(TEXAS_DATA_DIR.iterdir())
+
+
+def postgres_env_configured() -> bool:
+    """Return True when Postgres connection settings are present."""
+    from app.resolve.cli import postgres_env_configured as _postgres_env_configured
+
+    return _postgres_env_configured()
+
+
+def skip_unless_texas_data() -> None:
+    """Skip the current test when ``tmp/texas`` is not populated."""
+    if not texas_data_available():
+        pytest.skip(
+            "tmp/texas not present — run `uv run cf prepare texas` for integration tests"
+        )
+
+
+def skip_unless_postgres_env() -> None:
+    """Skip the current test when Postgres env vars are not configured."""
+    if not postgres_env_configured():
+        pytest.skip("Postgres env not configured — set DATABASE_URL or POSTGRES_* vars")
+
+
+@pytest.fixture(autouse=True)
+def _integration_env_gate(request: pytest.FixtureRequest) -> None:
+    """Skip ``@pytest.mark.integration`` tests when required env/data is missing."""
+    marker = request.node.get_closest_marker("integration")
+    if marker is None:
+        return
+
+    skip_unless_texas_data()
+
+    # Resolve-run integration tests need Postgres unless explicitly sqlite-only.
+    if marker.kwargs.get("requires_postgres"):
+        skip_unless_postgres_env()

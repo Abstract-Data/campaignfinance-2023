@@ -1,5 +1,10 @@
 # Golden-Set Fixture Guide
 
+**Version control:** `person_pairs.csv`, `organization_pairs.csv`, and
+`committee_pairs.csv` are tracked in git (negated from the repo-wide `*.csv`
+ignore). They are required for CI — a clone without these files will fail
+`tests/resolve/test_match_quality.py`.
+
 This directory holds hand-labeled pair fixtures for the probabilistic-matching
 regression harness (`tests/resolve/test_match_quality.py`). Each CSV contains
 pairs of standardized entity records with a ground-truth `label` column
