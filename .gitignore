@@ -1,5 +1,7 @@
 # My custom ignores
 *.csv
+!tests/resolve/golden/
+!tests/resolve/golden/*.csv
 *.log
 *.zip
 .DS_Store
@@ -180,5 +182,7 @@ cython_debug/
 #.idea/
 
 *.csv
+!tests/resolve/golden/
+!tests/resolve/golden/*.csv
 *.txt
 .gitnexus

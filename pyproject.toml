@@ -65,3 +65,8 @@ dev = [
     "pytest>=9.0.3",
 ]
 # Ruff configuration lives in .ruff.toml.
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: requires tmp/texas and/or Postgres; excluded from default CI",
+]
