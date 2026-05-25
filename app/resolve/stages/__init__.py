@@ -15,6 +15,7 @@ from typing import Any
 
 from sqlmodel import Session
 
+from app.core.constants import DEFAULT_STATE
 from app.resolve.blocking import run_blocking_stage
 from app.resolve.stages.classify import run_classify_stage
 from app.resolve.stages.cluster import run_cluster_stage
@@ -39,7 +40,11 @@ def stage1_build_resolution_input(
     dict
         ``{"records_in": <n>}`` where *n* is the number of staged rows.
     """
-    state_code: str = config.get("state_code", "TX")
+    state_code: str | None = config.get("state_code", DEFAULT_STATE)
+    if not state_code:
+        raise ValueError(
+            "state_code is required in run config; no default state is assumed (RF-MAGIC-003)"
+        )
     count = build_resolution_input(session, run_id, state_code)
     return {"records_in": count}
 

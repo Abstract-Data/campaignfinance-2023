@@ -43,15 +43,22 @@ class UnifiedDatabaseManager:
     Uses PostgreSQL configuration by default.
     """
 
-    def __init__(self, database_url: Optional[str] = None, *, echo: bool = False):
+    def __init__(self, database_url: str | None = None, *, echo: bool = False):
         """
         Initialize the database manager.
 
         Args:
             database_url: SQLAlchemy database URL. If None, use PostgresConfig.
             echo: Enable SQL echo for debugging.
+
+        Notes:
+            P2-ARC-002 — ``__init__`` no longer runs ``SQLModel.metadata.create_all``.
+            Callers that want tables created must explicitly invoke
+            :meth:`bootstrap`.  This keeps construction (and module import) free
+            of DDL side effects so the module can be imported in environments
+            without a live database.
         """
-        self._config: Optional[PostgresConfig] = None
+        self._config: PostgresConfig | None = None
 
         if database_url is None:
             config = PostgresConfig()
@@ -61,7 +68,7 @@ class UnifiedDatabaseManager:
             self._config = config
 
         self.database_url = database_url
-        engine_kwargs = {"echo": echo}
+        engine_kwargs: dict[str, Any] = {"echo": echo}
 
         if self._config:
             engine_kwargs.update(
@@ -75,7 +82,14 @@ class UnifiedDatabaseManager:
 
         self.engine = create_engine(self.database_url, **engine_kwargs)
 
-        # Create all tables
+    def bootstrap(self) -> None:
+        """Run ``SQLModel.metadata.create_all`` on this manager's engine.
+
+        Split out of ``__init__`` so importing :mod:`app.core.unified_database`
+        — and constructing a ``UnifiedDatabaseManager`` — never opens a
+        connection or runs DDL implicitly (P2-ARC-002).  Callers that need
+        tables created must invoke this method explicitly.
+        """
         SQLModel.metadata.create_all(self.engine)
 
     def _resolve_state_record(self, session: Session, state_identifier: str) -> Optional[State]:
@@ -1308,15 +1322,59 @@ class UnifiedDatabaseManager:
             return unlinked_transactions
 
 
-# Global database manager instance (PostgreSQL)
-# Only created if PostgreSQL connection is available.
-# Only RuntimeError (connection-unavailable) is caught; ModuleNotFoundError /
-# ImportError and any other unexpected exception must propagate loudly so the
-# real bug is never masked (P1-OPS-001).
-try:
-    db_manager = UnifiedDatabaseManager()
-except RuntimeError as e:
-    db_manager = None
-    import warnings
+# ---------------------------------------------------------------------------
+# Module-level factory (P2-ARC-002)
+# ---------------------------------------------------------------------------
+# Previously this module instantiated ``db_manager = UnifiedDatabaseManager()``
+# at import time, which (a) opened a real PostgreSQL connection during
+# ``import app.core.unified_database`` and (b) ran ``SQLModel.metadata.create_all``
+# as a side effect.  Both made the module impossible to import in environments
+# without a database and made the builder impossible to unit-test.
+#
+# ``get_db_manager()`` is the replacement: it lazily constructs and caches a
+# single manager on first call.  Importing the module is now inert.
+#
+# ``db_manager`` remains as a ``None`` sentinel for downstream code that still
+# imports it directly; callers that need an actual manager should call
+# ``get_db_manager()`` (which raises ``RuntimeError`` if PostgreSQL is
+# unreachable, matching the previous fail-loud semantics for non-RuntimeError
+# exceptions — P1-OPS-001).
+db_manager: "UnifiedDatabaseManager | None" = None
+_db_manager_cached: "UnifiedDatabaseManager | None" = None
 
-    warnings.warn(f"PostgreSQL database manager not available: {e}", UserWarning)
+
+def get_db_manager(
+    database_url: str | None = None,
+    *,
+    echo: bool = False,
+    bootstrap: bool = True,
+) -> UnifiedDatabaseManager:
+    """Return a process-wide cached :class:`UnifiedDatabaseManager`.
+
+    The first call constructs the manager (using the supplied ``database_url``
+    or :class:`~app.states.postgres_config.PostgresConfig` if ``None``) and
+    caches it on the module.  Subsequent calls ignore the arguments and return
+    the same instance.
+
+    By default, the cached manager is also bootstrapped (DDL is run) on first
+    creation so callers do not have to remember a second step.  Pass
+    ``bootstrap=False`` to skip that — useful when the caller wants to control
+    schema lifecycle explicitly.
+
+    Raises:
+        RuntimeError: if construction fails (e.g. PostgreSQL is unreachable
+            and no explicit ``database_url`` was supplied).  Other exceptions
+            propagate unchanged per P1-OPS-001.
+    """
+    global _db_manager_cached
+    if _db_manager_cached is None:
+        _db_manager_cached = UnifiedDatabaseManager(database_url, echo=echo)
+        if bootstrap:
+            _db_manager_cached.bootstrap()
+    return _db_manager_cached
+
+
+def reset_db_manager_cache() -> None:
+    """Reset the cached manager.  Intended for tests only."""
+    global _db_manager_cached
+    _db_manager_cached = None

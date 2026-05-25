@@ -320,7 +320,7 @@ class TestBuildGoldenRecord:
                 },
             ]
         )
-        entity = build_golden_record(cluster, rows)
+        entity = build_golden_record(cluster, rows, "TX")
 
         assert "A" in entity.canonical_name or "Jr" in entity.canonical_name
 
@@ -345,7 +345,7 @@ class TestBuildGoldenRecord:
                 },
             ]
         )
-        entity = build_golden_record(cluster, rows)
+        entity = build_golden_record(cluster, rows, "TX")
 
         assert "Jane" in entity.canonical_name
 
@@ -360,7 +360,7 @@ class TestBuildGoldenRecord:
                 {"source_id": "2", "first_name": "C", "last_name": "D", "created_at": newer},
             ]
         )
-        entity = build_golden_record(cluster, rows)
+        entity = build_golden_record(cluster, rows, "TX")
 
         assert entity.first_seen_date == older.date()
         assert entity.last_seen_date == newer.date()
@@ -381,7 +381,7 @@ class TestBuildGoldenRecord:
                 {"source_id": "3", "first_name": "E", "last_name": "F"},
             ]
         )
-        entity = build_golden_record(cluster, rows)
+        entity = build_golden_record(cluster, rows, "TX")
 
         assert entity.source_record_count == 3
 
@@ -389,7 +389,7 @@ class TestBuildGoldenRecord:
         """A single-member cluster still produces a valid CanonicalEntity."""
         cluster = Cluster(members=[("unified_person", "X")])
         rows = _build_rows([{"source_id": "X", "first_name": "Alice", "last_name": "Smith"}])
-        entity = build_golden_record(cluster, rows)
+        entity = build_golden_record(cluster, rows, "TX")
 
         assert entity.canonical_name != ""
         assert entity.source_record_count == 1
@@ -408,7 +408,7 @@ class TestBuildGoldenRecord:
                 }
             ]
         )
-        entity = build_golden_record(cluster, rows)
+        entity = build_golden_record(cluster, rows, "TX")
 
         assert "acme" in entity.canonical_name.lower()
 

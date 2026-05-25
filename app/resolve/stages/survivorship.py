@@ -31,6 +31,7 @@ from typing import Any
 from sqlalchemy import delete
 from sqlmodel import Session, select
 
+from app.core.constants import DEFAULT_STATE
 from app.resolve.models.canonical import (
     CanonicalEntity,
     CanonicalNameHistory,
@@ -208,7 +209,7 @@ def _normalized_name_for(row: ResolutionInput) -> str:
 def build_golden_record(
     cluster: Cluster,
     resolution_input_rows: list[ResolutionInput],
-    state_code: str = "TX",
+    state_code: str,
 ) -> CanonicalEntity:
     """Apply survivorship rules to a cluster and return an unsaved CanonicalEntity.
 
@@ -569,7 +570,11 @@ def run_survivorship_stage(
         ``{"canonical_out": <n>}`` where *n* is the number of canonical
         entity rows written for this run (live table row count after publish).
     """
-    state_code: str = config.get("state_code", "TX")
+    state_code: str | None = config.get("state_code", DEFAULT_STATE)
+    if not state_code:
+        raise ValueError(
+            "state_code is required in run config; no default state is assumed (RF-MAGIC-003)"
+        )
 
     input_rows: list[ResolutionInput] = list(
         session.exec(select(ResolutionInput).where(ResolutionInput.run_id == run_id)).all()
