@@ -3,7 +3,7 @@ Database manager for unified SQLModels backed by PostgreSQL.
 """
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -11,9 +11,6 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, SQLModel, create_engine, select
-
-from app.logger import Logger
-from app.states.postgres_config import PostgresConfig
 
 from app.core.enums import CommitteeRole, PersonRole, TransactionType
 from app.core.models import (
@@ -24,6 +21,8 @@ from app.core.models import (
     UnifiedCommitteePerson,
     UnifiedCommitteePersonVersion,
     UnifiedCommitteeVersion,
+    UnifiedContribution,
+    UnifiedEntity,
     UnifiedPerson,
     UnifiedPersonVersion,
     UnifiedTransaction,
@@ -31,8 +30,34 @@ from app.core.models import (
     UnifiedTransactionVersion,
 )
 from app.core.processor import unified_sql_processor
+from app.logger import Logger
+from app.states.postgres_config import PostgresConfig
 
 _logger = Logger(__name__)
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _contributor_display_name(tx: UnifiedTransaction) -> str | None:
+    """Display label for a contribution's contributor entity, if present."""
+    contribution = tx.contribution
+    if contribution is None or contribution.contributor is None or not tx.amount:
+        return None
+    entity = contribution.contributor
+    if entity.person is not None:
+        return entity.person.full_name
+    return entity.name or entity.normalized_name
+
+
+def _transaction_analytics_options() -> tuple:
+    return (
+        selectinload(UnifiedTransaction.state),
+        selectinload(UnifiedTransaction.contribution)
+        .selectinload(UnifiedContribution.contributor)
+        .selectinload(UnifiedEntity.person),
+        selectinload(UnifiedTransaction.committee),
+    )
 
 
 def _to_json_safe(value: Any) -> Any:
@@ -70,7 +95,7 @@ def _record_version(
             fk_field: fk_value,
             "version_number": version_number,
             "data": json.dumps(_entity_snapshot(entity)),
-            "changed_at": datetime.utcnow(),
+            "changed_at": _utc_now(),
             "changed_by": user,
             "change_reason": reason,
             "amendment_details": amendment_details,
@@ -373,7 +398,7 @@ class UnifiedDatabaseManager:
         with self.get_session() as session:
             # Total transactions
             total_transactions = session.exec(
-                select(UnifiedTransaction).options(selectinload(UnifiedTransaction.state))
+                select(UnifiedTransaction).options(*_transaction_analytics_options())
             ).all()
 
             # Total amount
@@ -399,13 +424,12 @@ class UnifiedDatabaseManager:
                 if tx.amount:
                     types[tx_type]["total_amount"] += tx.amount
 
-            # Top contributors
+            # Top contributors (via contribution → contributor entity)
             contributor_totals = {}
             for tx in total_transactions:
-                if tx.contributor and tx.contributor.person and tx.amount:
-                    contributor_name = tx.contributor.person.full_name
-                    if contributor_name not in contributor_totals:
-                        contributor_totals[contributor_name] = 0
+                contributor_name = _contributor_display_name(tx)
+                if contributor_name:
+                    contributor_totals.setdefault(contributor_name, 0)
                     contributor_totals[contributor_name] += tx.amount
 
             top_contributors = dict(
@@ -431,8 +455,7 @@ class UnifiedDatabaseManager:
             # Get all transactions with their relationships
             query = select(UnifiedTransaction).options(
                 selectinload(UnifiedTransaction.persons),
-                selectinload(UnifiedTransaction.committee),
-                selectinload(UnifiedTransaction.state),
+                *_transaction_analytics_options(),
             )
             transactions = session.exec(query).all()
 
@@ -475,11 +498,10 @@ class UnifiedDatabaseManager:
                     else:
                         analysis["amount_ranges"]["10000+"] += 1
 
-                # Contributor analysis
-                if tx.contributor and tx.contributor.person and tx.amount:
-                    contributor_name = tx.contributor.person.full_name
-                    if contributor_name not in analysis["top_contributors"]:
-                        analysis["top_contributors"][contributor_name] = 0
+                # Contributor analysis (via contribution → contributor entity)
+                contributor_name = _contributor_display_name(tx)
+                if contributor_name:
+                    analysis["top_contributors"].setdefault(contributor_name, 0)
                     analysis["top_contributors"][contributor_name] += tx.amount
 
                 # Committee analysis
@@ -632,7 +654,7 @@ class UnifiedDatabaseManager:
             # Update fields
             for k, v in updates.items():
                 setattr(tx, k, v)
-            tx.last_modified_at = datetime.utcnow()
+            tx.last_modified_at = _utc_now()
             tx.last_modified_by = user
             tx.change_reason = reason
             tx.amendment_details = amendment_details
@@ -865,14 +887,14 @@ class UnifiedDatabaseManager:
                     UnifiedCommitteePerson.person_id == person_id,
                     UnifiedCommitteePerson.committee_id == committee_id,
                     UnifiedCommitteePerson.role == role,
-                    UnifiedCommitteePerson.is_active == True,
+                    UnifiedCommitteePerson.is_active.is_(True),
                 )
             ).first()
 
             if committee_person:
                 committee_person.is_active = False
-                committee_person.end_date = end_date or datetime.utcnow().date()
-                committee_person.last_modified_at = datetime.utcnow()
+                committee_person.end_date = end_date or _utc_now().date()
+                committee_person.last_modified_at = _utc_now()
                 committee_person.last_modified_by = user
                 committee_person.change_reason = reason
                 session.add(committee_person)
@@ -891,7 +913,7 @@ class UnifiedDatabaseManager:
                 UnifiedCommitteePerson.person_id == person_id
             )
             if active_only:
-                query = query.where(UnifiedCommitteePerson.is_active == True)
+                query = query.where(UnifiedCommitteePerson.is_active.is_(True))
             query = query.options(
                 selectinload(UnifiedCommitteePerson.person),
                 selectinload(UnifiedCommitteePerson.committee),
@@ -911,7 +933,7 @@ class UnifiedDatabaseManager:
             if role:
                 query = query.where(UnifiedCommitteePerson.role == role)
             if active_only:
-                query = query.where(UnifiedCommitteePerson.is_active == True)
+                query = query.where(UnifiedCommitteePerson.is_active.is_(True))
             query = query.options(
                 selectinload(UnifiedCommitteePerson.person),
                 selectinload(UnifiedCommitteePerson.committee),
@@ -960,7 +982,7 @@ class UnifiedDatabaseManager:
             # Apply updates
             for k, v in updates.items():
                 setattr(cp, k, v)
-            cp.last_modified_at = datetime.utcnow()
+            cp.last_modified_at = _utc_now()
             cp.last_modified_by = user
             cp.change_reason = reason
 
@@ -992,7 +1014,7 @@ class UnifiedDatabaseManager:
         with self.get_session() as session:
             query = select(UnifiedCommitteePerson).where(
                 UnifiedCommitteePerson.role == CommitteeRole.TREASURER,
-                UnifiedCommitteePerson.is_active == True,
+                UnifiedCommitteePerson.is_active.is_(True),
             )
             if committee_id:
                 query = query.where(UnifiedCommitteePerson.committee_id == committee_id)
@@ -1035,7 +1057,7 @@ class UnifiedDatabaseManager:
             tx_person.committee_person_id = committee_person_id
             if notes:
                 tx_person.notes = notes
-            tx_person.updated_at = datetime.utcnow()
+            tx_person.updated_at = _utc_now()
 
             session.add(tx_person)
             session.commit()
@@ -1089,7 +1111,7 @@ class UnifiedDatabaseManager:
             # Get committee officers
             committee_persons_query = select(UnifiedCommitteePerson).where(
                 UnifiedCommitteePerson.committee_id == committee_id,
-                UnifiedCommitteePerson.is_active == True,
+                UnifiedCommitteePerson.is_active.is_(True),
             )
             if role:
                 committee_persons_query = committee_persons_query.where(
@@ -1142,7 +1164,7 @@ class UnifiedDatabaseManager:
             committee_roles = session.exec(
                 select(UnifiedCommitteePerson).where(
                     UnifiedCommitteePerson.person_id == person_id,
-                    UnifiedCommitteePerson.is_active == True,
+                    UnifiedCommitteePerson.is_active.is_(True),
                 )
             ).all()
 
@@ -1231,7 +1253,7 @@ class UnifiedDatabaseManager:
             committee_persons = session.exec(
                 select(UnifiedCommitteePerson).where(
                     UnifiedCommitteePerson.committee_id == committee_id,
-                    UnifiedCommitteePerson.is_active == True,
+                    UnifiedCommitteePerson.is_active.is_(True),
                 )
             ).all()
 
@@ -1244,7 +1266,7 @@ class UnifiedDatabaseManager:
                     select(UnifiedTransactionPerson)
                     .where(
                         UnifiedTransactionPerson.person_id == cp.person_id,
-                        UnifiedTransactionPerson.committee_person_id == None,
+                        UnifiedTransactionPerson.committee_person_id.is_(None),
                     )
                     .options(selectinload(UnifiedTransactionPerson.transaction))
                 ).all()
@@ -1254,7 +1276,7 @@ class UnifiedDatabaseManager:
                     if tx_person.transaction.committee_id == committee_id:
                         # Link the transaction to this committee role
                         tx_person.committee_person_id = cp.id
-                        tx_person.updated_at = datetime.utcnow()
+                        tx_person.updated_at = _utc_now()
 
                         if tx_person.role == PersonRole.CONTRIBUTOR:
                             linked_counts["contributions"] += 1
@@ -1294,7 +1316,7 @@ class UnifiedDatabaseManager:
                         UnifiedCommitteePerson.person_id == officer["person_id"],
                         UnifiedCommitteePerson.committee_id == officer["committee_id"],
                         UnifiedCommitteePerson.role == officer["role"],
-                        UnifiedCommitteePerson.is_active == True,
+                        UnifiedCommitteePerson.is_active.is_(True),
                     )
                 ).first()
 
@@ -1310,7 +1332,7 @@ class UnifiedDatabaseManager:
                     if tx_person:
                         # Link the transaction to this committee role
                         tx_person.committee_person_id = committee_person.id
-                        tx_person.updated_at = datetime.utcnow()
+                        tx_person.updated_at = _utc_now()
                         session.add(tx_person)
 
             session.commit()
@@ -1327,7 +1349,7 @@ class UnifiedDatabaseManager:
         with self.get_session() as session:
             # Get all committee-person relationships
             committee_persons_query = select(UnifiedCommitteePerson).where(
-                UnifiedCommitteePerson.is_active == True
+                UnifiedCommitteePerson.is_active.is_(True)
             )
             if committee_id:
                 committee_persons_query = committee_persons_query.where(
@@ -1344,7 +1366,7 @@ class UnifiedDatabaseManager:
                     select(UnifiedTransactionPerson)
                     .where(
                         UnifiedTransactionPerson.person_id == cp.person_id,
-                        UnifiedTransactionPerson.committee_person_id == None,
+                        UnifiedTransactionPerson.committee_person_id.is_(None),
                     )
                     .options(
                         selectinload(UnifiedTransactionPerson.transaction),
