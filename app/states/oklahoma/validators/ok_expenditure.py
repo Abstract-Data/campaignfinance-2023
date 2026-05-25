@@ -1,10 +1,11 @@
 from datetime import date
 from typing import Optional
 
-import app.funcs.validator_functions as funcs
 from pydantic import field_validator, model_validator
-from pydantic_core import PydanticCustomError
 from sqlmodel import Field
+
+import app.funcs.validator_functions as funcs
+from app.abcs.base_models import CreateValidatorModel, ReadValidatorModel
 
 from ._helpers import parse_candidate_name as apply_candidate_name
 from ._helpers import parse_zipcode as apply_zipcode
@@ -17,10 +18,7 @@ URL: https://guardian.ok.gov/PublicSite/Resources/PublicDocuments/OKExpenditures
 """
 
 
-class OklahomaExpenditure(OklahomaSettings, table=True):
-    __tablename__ = 'expenditures'
-    __table_args__ = {'schema': 'oklahoma'}
-    id: int = Field(default=None)
+class OklahomaExpenditureBase(CreateValidatorModel, OklahomaSettings):
     expenditure_id: Optional[int] = Field(default=None, title='Expenditure ID', primary_key=True)
     org_id: Optional[int] = Field(default=None, title='Org ID')
     expenditure_type: str = Field(..., title='Expenditure Type')
@@ -68,3 +66,17 @@ class OklahomaExpenditure(OklahomaSettings, table=True):
     @classmethod
     def parse_zipcode(cls, values):
         return apply_zipcode(values)
+
+
+class OklahomaExpenditureCreate(OklahomaExpenditureBase):
+    """Ingestion shape — excludes server-set ``id``."""
+
+
+class OklahomaExpenditureRead(OklahomaExpenditureBase, ReadValidatorModel):
+    """Downstream read shape — includes server-set metadata."""
+
+
+class OklahomaExpenditure(OklahomaExpenditureBase, table=True):
+    __tablename__ = 'expenditures'
+    __table_args__ = {'schema': 'oklahoma'}
+    id: int = Field(default=None)

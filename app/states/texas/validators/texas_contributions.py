@@ -1,20 +1,17 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
-import app.states.texas.funcs.tx_validation_funcs as tx_funcs
 from pydantic import field_validator, model_validator
 from pydantic_core import PydanticCustomError
 from sqlmodel import Field
 
+import app.states.texas.funcs.tx_validation_funcs as tx_funcs
+from app.abcs.base_models import CreateValidatorModel
+
 from .texas_settings import TECSettings
 
 
-class TECContribution(TECSettings, table=True):
-    __tablename__ = "tx_contributions"
-    __table_args__ = {"schema": "texas"}
-    id: Optional[str] = Field(
-        default=None,
-        description="Unique identifier")
+class TECContributionBase(CreateValidatorModel, TECSettings):
     recordType: str = Field(
         ...,
         description="Record type code - always RCPT"
@@ -292,3 +289,25 @@ class TECContribution(TECSettings, table=True):
                 }
             )
         return v
+
+
+class TECContributionCreate(TECContributionBase):
+    """Ingestion/API create shape — excludes server-set ``id``."""
+
+
+class TECContributionRead(TECContributionBase):
+    """Downstream read shape — includes server-set metadata."""
+
+    id: str
+    created_at: datetime
+
+
+class TECContribution(TECContributionBase, table=True):
+    """Database table model for Texas contributions."""
+
+    __tablename__ = "tx_contributions"
+    __table_args__ = {"schema": "texas"}
+    id: Optional[str] = Field(
+        default=None,
+        description="Unique identifier",
+    )
