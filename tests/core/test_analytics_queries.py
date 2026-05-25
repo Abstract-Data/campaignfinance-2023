@@ -187,44 +187,35 @@ class TestDateRangeQuery:
 
 # ---------------------------------------------------------------------------
 # get_summary_statistics / get_cross_state_analysis
-#
-# NOTE: Both methods contain a pre-existing bug — they reference
-# ``tx.contributor`` which does not exist on ``UnifiedTransaction``
-# (the correct path is ``tx.contribution.contributor``).  This causes an
-# ``AttributeError`` when iterating over any seeded data.  The tests below
-# characterize the broken behaviour rather than the intended behaviour so
-# that the bug is visible and can be tracked until the source is fixed.
 # ---------------------------------------------------------------------------
 
 
 class TestSummaryStatistics:
     def test_empty_db_returns_zero_total(self, analytics_db: UnifiedDatabaseManager) -> None:
-        """With no data the loop never runs, so the bug is not triggered."""
         stats = analytics_db.get_summary_statistics()
         assert stats["total_transactions"] == 0
         assert stats["total_amount"] == pytest.approx(0.0)
 
-    def test_with_data_raises_attribute_error(
-        self, seeded_db: UnifiedDatabaseManager
-    ) -> None:
-        """Pre-existing bug: tx.contributor does not exist on UnifiedTransaction.
-        Remove this test once the source is fixed to use tx.contribution.contributor."""
-        with pytest.raises(AttributeError, match="contributor"):
-            seeded_db.get_summary_statistics()
+    def test_with_data_returns_aggregates(self, seeded_db: UnifiedDatabaseManager) -> None:
+        stats = seeded_db.get_summary_statistics()
+        assert stats["total_transactions"] == 4
+        assert stats["total_amount"] == pytest.approx(53350.0)
+        assert stats["by_state"]["TX"]["count"] == 2
+        assert stats["by_state"]["OK"]["count"] == 2
+        assert stats["top_contributors"] == {}
 
 
 class TestCrossStateAnalysis:
     def test_empty_db_returns_zeroes(self, analytics_db: UnifiedDatabaseManager) -> None:
-        """With no data the loop never runs; result keys are present and zeroed."""
         analysis = analytics_db.get_cross_state_analysis()
         assert analysis["total_transactions"] == 0
 
-    def test_with_data_raises_attribute_error(
-        self, seeded_db: UnifiedDatabaseManager
-    ) -> None:
-        """Pre-existing bug mirrors get_summary_statistics — tx.contributor undefined."""
-        with pytest.raises(AttributeError, match="contributor"):
-            seeded_db.get_cross_state_analysis()
+    def test_with_data_returns_analysis(self, seeded_db: UnifiedDatabaseManager) -> None:
+        analysis = seeded_db.get_cross_state_analysis()
+        assert analysis["total_transactions"] == 4
+        assert analysis["states"]["TX"]["count"] == 2
+        assert analysis["amount_ranges"]["10000+"] == 1
+        assert analysis["top_contributors"] == {}
 
 
 # ---------------------------------------------------------------------------
