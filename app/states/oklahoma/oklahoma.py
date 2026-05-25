@@ -1,13 +1,14 @@
 from __future__ import annotations
-from pathlib import Path
-from typing import Dict, List
-from typing import Generator, Type
-import funcs
-from logger import Logger
-from abcs import StateCategoryClass, StateConfig, CategoryConfig, CSVReaderConfig
-from states.oklahoma.oklahoma_database import oklahoma_snowpark_session
-import states.oklahoma.validators as validators
+
 from functools import partial
+from pathlib import Path
+from typing import Dict, Generator, List, Type
+
+import funcs
+import states.oklahoma.validators as validators
+from abcs import CategoryConfig, CSVReaderConfig, StateCategoryClass, StateConfig
+from logger import Logger
+from states.oklahoma.oklahoma_database import oklahoma_snowpark_session
 
 # TODO: Change File Prefix Configurations to Oklahoma
 # TODO: Make sure file folder reads only CSVs in Oklahoma so it doesn't try to read Zip files

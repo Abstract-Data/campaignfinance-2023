@@ -1,13 +1,10 @@
 
-from concurrent.futures import ThreadPoolExecutor
 import csv
-from pathlib import Path
-from typing import Callable, Dict, Generator
 import datetime
 from dataclasses import dataclass
-from logger import Logger
-from rich.progress import Progress
-import polars as pl
+from pathlib import Path
+from typing import Callable, Dict, Generator
+
 from rich.progress import Progress
 
 

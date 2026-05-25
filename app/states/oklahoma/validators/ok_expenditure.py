@@ -1,76 +1,19 @@
-from typing import Optional
-from pydantic import field_validator, model_validator
-from sqlmodel import Field
-from pydantic_core import PydanticCustomError
-from .ok_settings import OklahomaSettings
-import funcs.validator_functions as funcs
 from datetime import date
+from typing import Optional
+
+import funcs.validator_functions as funcs
+from pydantic import field_validator, model_validator
+from pydantic_core import PydanticCustomError
+from sqlmodel import Field
+
+from .ok_settings import OklahomaSettings
 
 """
-Oklahoma Expenditure Model/Validator 
+Oklahoma Expenditure Model/Validator
 Based on key information from the Oklahoma Ethics Commission
 URL: https://guardian.ok.gov/PublicSite/Resources/PublicDocuments/OKExpendituresAndTransfersOutFileLayout.pdf
 """
 
-
-# class OklahomaExpenditure(OklahomaSettings):
-#     id: int = Field(
-#         default=None,
-#         primary_key=True,
-#         description="This is the unique ID of the paying candidate or committee.")
-#     expendType: str = Field(
-#         description="Indicates Type of Expenditure / Transfer.",
-#         title="EXPENDITURE / TRANSFER TYPE")
-#     expendAmount: float = Field(
-#         description="Expenditure / Transfer Amount",
-#         title='EXPENDITURE /TRANSFER AMOUNT')
-#     expendDesc: str = Field(
-#         description="This is the description provided for the expenditure / transfer",
-#         title="DESCRIPTION")
-#     committeeType: str = Field(
-#         description="Indicates Type of paying committee",
-#         title="COMMITTEE TYPE")
-#     committeeName: str = Field(
-#         description="This is the name of the paying committee",
-#         title="COMMITTEE NAME")
-#     candidateName: str = Field(
-#         description="This is the name of the paying candidate",
-#         title="CANDIDATE NAME")
-#     recipientFirstName: Optional[str] = Field(
-#         description="Recipient First Name",
-#         title="FIRST NAME")
-#     middleName: Optional[str] = Field(
-#         description="Recipient Middle Initial or Name if provided",
-#         title="MIDDLE NAME")
-#     lastName: Optional[str] = Field(
-#         description="Last Name of Recipient (entity paid), if an individual person. "
-#                     "If not an individual, the entity full name will be in LAST NAME field",
-#         title="LAST NAME")
-#     suffix: Optional[str] = Field(
-#         description="Recipient Name Suffix",
-#         title="SUFFIX")
-#     address1: Optional[str] = Field(
-#         description="Recipient Street, PO Box, or other directional information",
-#         title="ADDRESS 1")
-#     address2: Optional[str] = Field(
-#         description="Recipient Suite/Apartment number, or other directional information",
-#         title="ADDRESS 2")
-#     city: Optional[str] = Field(
-#         description="Recipient City",
-#         title="CITY")
-#     state: Optional[str] = Field(
-#         description="Recipient State",
-#         title="STATE")
-#     zip: Optional[str] = Field(
-#         description="Recipient Zip Code",
-#         title="ZIP")
-#     expendId: int = Field(
-#         description="This is the Expenditure / Transfer internal ID. This ID is unique.",
-#         title="EXPENDITURE / TRANSFER ID")
-#     amended: bool = Field(
-#         default=None,
-#         description="Y/N indicator to show if an amendment was filed for this record.",
-#         title="AMENDED")
 
 class OklahomaExpenditure(OklahomaSettings, table=True):
     __tablename__ = 'expenditures'
@@ -108,8 +51,6 @@ class OklahomaExpenditure(OklahomaSettings, table=True):
     occupation: Optional[str] = Field(default=None, title='Occupation')
     download_date: date = Field(..., title='Date Downloaded')
     file_origin: str = Field(..., title='File Origin')
-
-    # _clear_blank_strings = model_validator(mode='before')(funcs.clear_blank_strings)
 
     _validate_expenditure_date = \
         field_validator(
@@ -154,28 +95,3 @@ class OklahomaExpenditure(OklahomaSettings, table=True):
                     }
                 )
         return values
-    # {'Expenditure ID': '215966',
-    #  'Org ID': '9777',
-    #  'Expenditure Type': 'Ordinary and Necessary Campaign Expense',
-    #  'Expenditure Date': '01/01/2021',
-    #  'Expenditure Amount': '24.33',
-    #  'Description': '',
-    #  'Purpose': 'Unknown',
-    #  'Last Name': 'NON-ITEMIZED RECIPIENT',
-    #  'First Name': '',
-    #  'Middle Name': '',
-    #  'Suffix': '',
-    #  'Address 1': '',
-    #  'Address 2': '',
-    #  'City': '',
-    #  'State': '',
-    #  'Zip': '',
-    #  'Filed Date': '04/18/2021',
-    #  'Committee Type': 'Candidate Committee',
-    #  'Committee Name': '',
-    #  'Candidate Name': 'MICHEAL BERGSTROM',
-    #  'Amended': 'N',
-    #  'Employer': '',
-    #  'Occupation': '',
-    #  'download_date': '2024-01-08',
-    #  'file_origin': '2021_ExpenditureExtract'}

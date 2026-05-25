@@ -1,11 +1,12 @@
 from __future__ import annotations
-from sqlmodel import SQLModel, Session, create_engine, select
-from logger import Logger
-from typing import Iterator, List, Type, Generator
-from dataclasses import dataclass
-import itertools
+
 import contextlib
-from tqdm import tqdm
+import itertools
+from dataclasses import dataclass
+from typing import Generator, Iterator, List, Type
+
+from logger import Logger
+from sqlmodel import Session, SQLModel, create_engine, select
 
 
 @contextlib.contextmanager
@@ -37,7 +38,7 @@ class DBLoader:
 
     def __post_init__(self):
         self.logger = Logger(self.__class__.__name__)
-        self.logger.info(f"DBLoader initialized")
+        self.logger.info("DBLoader initialized")
 
     def create_all(self) -> None:
         """
@@ -45,7 +46,7 @@ class DBLoader:
         :param engine: SQLModel engine
         :return: None
         """
-        self.logger.info(f"Creating all tables")
+        self.logger.info("Creating all tables")
         SQLModel.metadata.create_all(self.engine)
 
     def remove_existing_records(self,
@@ -59,7 +60,7 @@ class DBLoader:
         :return: Iterator[SQLModel]
         """
         with Session(self.engine) as session:
-            self.logger.info(f"Checking for existing data in the database")
+            self.logger.info("Checking for existing data in the database")
             _existing_records = set(record.id for record in session.exec(select(validator.id)).all())
             self.logger.info(f"Found {len(_existing_records):,} existing records in the database")
             remaining_records = (x for x in records if x.id not in _existing_records)
@@ -73,12 +74,12 @@ class DBLoader:
         :return: None
         """
         try:
-            self.logger.info(f"Adding all records.")
+            self.logger.info("Adding all records.")
             for record in records:
                 session.add(record)
             session.commit()
         except StopIteration:
-            self.logger.info(f"No records in iterator.")
+            self.logger.info("No records in iterator.")
 
     def add_with_limits(self, records: Generator[SQLModel, None, None], limit: int, session: Session) -> None:
         """
@@ -131,9 +132,9 @@ class DBLoader:
                     for attr in new_record.__dict__.keys():
                         if hasattr(existing_record, attr):
                             setattr(existing_record, attr, getattr(new_record, attr))
-            self.logger.info(f"Updating records")
+            self.logger.info("Updating records")
             session.commit()
-        self.logger.info(f"Records updated")
+        self.logger.info("Records updated")
 
     def rollback(self):
         """
@@ -141,6 +142,6 @@ class DBLoader:
         :return: None
         """
         with Session(self.engine) as session:
-            self.logger.info(f"Rolling back session")
+            self.logger.info("Rolling back session")
             session.rollback()
-            self.logger.info(f"Session rolled back")
+            self.logger.info("Session rolled back")

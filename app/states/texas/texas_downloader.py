@@ -1,96 +1,181 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from pathlib import Path
-from datetime import datetime
-import zipfile
-from tqdm import tqdm
-import time
-from icecream import ic
-from funcs.csv_reader import FileReader
 
+import time
+import zipfile
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+
+from abcs import FileDownloaderABC, RecordGen, StateConfig
+from funcs.csv_reader import FileReader
 from selenium import webdriver
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+from tqdm import tqdm
 
-from abcs import (
-    FileDownloaderABC, StateConfig, CategoryTypes, RecordGen)
+from app.logger import Logger
 
-    
+logger = Logger(__name__)
+
+_DOWNLOAD_POLL_SECONDS = 10
+_DOWNLOAD_TIMEOUT_SECONDS = 600
+
+
+class DownloadError(Exception):
+    """Raised when the Texas TEC download or extraction fails."""
+
+
+def _is_safe_zip_member(member_name: str, destination: Path) -> bool:
+    normalized = member_name.replace("\\", "/")
+    member_path = Path(normalized)
+    if member_path.is_absolute() or ".." in member_path.parts:
+        return False
+    resolved_target = (destination / member_path).resolve()
+    resolved_dest = destination.resolve()
+    return resolved_target == resolved_dest or resolved_target.is_relative_to(resolved_dest)
+
+
 @dataclass
 class TECDownloader(FileDownloaderABC):
     config: StateConfig
-    
-    def __post_init__(self):
-        self.folder = self.config.TEMP_FOLDER
 
+    def __post_init__(self) -> None:
+        super().__post_init__()
 
     def download(
-            self,
-            overwrite: bool = False,
-            read_from_temp: bool = True
-    ) -> TECDownloader:
-        tmp = self.config.TEMP_FOLDER
+        self,
+        *,
+        overwrite: bool = False,
+        headless: bool = False,
+        output_dir: Path | None = None,
+    ) -> Path:
+        tmp = output_dir if output_dir is not None else self.config.TEMP_FOLDER
         options = Options()
-        _prefs = {'download.default_directory': str(tmp)}
-        options.add_experimental_option('prefs', _prefs)
-        options.add_argument("--window-size=1920,1080")  # set window size to native GUI size
-        options.add_argument("start-maximized")  # ensure window is full-screen
-        options.page_load_strategy = "none"  # Load the page as soon as possible
-        # options.add_argument("--headless=True")  # hide GUI
+        prefs = {"download.default_directory": str(tmp)}
+        options.add_experimental_option("prefs", prefs)
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument("start-maximized")
+        options.page_load_strategy = "none"
+        if headless:
+            options.add_argument("--headless")
 
-        if not tmp.is_dir():
-            tmp.mkdir()
+        tmp.mkdir(parents=True, exist_ok=True)
 
         if overwrite:
-            read_from_temp = False
-            for file_extension in ('*.csv', '*.txt'):
-                files = tmp.glob(file_extension)
-                for file in files:
-                    ic(f"Removing {file}")
+            for file_extension in ("*.csv", "*.txt", "*.zip", "*.crdownload"):
+                for file in tmp.glob(file_extension):
+                    logger.info(f"Removing {file}")
                     file.unlink()
 
-        driver = webdriver.Chrome(options=options)
-        wait = WebDriverWait(driver, 10)
+        driver = None
+        try:
+            driver = webdriver.Chrome(options=options)
+            wait = WebDriverWait(driver, 10)
 
-        driver.get("https://ethics.state.tx.us/")
-        wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Search"))).click()
-        wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Campaign Finance Reports"))).click()
-        wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Database of Campaign Finance Reports"))).click()
-        wait.until(EC.element_to_be_clickable((By.PARTIAL_LINK_TEXT, "Campaign Finance CSV Database"))).click()
-        time.sleep(5)
+            driver.get("https://ethics.state.tx.us/")
+            wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Search"))).click()
+            wait.until(
+                EC.element_to_be_clickable((By.LINK_TEXT, "Campaign Finance Reports"))
+            ).click()
+            wait.until(
+                EC.element_to_be_clickable((By.LINK_TEXT, "Database of Campaign Finance Reports"))
+            ).click()
+            wait.until(
+                EC.element_to_be_clickable((By.PARTIAL_LINK_TEXT, "Campaign Finance CSV Database"))
+            ).click()
+            time.sleep(5)
 
-        in_progress = False
-        while True:
-            dl_files = list(tmp.glob("*.crdownload"))
-            if dl_files:
-                if not in_progress:
-                    ic(f"File {Path(dl_files[0]).stem} download in progress")
-                    in_progress = True
-                time.sleep(10)
-            else:
-                if in_progress:
-                    ic("File download complete")
-                    in_progress = False
-                break
+            self._wait_for_download(tmp)
 
-        files = (Path(x) for x in tmp.glob("*.zip"))
-        latest_file = max(files, key=lambda x: x.stat().st_ctime)
-        with zipfile.ZipFile(latest_file, "r") as zip_ref:
-            zip_file_info = zip_ref.infolist()
-            for file in tqdm(zip_file_info, desc="Extracting Files"):
-                zip_ref.extract(file, tmp)
-                file_name = Path(file.filename)
-                rename = f"{file_name.stem}_{datetime.now().strftime("%Y%m%d")}{file_name.suffix}"
-                Path(tmp / file.filename).rename(tmp / rename)
-        ic(f"Removing {latest_file}")
-        latest_file.unlink()
+            zip_files = list(tmp.glob("*.zip"))
+            if not zip_files:
+                msg = f"No zip file found in {tmp} after download"
+                raise DownloadError(msg)
 
+            latest_file = max(zip_files, key=lambda path: path.stat().st_ctime)
+            with zipfile.ZipFile(latest_file, "r") as zip_ref:
+                zip_file_info = zip_ref.infolist()
+                for file in tqdm(zip_file_info, desc="Extracting Files"):
+                    if not _is_safe_zip_member(file.filename, tmp):
+                        logger.warning(f"Skipping unsafe zip entry: {file.filename}")
+                        continue
+                    zip_ref.extract(file, tmp)
+                    file_name = Path(file.filename)
+                    rename = (
+                        f"{file_name.stem}_{datetime.now().strftime('%Y%m%d')}"
+                        f"{file_name.suffix}"
+                    )
+                    Path(tmp / file.filename).rename(tmp / rename)
+            logger.info(f"Removing {latest_file}")
+            latest_file.unlink()
+        except DownloadError:
+            raise
+        except Exception as exc:
+            msg = f"Texas TEC download failed: {exc}"
+            raise DownloadError(msg) from exc
+        finally:
+            if driver is not None:
+                driver.quit()
 
-        return self
+        return tmp
+
+    def _wait_for_download(self, tmp: Path) -> None:
+        saw_in_progress = False
+        deadline = time.monotonic() + _DOWNLOAD_TIMEOUT_SECONDS
+
+        while time.monotonic() < deadline:
+            crdownloads = list(tmp.glob("*.crdownload"))
+            zip_files = list(tmp.glob("*.zip"))
+
+            if crdownloads:
+                if not saw_in_progress:
+                    logger.info(f"File {Path(crdownloads[0]).stem} download in progress")
+                saw_in_progress = True
+                time.sleep(_DOWNLOAD_POLL_SECONDS)
+                continue
+
+            if saw_in_progress and zip_files:
+                latest = max(zip_files, key=lambda path: path.stat().st_ctime)
+                if self._is_file_size_stable(latest):
+                    logger.info("File download complete")
+                    return
+                time.sleep(_DOWNLOAD_POLL_SECONDS)
+                continue
+
+            time.sleep(_DOWNLOAD_POLL_SECONDS)
+
+        msg = f"Download timed out after {_DOWNLOAD_TIMEOUT_SECONDS} seconds"
+        raise DownloadError(msg)
+
+    def _is_file_size_stable(
+        self,
+        path: Path,
+        *,
+        checks: int = 2,
+        interval: float = 1.0,
+    ) -> bool:
+        try:
+            previous_size = path.stat().st_size
+        except OSError:
+            return False
+
+        for _ in range(checks):
+            time.sleep(interval)
+            if list(path.parent.glob("*.crdownload")):
+                return False
+            try:
+                current_size = path.stat().st_size
+            except OSError:
+                return False
+            if current_size != previous_size:
+                previous_size = current_size
+                continue
+            return True
+        return False
 
     def read(self) -> RecordGen:
-        _reader = FileReader()
-        self.data = _reader.read_folder(self.folder, file_counts=self.config.FILE_COUNTS)
+        reader = FileReader()
+        self.data = reader.read_folder(self.folder, file_counts=self.config.FILE_COUNTS)
         return iter(self.data)

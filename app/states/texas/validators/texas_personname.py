@@ -1,14 +1,10 @@
-from datetime import date
 from typing import Optional
-from sqlmodel import Field, JSON, Relationship
-from pydantic import field_validator, model_validator, BeforeValidator, create_model
-from pydantic_extra_types.phone_numbers import PhoneNumber
-from pydantic_core import PydanticCustomError
-from .texas_settings import TECSettings
+
+from pydantic import model_validator
+from sqlmodel import Field
+
 from .texas_address import TECAddress
-import funcs.validator_functions as funcs
-import states.texas.funcs.tx_validation_funcs as tx_funcs
-from funcs.record_keygen import RecordKeyGenerator
+from .texas_settings import TECSettings
 
 
 class TECPersonName(TECSettings):

@@ -1,5 +1,7 @@
-from states.texas.validators.texas_settings import TECSettings
 from datetime import date
+
+from states.texas.validators.texas_settings import TECSettings
+
 
 class TECDirectExpenses(TECSettings):
     recordType: str

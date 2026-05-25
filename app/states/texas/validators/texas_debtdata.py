@@ -1,11 +1,11 @@
-from datetime import date, datetime
-from typing import Optional, Annotated, List
-from pydantic import field_validator, model_validator
-from sqlmodel import SQLModel, Field
+from datetime import date
+from typing import Optional
+
+from pydantic import model_validator
 from pydantic_core import PydanticCustomError
+from sqlmodel import Field
+
 from .texas_settings import TECSettings
-import funcs.validator_functions as funcs
-import states.texas.funcs.tx_validation_funcs as tx_funcs
 
 
 class DebtData(TECSettings, table=True):

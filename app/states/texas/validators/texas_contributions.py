@@ -1,10 +1,12 @@
 from datetime import date
 from typing import Optional
-from pydantic import field_validator, model_validator
-from sqlmodel import Field
-from pydantic_core import PydanticCustomError
-from .texas_settings import TECSettings
+
 import states.texas.funcs.tx_validation_funcs as tx_funcs
+from pydantic import field_validator, model_validator
+from pydantic_core import PydanticCustomError
+from sqlmodel import Field
+
+from .texas_settings import TECSettings
 
 
 class TECContribution(TECSettings, table=True):

@@ -1,8 +1,10 @@
 from __future__ import annotations
-from pydantic import BaseModel, ValidationError, model_validator, Field
-from typing import List, Dict, Optional
+
+from typing import Dict, List, Optional
+
 import pandas as pd
 from icecream import ic
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 ic.configureOutput(prefix='abc_validation_errors|')
 

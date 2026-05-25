@@ -1,7 +1,6 @@
+import funcs.validator_functions as funcs
 from pydantic import ConfigDict, model_validator
 from sqlmodel import SQLModel
-import funcs.validator_functions as funcs
-from pydantic_core import PydanticCustomError
 
 """
 ======================

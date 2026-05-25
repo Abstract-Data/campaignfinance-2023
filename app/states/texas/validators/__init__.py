@@ -1,3 +1,6 @@
+# isort: skip_file
+# Order matters: TECSettings must import first so siblings that do
+# ``from . import TECSettings`` resolve without a circular import.
 from .texas_settings import TECSettings
 from .texas_filers import TECFiler
 from .texas_contributions import TECContribution

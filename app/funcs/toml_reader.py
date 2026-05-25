@@ -1,6 +1,8 @@
 from __future__ import annotations
-import tomli
+
 from pathlib import Path
+
+import tomli
 
 
 def read_toml(file_path: str | Path) -> dict:

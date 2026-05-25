@@ -1,12 +1,14 @@
 from __future__ import annotations
+
 import abc
-from sqlmodel import SQLModel, Session, create_engine, select
-from logger import Logger
-from typing import Iterator, List, Type
-from dataclasses import dataclass
-import itertools
 import contextlib
+import itertools
+from dataclasses import dataclass
+from typing import Iterator, List, Type
+
 import inject
+from logger import Logger
+from sqlmodel import Session, SQLModel, create_engine, select
 
 
 @dataclass
@@ -31,7 +33,7 @@ class DBLoaderClass(abc.ABC):
     @abc.abstractmethod
     def db_loader_base_config(self, binder):
         binder.bind_to_provider(Session, self.session_scope)
-        self.logger.info(f"DBLoader base config set")
+        self.logger.info("DBLoader base config set")
 
     @contextlib.contextmanager
     def session_scope(self):
@@ -46,13 +48,13 @@ class DBLoaderClass(abc.ABC):
         try:
             yield session
             session.commit()
-            self.logger.info(f"Session committed using session_scope method")
+            self.logger.info("Session committed using session_scope method")
         except:
             session.rollback()
             raise
         finally:
             session.close()
-            self.logger.info(f"Session closed using session_scope method")
+            self.logger.info("Session closed using session_scope method")
 
     @abc.abstractmethod
     def create_all(self, engine: create_engine) -> None:
@@ -61,7 +63,7 @@ class DBLoaderClass(abc.ABC):
         :param engine: SQLModel engine
         :return: None
         """
-        self.logger.info(f"Creating all tables")
+        self.logger.info("Creating all tables")
         SQLModel.metadata.create_all(engine)
 
     @inject.autoparams()
@@ -76,7 +78,7 @@ class DBLoaderClass(abc.ABC):
         :param validator: SQLModel
         :return: Iterator[SQLModel]
         """
-        self.logger.info(f"Checking for existing data in the database")
+        self.logger.info("Checking for existing data in the database")
         _existing_records = set(record.id for record in session.exec(select(validator.id)).all())
         self.logger.info(f"Found {len(_existing_records):,} existing records in the database")
         remaining_records = (x for x in records if x.id not in _existing_records)
@@ -95,7 +97,7 @@ class DBLoaderClass(abc.ABC):
                 session.add(record)
             session.commit()
         except StopIteration:
-            self.logger.info(f"No records in iterator.")
+            self.logger.info("No records in iterator.")
 
     @inject.autoparams()
     def add_with_limits(self, records: Iterator[SQLModel], limit: int, session: Session) -> None:
@@ -147,9 +149,9 @@ class DBLoaderClass(abc.ABC):
                 for attr in new_record.__dict__.keys():
                     if hasattr(existing_record, attr):
                         setattr(existing_record, attr, getattr(new_record, attr))
-        self.logger.info(f"Updating records")
+        self.logger.info("Updating records")
         session.commit()
-        self.logger.info(f"Records updated")
+        self.logger.info("Records updated")
 
     @inject.autoparams()
     def rollback(self, session: Session):
@@ -157,6 +159,6 @@ class DBLoaderClass(abc.ABC):
         Rollback the session.
         :return: None
         """
-        self.logger.info(f"Rolling back session")
+        self.logger.info("Rolling back session")
         session.rollback()
-        self.logger.info(f"Session rolled back")
+        self.logger.info("Session rolled back")

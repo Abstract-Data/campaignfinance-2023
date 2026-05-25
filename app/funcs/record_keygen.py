@@ -1,9 +1,10 @@
 from __future__ import annotations
+
 import hashlib
 import uuid
 from dataclasses import dataclass, field
-from typing import Tuple, Any
 from datetime import date
+from typing import Any, Tuple
 
 
 @dataclass
