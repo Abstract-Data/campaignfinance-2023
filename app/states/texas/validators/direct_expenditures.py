@@ -1,6 +1,6 @@
 from datetime import date
 
-from states.texas.validators.texas_settings import TECSettings
+from app.states.texas.validators.texas_settings import TECSettings
 
 
 class TECDirectExpenses(TECSettings):

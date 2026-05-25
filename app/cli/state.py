@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-from abcs import StateConfig
+from app.abcs import StateConfig
 
 
 class State(str, Enum):

@@ -3,9 +3,9 @@ from __future__ import annotations
 from functools import partial
 
 # from states.texas.texas_database import local_postgres_engine as engine
-import states.texas.validators as validators
-from abcs import CategoryConfig, CategoryTypes, CSVReaderConfig, StateCategoryClass, StateConfig
-from logger import Logger
+import app.states.texas.validators as validators
+from app.abcs import CategoryConfig, CategoryTypes, CSVReaderConfig, StateCategoryClass, StateConfig
+from app.logger import Logger
 
 from .texas_downloader import DownloadError, TECDownloader
 

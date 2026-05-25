@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Generator
 
-from abcs.abc_state_config import CategoryTypes, StateConfig
+from app.abcs.abc_state_config import CategoryTypes, StateConfig
 from pydantic import Field as PydanticField
 
 from app.logger import Logger

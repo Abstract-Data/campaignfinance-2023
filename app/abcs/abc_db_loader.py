@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Iterator, List, Type
 
 import inject
-from logger import Logger
+from app.logger import Logger
 from sqlmodel import Session, SQLModel, create_engine, select
 
 

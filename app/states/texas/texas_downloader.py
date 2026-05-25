@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from abcs import FileDownloaderABC, RecordGen, StateConfig
-from funcs.csv_reader import FileReader
+from app.abcs import FileDownloaderABC, RecordGen, StateConfig
+from app.funcs.csv_reader import FileReader
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By

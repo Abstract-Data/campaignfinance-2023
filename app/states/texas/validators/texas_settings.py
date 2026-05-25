@@ -1,6 +1,6 @@
-import funcs.validator_functions as funcs
-import states.texas.funcs.tx_validation_funcs as tx_funcs
-from funcs.record_keygen import RecordKeyGenerator
+import app.funcs.validator_functions as funcs
+import app.states.texas.funcs.tx_validation_funcs as tx_funcs
+from app.funcs.record_keygen import RecordKeyGenerator
 from pydantic import ConfigDict, model_validator
 from sqlmodel import SQLModel
 

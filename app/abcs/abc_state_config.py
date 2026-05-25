@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Dict, Generator, Iterator, Optional, Type
 
-import funcs
+import app.funcs as funcs
 import polars as pl
 import sqlmodel
 from icecream import ic

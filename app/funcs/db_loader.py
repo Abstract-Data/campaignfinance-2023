@@ -5,7 +5,7 @@ import itertools
 from dataclasses import dataclass
 from typing import Generator, Iterator, List, Type
 
-from logger import Logger
+from app.logger import Logger
 from sqlmodel import Session, SQLModel, create_engine, select
 
 
