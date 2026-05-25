@@ -10,10 +10,17 @@ TDD steps per task-1g brief:
            crosswalk rows; every source record has exactly one crosswalk row.
 - Step 5:  ``canonical_name_history`` captures every distinct name in a
            multi-name cluster, each with correct first/last-seen dates.
+
+Task 2d additions:
+- Step 1:  ``run_survivorship_stage`` reads the ``clusters`` staging table and
+           skips ``held_for_review=True`` clusters for canonical publishing.
+- Step 4:  Published canonical rows carry ``provenance_json`` naming the source
+           record each field came from.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -28,12 +35,15 @@ from app.resolve.models.canonical import (
 from app.resolve.models.resolution import (
     ConfidenceBand,
     EntityCrosswalk,
+    MatchDecision,
+    MatchMethod,
     MatchRun,
     MergeReview,
     PassType,
     ReviewStatus,
     SourceType,
 )
+from app.resolve.stages.cluster import ClusterAssignment
 from app.resolve.stages.fastpath import MergeEdge
 from app.resolve.stages.survivorship import (
     Cluster,
@@ -55,10 +65,15 @@ _TABLES = [
     CanonicalEntity.__table__,
     CanonicalNameHistory.__table__,
     EntityCrosswalk.__table__,
+    MatchDecision.__table__,     # Queried by _build_node_crosswalk_attrs
     MergeEdge.__table__,
     MergeReview.__table__,
     ResolutionInput.__table__,
+    ClusterAssignment.__table__,  # Phase 2 (task-2d): clusters staging table
 ]
+
+# Alias kept for Phase 2-specific fixtures to be explicit about intent.
+_TABLES_PHASE2 = _TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -691,3 +706,387 @@ class TestCanonicalNameHistory:
         entity = session.exec(select(CanonicalEntity)).one()
         history = session.exec(select(CanonicalNameHistory)).all()
         assert all(h.subject_id == entity.id for h in history)
+
+
+# ===========================================================================
+# Task 2d — Phase 2: clusters staging table + held_for_review + provenance
+# ===========================================================================
+
+
+@pytest.fixture()
+def engine_phase2():
+    """In-memory SQLite engine with Phase 2 tables (including ClusterAssignment)."""
+    eng = create_engine("sqlite:///:memory:", echo=False)
+    SQLModel.metadata.create_all(eng, tables=_TABLES_PHASE2)
+    yield eng
+    eng.dispose()
+
+
+@pytest.fixture()
+def session_p2(engine_phase2):
+    with Session(engine_phase2) as s:
+        yield s
+
+
+@pytest.fixture()
+def run_id_p2(session_p2: Session) -> int:
+    run = MatchRun(state_code="TX", pass_type=PassType.entity)
+    session_p2.add(run)
+    session_p2.commit()
+    session_p2.refresh(run)
+    assert run.id is not None
+    return run.id
+
+
+def _add_cluster_assignment(
+    session: Session,
+    run_id: int,
+    cluster_id: str,
+    source_type: str,
+    source_id: str,
+    *,
+    entity_type: str = "person",
+    held_for_review: bool = False,
+) -> ClusterAssignment:
+    row = ClusterAssignment(
+        run_id=run_id,
+        cluster_id=cluster_id,
+        source_type=source_type,
+        source_id=source_id,
+        entity_type=entity_type,
+        held_for_review=held_for_review,
+    )
+    session.add(row)
+    session.commit()
+    return row
+
+
+class TestPhase2HeldForReview:
+    """Stage 7 reads the clusters staging table and skips held_for_review clusters."""
+
+    def test_non_held_cluster_produces_canonical_row(self, session_p2: Session, run_id_p2: int):
+        """A cluster with held_for_review=False is published as a canonical entity."""
+        _add_input(
+            session_p2, run_id_p2, "unified_person", "P1", first_name="Alice", last_name="Smith"
+        )
+        _add_cluster_assignment(
+            session_p2, run_id_p2, "cluster_000001", "unified_person", "P1", held_for_review=False
+        )
+
+        result = run_survivorship_stage(session_p2, run_id_p2, {"state_code": "TX"})
+
+        assert result["canonical_out"] >= 1
+        entities = session_p2.exec(select(CanonicalEntity)).all()
+        assert len(entities) >= 1
+
+    def test_held_cluster_not_auto_published_as_merged_group(
+        self, session_p2: Session, run_id_p2: int
+    ):
+        """A cluster with held_for_review=True must not produce a merged canonical entity
+        containing all its members (mega-cluster auto-publish is blocked)."""
+        _add_input(
+            session_p2, run_id_p2, "unified_person", "P1", first_name="Alice", last_name="Smith"
+        )
+        _add_input(
+            session_p2, run_id_p2, "unified_person", "P2", first_name="Bob", last_name="Jones"
+        )
+        _add_cluster_assignment(
+            session_p2, run_id_p2, "cluster_000001", "unified_person", "P1", held_for_review=True
+        )
+        _add_cluster_assignment(
+            session_p2, run_id_p2, "cluster_000001", "unified_person", "P2", held_for_review=True
+        )
+
+        run_survivorship_stage(session_p2, run_id_p2, {"state_code": "TX"})
+
+        # No canonical entity should have source_record_count == 2 (the merged mega-cluster)
+        entities = session_p2.exec(select(CanonicalEntity)).all()
+        merged = [e for e in entities if e.source_record_count == 2]
+        assert len(merged) == 0, "held cluster must not be auto-published as a merged group"
+
+    def test_mixed_held_and_non_held_publishes_only_non_held(
+        self, session_p2: Session, run_id_p2: int
+    ):
+        """With one held cluster (2 members) and one non-held cluster (1 member),
+        only the non-held cluster produces a merged canonical entity."""
+        _add_input(
+            session_p2, run_id_p2, "unified_person", "P1", first_name="Alice", last_name="Smith"
+        )
+        _add_input(
+            session_p2, run_id_p2, "unified_person", "P2", first_name="Bob", last_name="Jones"
+        )
+        _add_input(
+            session_p2, run_id_p2, "unified_person", "P3", first_name="Carol", last_name="White"
+        )
+
+        # Held cluster: P1 + P2
+        _add_cluster_assignment(
+            session_p2, run_id_p2, "cluster_held", "unified_person", "P1", held_for_review=True
+        )
+        _add_cluster_assignment(
+            session_p2, run_id_p2, "cluster_held", "unified_person", "P2", held_for_review=True
+        )
+        # Non-held cluster: P3 alone
+        _add_cluster_assignment(
+            session_p2, run_id_p2, "cluster_ok", "unified_person", "P3", held_for_review=False
+        )
+
+        result = run_survivorship_stage(session_p2, run_id_p2, {"state_code": "TX"})
+
+        # No merged entity spanning P1+P2 together
+        entities = session_p2.exec(select(CanonicalEntity)).all()
+        merged_2 = [e for e in entities if e.source_record_count == 2]
+        assert len(merged_2) == 0
+
+        # canonical_out reported should not count a merged 2-member held entity
+        canonical_names = [e.canonical_name for e in entities]
+        assert (
+            any("Carol" in n or "White" in n for n in canonical_names)
+            or result["canonical_out"] >= 1
+        )
+
+    def test_all_source_records_are_crosswalked_when_held_cluster_present(
+        self, session_p2: Session, run_id_p2: int
+    ):
+        """Every source record — including members of held clusters — ends up with
+        exactly one entity_crosswalk row for the run."""
+        _add_input(
+            session_p2, run_id_p2, "unified_person", "P1", first_name="Alice", last_name="Smith"
+        )
+        _add_input(
+            session_p2, run_id_p2, "unified_person", "P2", first_name="Bob", last_name="Jones"
+        )
+
+        _add_cluster_assignment(
+            session_p2, run_id_p2, "cluster_held", "unified_person", "P1", held_for_review=True
+        )
+        _add_cluster_assignment(
+            session_p2, run_id_p2, "cluster_held", "unified_person", "P2", held_for_review=True
+        )
+
+        run_survivorship_stage(session_p2, run_id_p2, {"state_code": "TX"})
+
+        crosswalks = session_p2.exec(
+            select(EntityCrosswalk).where(EntityCrosswalk.run_id == run_id_p2)
+        ).all()
+        source_ids = {cw.source_id for cw in crosswalks}
+        assert "P1" in source_ids
+        assert "P2" in source_ids
+
+
+class TestCrosswalkMatchMethod:
+    """EntityCrosswalk.match_method reflects the actual merge path per member."""
+
+    def test_singleton_crosswalk_gets_exact_method(self, session: Session, run_id: int):
+        """A singleton (no merge edges) gets match_method=exact."""
+        _add_input(session, run_id, "unified_person", "P1", first_name="Alice", last_name="Smith")
+
+        run_survivorship_stage(session, run_id, {"state_code": "TX"})
+
+        cw = session.exec(
+            select(EntityCrosswalk).where(EntityCrosswalk.source_id == "P1")
+        ).one()
+        assert cw.match_method == MatchMethod.exact
+        assert cw.match_score is None
+
+    def test_deterministic_merge_gets_exact_method(self, session: Session, run_id: int):
+        """Members merged via a deterministic edge (edge_source='deterministic') get exact."""
+        _add_input(session, run_id, "unified_person", "P1", first_name="Alice", last_name="Smith")
+        _add_input(session, run_id, "unified_person", "P2", first_name="Alice", last_name="Smith")
+        _add_merge_edge(session, run_id, "unified_person", "P1", "unified_person", "P2")
+
+        run_survivorship_stage(session, run_id, {"state_code": "TX"})
+
+        crosswalks = session.exec(
+            select(EntityCrosswalk).where(EntityCrosswalk.run_id == run_id)
+        ).all()
+        assert all(cw.match_method == MatchMethod.exact for cw in crosswalks)
+        assert all(cw.match_score is None for cw in crosswalks)
+
+    def test_probabilistic_merge_gets_probabilistic_method_and_score(
+        self, session: Session, run_id: int
+    ):
+        """Members merged via a probabilistic edge get method=probabilistic and a score."""
+        _add_input(session, run_id, "unified_person", "P1", first_name="John", last_name="Smith")
+        _add_input(session, run_id, "unified_person", "P2", first_name="John", last_name="Smith")
+
+        # Write a probabilistic MergeEdge and matching MatchDecision (as classify does)
+        edge = MergeEdge(
+            run_id=run_id,
+            source_a_type="unified_person",
+            source_a_id="P1",
+            source_b_type="unified_person",
+            source_b_id="P2",
+            edge_source="probabilistic",
+        )
+        session.add(edge)
+        from app.resolve.models.resolution import (
+            DecisionBand,
+            DecisionOutcome,
+        )
+        session.add(
+            MatchDecision(
+                run_id=run_id,
+                source_a_type=SourceType.unified_person,
+                source_a_id="P1",
+                source_b_type=SourceType.unified_person,
+                source_b_id="P2",
+                score=0.97,
+                method=MatchMethod.probabilistic,
+                band=DecisionBand.auto,
+                outcome=DecisionOutcome.merged,
+                explanation_json="{}",
+            )
+        )
+        session.commit()
+
+        run_survivorship_stage(session, run_id, {"state_code": "TX"})
+
+        crosswalks = session.exec(
+            select(EntityCrosswalk).where(EntityCrosswalk.run_id == run_id)
+        ).all()
+        assert all(cw.match_method == MatchMethod.probabilistic for cw in crosswalks)
+        assert all(cw.match_score == pytest.approx(0.97) for cw in crosswalks)
+
+    def test_approved_review_merge_gets_approved_review_method(
+        self, session: Session, run_id: int
+    ):
+        """Members merged via an approved review edge get method=approved_review."""
+        _add_input(session, run_id, "unified_person", "P1", first_name="A", last_name="B")
+        _add_input(session, run_id, "unified_person", "P2", first_name="A", last_name="B")
+
+        edge = MergeEdge(
+            run_id=run_id,
+            source_a_type="unified_person",
+            source_a_id="P1",
+            source_b_type="unified_person",
+            source_b_id="P2",
+            edge_source="approved_review",
+        )
+        session.add(edge)
+        session.commit()
+
+        run_survivorship_stage(session, run_id, {"state_code": "TX"})
+
+        crosswalks = session.exec(
+            select(EntityCrosswalk).where(EntityCrosswalk.run_id == run_id)
+        ).all()
+        assert all(cw.match_method == MatchMethod.approved_review for cw in crosswalks)
+
+    def test_prior_run_approved_review_propagates_to_crosswalk(
+        self, session: Session, run_id: int
+    ):
+        """Approved MergeReview rows from any run (no MergeEdge) set approved_review."""
+        _add_input(session, run_id, "unified_person", "P1", first_name="A", last_name="B")
+        _add_input(session, run_id, "unified_person", "P2", first_name="A", last_name="B")
+        _add_approved_review(session, run_id, "unified_person", "P1", "unified_person", "P2")
+        # No MergeEdge — load_cluster_edges reads MergeReview directly
+
+        run_survivorship_stage(session, run_id, {"state_code": "TX"})
+
+        crosswalks = session.exec(
+            select(EntityCrosswalk).where(EntityCrosswalk.run_id == run_id)
+        ).all()
+        assert all(cw.match_method == MatchMethod.approved_review for cw in crosswalks)
+
+
+class TestPhase2ProvenanceJson:
+    """Canonical rows carry field-level provenance_json (task-2d Step 4)."""
+
+    def test_canonical_row_has_provenance_json(self, session_p2: Session, run_id_p2: int):
+        """A published canonical entity row carries a non-null provenance_json."""
+        _add_input(
+            session_p2, run_id_p2, "unified_person", "P1", first_name="Alice", last_name="Smith"
+        )
+        _add_cluster_assignment(
+            session_p2, run_id_p2, "cluster_000001", "unified_person", "P1", held_for_review=False
+        )
+
+        run_survivorship_stage(session_p2, run_id_p2, {"state_code": "TX"})
+
+        entity = session_p2.exec(select(CanonicalEntity)).one()
+        assert entity.provenance_json is not None
+
+    def test_provenance_json_is_valid_json(self, session_p2: Session, run_id_p2: int):
+        """provenance_json must be parseable JSON."""
+        _add_input(
+            session_p2, run_id_p2, "unified_person", "P1", first_name="Alice", last_name="Smith"
+        )
+        _add_cluster_assignment(
+            session_p2, run_id_p2, "cluster_000001", "unified_person", "P1", held_for_review=False
+        )
+
+        run_survivorship_stage(session_p2, run_id_p2, {"state_code": "TX"})
+
+        entity = session_p2.exec(select(CanonicalEntity)).one()
+        parsed = json.loads(entity.provenance_json)
+        assert isinstance(parsed, dict)
+
+    def test_provenance_json_names_canonical_name_source(self, session_p2: Session, run_id_p2: int):
+        """provenance_json includes a 'canonical_name' entry with source_type and source_id."""
+        _add_input(
+            session_p2, run_id_p2, "unified_person", "P1", first_name="Alice", last_name="Smith"
+        )
+        _add_cluster_assignment(
+            session_p2, run_id_p2, "cluster_000001", "unified_person", "P1", held_for_review=False
+        )
+
+        run_survivorship_stage(session_p2, run_id_p2, {"state_code": "TX"})
+
+        entity = session_p2.exec(select(CanonicalEntity)).one()
+        prov = json.loads(entity.provenance_json)
+        assert "canonical_name" in prov
+        assert "source_type" in prov["canonical_name"]
+        assert "source_id" in prov["canonical_name"]
+        assert prov["canonical_name"]["source_id"] == "P1"
+
+    def test_provenance_json_best_name_row_wins_in_cluster(
+        self, session_p2: Session, run_id_p2: int
+    ):
+        """provenance_json canonical_name source_id points at the most-complete name row."""
+        older = _utc(-10)
+        newer = _utc()
+        _add_input(
+            session_p2,
+            run_id_p2,
+            "unified_person",
+            "P1",
+            first_name="J",
+            last_name="Smith",
+            created_at=older,
+        )
+        _add_input(
+            session_p2,
+            run_id_p2,
+            "unified_person",
+            "P2",
+            first_name="John",
+            middle_name="A",
+            last_name="Smith",
+            created_at=newer,
+        )
+        _add_cluster_assignment(
+            session_p2, run_id_p2, "cluster_000001", "unified_person", "P1", held_for_review=False
+        )
+        _add_cluster_assignment(
+            session_p2, run_id_p2, "cluster_000001", "unified_person", "P2", held_for_review=False
+        )
+
+        run_survivorship_stage(session_p2, run_id_p2, {"state_code": "TX"})
+
+        entity = session_p2.exec(select(CanonicalEntity)).one()
+        prov = json.loads(entity.provenance_json)
+        # P2 has more name parts (first+middle+last) → should win
+        assert prov["canonical_name"]["source_id"] == "P2"
+
+    def test_phase1_fallback_also_emits_provenance_json(self, session: Session, run_id: int):
+        """When no ClusterAssignment rows exist (Phase 1 path), canonical rows
+        still carry provenance_json (backward-compatible)."""
+        _add_input(session, run_id, "unified_person", "P1", first_name="Alice", last_name="Smith")
+
+        run_survivorship_stage(session, run_id, {"state_code": "TX"})
+
+        entity = session.exec(select(CanonicalEntity)).one()
+        assert entity.provenance_json is not None
+        parsed = json.loads(entity.provenance_json)
+        assert "canonical_name" in parsed

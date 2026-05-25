@@ -60,6 +60,7 @@ from app.resolve.stages import (
     run_survivorship_stage,
     stage1_build_resolution_input,
 )
+from app.resolve.stages.cluster import ClusterAssignment
 from app.resolve.stages.fastpath import MergeEdge
 from app.resolve.standardize.staging import ResolutionInput
 
@@ -104,6 +105,9 @@ _TABLES_TO_CREATE = [
     EntityCrosswalk.__table__,
     AddressCrosswalk.__table__,
     CampaignCrosswalk.__table__,
+    # Phase 2 staging table — queried by run_survivorship_stage; empty here
+    # triggers the Phase 1 trivial-clustering fallback path.
+    ClusterAssignment.__table__,
 ]
 
 

@@ -19,16 +19,16 @@ todos:
     status: completed
   - id: wave-5-p2-r2
     content: "Wave 5: Serial — task 2d updates survivorship for probabilistic clusters"
-    status: pending
+    status: completed
   - id: wave-6-p2-z
     content: "Wave 6: Serial integration — task 2z wires stages 4→5→6, golden-set CI gate"
-    status: pending
+    status: completed
   - id: wave-7-p3-r1
     content: "Wave 7: Dispatch 3 parallel agents — tasks 3a (review CLI), 3b (explain), 3c (reversibility)"
-    status: pending
+    status: completed
   - id: wave-8-p3-z
     content: "Wave 8: Serial integration — task 3z wires review subcommand + review→rerun test"
-    status: pending
+    status: in_progress
   - id: wave-9-p4-r1
     content: "Wave 9: Dispatch 4 parallel agents — tasks 4a (views), 4b (occupancy), 4c (colocation), 4d (crossstate hook)"
     status: pending

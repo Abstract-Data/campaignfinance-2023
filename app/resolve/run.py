@@ -54,7 +54,9 @@ def _resolution_schema_models() -> tuple[type[SQLModel], ...]:
         MatchDecision,
         MergeReview,
     )
+    from app.resolve.stages.cluster import ClusterAssignment
     from app.resolve.stages.fastpath import MergeEdge
+    from app.resolve.stages.score import ScoredPair
     from app.resolve.standardize.staging import ResolutionInput
 
     _RESOLUTION_SCHEMA_MODELS = (
@@ -71,6 +73,8 @@ def _resolution_schema_models() -> tuple[type[SQLModel], ...]:
         ResolutionInput,
         CandidatePair,
         MergeEdge,
+        ScoredPair,
+        ClusterAssignment,
     )
     return _RESOLUTION_SCHEMA_MODELS
 

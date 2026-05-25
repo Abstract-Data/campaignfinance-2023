@@ -485,3 +485,19 @@ def test_ensure_resolution_schema_creates_match_run_only_from_resolve_models():
     assert "unified_persons" not in created
 
     engine.dispose()
+
+
+def test_ensure_resolution_schema_creates_scored_pairs_and_clusters():
+    """ensure_resolution_schema must create the Phase 2 staging tables
+    scored_pairs and clusters so that stages 4 and 6 can write to them."""
+    import app.core.unified_sqlmodels  # noqa: F401
+    from app.resolve.run import ensure_resolution_schema
+
+    engine = create_engine("sqlite:///:memory:", echo=False)
+    ensure_resolution_schema(engine)
+
+    created = set(sa_inspect(engine).get_table_names())
+    assert "scored_pairs" in created, "scored_pairs table not created by ensure_resolution_schema"
+    assert "clusters" in created, "clusters table not created by ensure_resolution_schema"
+
+    engine.dispose()

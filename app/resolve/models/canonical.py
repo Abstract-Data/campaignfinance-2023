@@ -14,7 +14,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Column, Index, Integer, String, UniqueConstraint
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 if TYPE_CHECKING:
@@ -173,6 +173,12 @@ class CanonicalEntity(SQLModel, table=True):
     first_seen_date: Optional[date] = Field(default=None)
     last_seen_date: Optional[date] = Field(default=None)
     source_record_count: int = Field(default=0)
+
+    # JSON string mapping field name → {source_type, source_id} of the record
+    # whose value was selected during survivorship.  Added in Phase 2 (task-2d);
+    # the canonical tables are rebuilt each run so the column simply appears on
+    # the next freshly-created staging table without a migration.
+    provenance_json: Optional[str] = Field(default=None)
 
     last_run_id: Optional[int] = Field(default=None, index=True)
 

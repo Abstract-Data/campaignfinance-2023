@@ -10,6 +10,7 @@ from app.resolve.models.resolution import (
     MatchDecision,
     MatchMethod,
     MatchRun,
+    MergeReview,
     PassType,
     ReviewStatus,
     RunStatus,
@@ -17,7 +18,6 @@ from app.resolve.models.resolution import (
 )
 from app.resolve.stages.classify import run_classify_stage
 from app.resolve.stages.fastpath import MergeEdge
-from app.resolve.models.resolution import MergeReview
 from app.resolve.stages.score import ScoredPair
 
 
@@ -295,6 +295,33 @@ def test_prior_rejection_beats_later_approval_for_same_pair():
 
         edges = session.exec(select(MergeEdge).where(MergeEdge.run_id == 16)).all()
         assert edges == []
+
+
+def test_approved_review_decision_uses_approved_review_method():
+    """Prior-approved pairs must produce MatchDecision with method=approved_review, not probabilistic."""
+    engine = _make_engine()
+    with Session(engine) as session:
+        _seed_run(session, run_id=18)
+        _add_scored_pair(session, run_id=18, pair_id="approved", score=0.10)
+        session.add(
+            MergeReview(
+                run_id=5,
+                source_a_type=SourceType.unified_person,
+                source_a_id="approved-a",
+                source_b_type=SourceType.unified_person,
+                source_b_id="approved-b",
+                status=ReviewStatus.approved,
+            )
+        )
+        session.commit()
+
+        run_classify_stage(session, run_id=18, config={})
+
+        decisions = _decision_by_pair(session, run_id=18)
+        approved = decisions[("approved-a", "approved-b")]
+        assert approved.method == MatchMethod.approved_review
+        assert approved.band == DecisionBand.auto
+        assert approved.outcome == DecisionOutcome.merged
 
 
 def test_classify_preserves_fastpath_match_decisions():

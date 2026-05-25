@@ -53,6 +53,7 @@ class MatchMethod(str, Enum):
     exact = "exact"
     deterministic_rule = "deterministic_rule"
     probabilistic = "probabilistic"
+    approved_review = "approved_review"
     manual = "manual"
 
 

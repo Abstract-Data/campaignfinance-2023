@@ -153,6 +153,7 @@ def run_classify_stage(
         band: DecisionBand
         outcome: DecisionOutcome
         edge_source: str | None = None
+        decision_method: MatchMethod = MatchMethod.probabilistic
 
         if prior_status == ReviewStatus.rejected:
             band = DecisionBand.reject
@@ -162,6 +163,7 @@ def run_classify_stage(
             band = DecisionBand.auto
             outcome = DecisionOutcome.merged
             edge_source = "approved_review"
+            decision_method = MatchMethod.approved_review
             auto_merges += 1
         else:
             thresholds = _thresholds_for_entity(config, pair.entity_type)
@@ -187,7 +189,7 @@ def run_classify_stage(
                 source_b_type=_to_source_type(pair.source_b_type),
                 source_b_id=pair.source_b_id,
                 score=pair.score,
-                method=MatchMethod.probabilistic,
+                method=decision_method,
                 band=band,
                 outcome=outcome,
                 explanation_json=pair.explanation_json,
