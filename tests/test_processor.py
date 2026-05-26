@@ -59,6 +59,16 @@ def test_detail_builders_attach_expected_record(
     assert getattr(txn, detail_attr) is not None
 
 
+def test_get_builder_returns_new_instance_per_call(
+    processor: UnifiedSQLDataProcessor,
+) -> None:
+    b1 = processor.get_builder("texas", state_id=1, state_code="TX")
+    b2 = processor.get_builder("texas", state_id=2, state_code="TX")
+    assert b1 is not b2
+    assert b1.state_id == 1
+    assert b2.state_id == 2
+
+
 def test_process_record_stream_yields_lazily(processor: UnifiedSQLDataProcessor) -> None:
     records = [_base_raw("RCPT"), _base_raw("LOAN")]
 

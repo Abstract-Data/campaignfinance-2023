@@ -10,7 +10,7 @@ from snowflake.snowpark import Session
 
 def create_connection():
     return Session.builder.configs(
-        OnePasswordItem(
+        OnePasswordItem.create_sync(
             name='snowflake_counterpoint')
         .database_params
     )
