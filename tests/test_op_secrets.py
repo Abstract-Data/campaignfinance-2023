@@ -35,7 +35,7 @@ def test_create_sync_runs_async_factory(monkeypatch: pytest.MonkeyPatch) -> None
 
 def _build_item_with_secrets() -> OnePasswordItem:
     item = OnePasswordItem.model_construct(name="warehouse")
-    item._OnePasswordItem__secrets = {
+    item._secrets = {
         "warehouse/username": SecretStr("readonly_user"),
         "warehouse/password": SecretStr("very-secret-password"),
         "warehouse/server": SecretStr("db.internal"),

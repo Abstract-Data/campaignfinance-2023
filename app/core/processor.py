@@ -324,9 +324,6 @@ def _attach_detail_record(
 class UnifiedSQLDataProcessor:
     """High-level processor for converting state-specific data to SQLModel instances."""
 
-    def __init__(self):
-        self.builders: dict[str, UnifiedSQLModelBuilder] = {}
-
     def get_builder(
         self,
         state: str,
@@ -335,17 +332,13 @@ class UnifiedSQLDataProcessor:
         *,
         session: Session | None = None,
     ) -> UnifiedSQLModelBuilder:
-        """Get or create a model builder for a specific state."""
-        if state not in self.builders:
-            self.builders[state] = UnifiedSQLModelBuilder(
-                state, state_id, state_code, session=session
-            )
-        builder = self.builders[state]
-        builder.state_id = state_id
-        builder.state_code = state_code
-        if session is not None:
-            builder.session = session
-        return builder
+        """Return a fresh builder per call (no shared mutable cache)."""
+        return UnifiedSQLModelBuilder(
+            state,
+            state_id,
+            state_code,
+            session=session,
+        )
 
     def process_record(
         self,
