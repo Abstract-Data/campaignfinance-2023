@@ -10,9 +10,32 @@ import app.op as op_module
 from app.op import OnePasswordItem, OnePasswordSettings
 
 
+def test_init_does_not_prefetch_secrets() -> None:
+    """__init__ must not call asyncio.run (R4)."""
+    item = OnePasswordItem(name="warehouse")
+    assert item._secrets == {}
+
+
+def test_create_sync_runs_async_factory(monkeypatch: pytest.MonkeyPatch) -> None:
+    run_calls: list[object] = []
+
+    def _fake_run(coro: object) -> OnePasswordItem:
+        run_calls.append(coro)
+        if hasattr(coro, "close"):
+            coro.close()
+        item = OnePasswordItem.model_construct(name="warehouse")
+        item._secrets = {}
+        return item
+
+    monkeypatch.setattr(asyncio, "run", _fake_run)
+    item = OnePasswordItem.create_sync(name="warehouse")
+    assert run_calls
+    assert item.name == "warehouse"
+
+
 def _build_item_with_secrets() -> OnePasswordItem:
     item = OnePasswordItem.model_construct(name="warehouse")
-    item._OnePasswordItem__secrets = {
+    item._secrets = {
         "warehouse/username": SecretStr("readonly_user"),
         "warehouse/password": SecretStr("very-secret-password"),
         "warehouse/server": SecretStr("db.internal"),

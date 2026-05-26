@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Callable, Dict
+from typing import Callable
 
 from onepassword.client import Client
 from onepassword.lib.aarch64.op_uniffi_core import Error
@@ -13,6 +13,19 @@ from sqlalchemy.engine import URL
 from app.logger import Logger
 
 _logger: Logger | None = None
+
+_SECRET_ATTRS = (
+    "account",
+    "username",
+    "password",
+    "server",
+    "port",
+    "database",
+    "schema",
+    "type",
+    "warehouse",
+    "role",
+)
 
 
 def _get_logger() -> Logger:
@@ -53,74 +66,88 @@ class OnePasswordSettings(BaseSettings):
             _get_logger().error(f"Failed to resolve 1Password secret '{secret_ref}': {exc}")
             raise
 
-    async def refs(self, *secret_refs: str) -> asyncio.gather:
+    async def refs(self, *secret_refs: str) -> tuple:
         tasks = [self._get_value(secret_ref) for secret_ref in secret_refs]
         return await asyncio.gather(*tasks)
 
 
 class OnePasswordItem(BaseModel):
     name: str
-    __config: OnePasswordSettings = OnePasswordSettings()
 
     def __init__(self, **data):
         super().__init__(**data)
-        secret_refs = [
-            f"{self.name}/{attr}" for attr in
-            [
-                "account",
-                "username",
-                "password",
-                "server",
-                "port",
-                "database",
-                "schema",
-                "type",
-                "warehouse",
-                "role"
-            ]
-        ]
-        secrets = asyncio.run(self.__config.refs(*secret_refs))
-        self.__secrets = dict(zip(secret_refs, secrets))
+        self._secrets: dict[str, SecretStr | None] = {}
+
+    @classmethod
+    async def create(
+        cls,
+        name: str,
+        *,
+        config: OnePasswordSettings | None = None,
+    ) -> OnePasswordItem:
+        """Async factory — use from async contexts."""
+        instance = cls(name=name)
+        instance._secrets = await instance._fetch_secrets(config)
+        return instance
+
+    @classmethod
+    def create_sync(
+        cls,
+        name: str,
+        *,
+        config: OnePasswordSettings | None = None,
+    ) -> OnePasswordItem:
+        """Sync factory — use from CLI and other synchronous entrypoints."""
+        return asyncio.run(cls.create(name, config=config))
+
+    async def _fetch_secrets(
+        self,
+        config: OnePasswordSettings | None = None,
+    ) -> dict[str, SecretStr | None]:
+        settings = config or OnePasswordSettings()
+        secret_refs = [f"{self.name}/{attr}" for attr in _SECRET_ATTRS]
+        secrets = await settings.refs(*secret_refs)
+        return dict(zip(secret_refs, secrets, strict=True))
 
     @property
     def account(self) -> SecretStr:
-        return self.__secrets.get(f"{self.name}/account")
+        return self._secrets.get(f"{self.name}/account")
 
     @property
     def usr(self) -> SecretStr:
-        return self.__secrets.get(f"{self.name}/username")
+        return self._secrets.get(f"{self.name}/username")
 
     @property
     def pwd(self) -> SecretStr:
-        return self.__secrets.get(f"{self.name}/password")
+        return self._secrets.get(f"{self.name}/password")
 
     @property
     def server(self) -> SecretStr:
-        return self.__secrets.get(f"{self.name}/server")
+        return self._secrets.get(f"{self.name}/server")
 
     @property
     def port(self) -> SecretStr | None:
-        return self.__secrets.get(f"{self.name}/port")
+        return self._secrets.get(f"{self.name}/port")
 
     @property
     def database(self) -> SecretStr:
-        return self.__secrets.get(f"{self.name}/database")
+        return self._secrets.get(f"{self.name}/database")
 
     @property
     def db_schema(self) -> SecretStr | None:
-        return self.__secrets.get(f"{self.name}/schema")
+        return self._secrets.get(f"{self.name}/schema")
 
     @property
     def db_type(self) -> SecretStr | None:
-        return self.__secrets.get(f"{self.name}/type")
+        return self._secrets.get(f"{self.name}/type")
 
     @property
     def warehouse(self) -> SecretStr:
-        return self.__secrets.get(f"{self.name}/warehouse")
+        return self._secrets.get(f"{self.name}/warehouse")
 
     @property
     def role(self) -> SecretStr:
-        return self.__secrets.get(f"{self.name}/role")
+        return self._secrets.get(f"{self.name}/role")
 
     @property
     def database_url(self) -> URL | None:
@@ -141,7 +168,7 @@ class OnePasswordItem(BaseModel):
             )
 
     @property
-    def database_params(self) -> Dict[str, str] | None:
+    def database_params(self) -> dict[str, str] | None:
         if self.db_type.get_secret_value() == "other":
             params = {'account': self.account.get_secret_value() if self.account else None,
                       'user': self.usr.get_secret_value() if self.usr else None,
@@ -152,7 +179,7 @@ class OnePasswordItem(BaseModel):
                       'role': self.role.get_secret_value() if self.role else None
                       }
 
-            for key in list(params.keys()):  # Create a copy of the dictionary keys
+            for key in list(params.keys()):
                 if not params[key]:
                     del params[key]
             return params

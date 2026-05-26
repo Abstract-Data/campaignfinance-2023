@@ -1,12 +1,13 @@
 from datetime import date
 from typing import Optional
 
-import app.states.texas.funcs.tx_validation_funcs as tx_funcs
 from pydantic import field_validator, model_validator
 from pydantic_core import PydanticCustomError
 from sqlmodel import Field
 
-from ._mixins import format_individual_payee_name
+import app.states.texas.funcs.tx_validation_funcs as tx_funcs
+
+from ._mixins import format_individual_payee_name, validate_individual_entity_discriminator
 from .texas_settings import TECSettings
 
 # class TECExpenseCategory(TECSettings, table=True):
@@ -19,76 +20,28 @@ class TECExpense(TECSettings, table=True):
     __tablename__ = "tx_expenses"
     __table_args__ = {"schema": "texas"}
     id: Optional[str] = Field(default=None, description="Unique record ID")
-    recordType: str = Field(
-        ...,
-        description="Record type code - always EXPN",
-        max_length=20
-    )
-    formTypeCd: str = Field(
-        ...,
-        description="TEC form used",
-        max_length=20
-    )
-    schedFormTypeCd: str = Field(
-        ...,
-        description="TEC Schedule Used",
-        max_length=20
-    )
-    reportInfoIdent: int = Field(
-        ...,
-        description="Unique report #"
-    )
-    receivedDt: date = Field(
-        ...,
-        description="Date report received by TEC"
-    )
-    infoOnlyFlag: Optional[bool] = Field(
-        ...,
-        description="Superseded by other report"
-    )
-    filerIdent: int = Field(
-        ...,
-        description="Filer account #"
-    )
-    filerTypeCd: str = Field(
-        ...,
-        description="Type of filer"
-    )
-    filerName: str = Field(
-        ...,
-        description="Filer name"
-    )
-    expendInfoId: int = Field(
-        primary_key=True,
-        description="Unique expenditure identifier"
-    )
-    expendDt: date = Field(
-        ...,
-        description="Expenditure date"
-    )
-    expendAmount: Optional[float]= Field(
-        ...,
-        description="Expenditure amount"
-    )
-    expendDescr: str = Field(
-        ...,
-        description="Expenditure description"
-    )
-    expendCatCd: Optional[str] = Field(
-        default=None,
-        description="Expenditure category code"
-    )
+    recordType: str = Field(..., description="Record type code - always EXPN", max_length=20)
+    formTypeCd: str = Field(..., description="TEC form used", max_length=20)
+    schedFormTypeCd: str = Field(..., description="TEC Schedule Used", max_length=20)
+    reportInfoIdent: int = Field(..., description="Unique report #")
+    receivedDt: date = Field(..., description="Date report received by TEC")
+    infoOnlyFlag: Optional[bool] = Field(..., description="Superseded by other report")
+    filerIdent: int = Field(..., description="Filer account #")
+    filerTypeCd: str = Field(..., description="Type of filer")
+    filerName: str = Field(..., description="Filer name")
+    expendInfoId: int = Field(primary_key=True, description="Unique expenditure identifier")
+    expendDt: date = Field(..., description="Expenditure date")
+    expendAmount: Optional[float] = Field(..., description="Expenditure amount")
+    expendDescr: str = Field(..., description="Expenditure description")
+    expendCatCd: Optional[str] = Field(default=None, description="Expenditure category code")
     expendCatDescr: Optional[str] = Field(
-        default=None,
-        description="Expenditure category description"
+        default=None, description="Expenditure category description"
     )
     itemizeFlag: Optional[bool] = Field(
-        ...,
-        description="Y indicates that the expenditure is itemized"
+        ..., description="Y indicates that the expenditure is itemized"
     )
     travelFlag: Optional[bool] = Field(
-        ...,
-        description="Y indicates that the expenditure is for travel"
+        ..., description="Y indicates that the expenditure is for travel"
     )
     politicalExpendCd: Optional[bool] = Field(
         ...,
@@ -107,86 +60,49 @@ class TECExpense(TECSettings, table=True):
         description="Austin living expense indicator",
     )
     payeePersentTypeCd: str = Field(
-        ...,
-        description="Type of payee name data - INDIVIDUAL or ENTITY"
+        ..., description="Type of payee name data - INDIVIDUAL or ENTITY"
     )
     payeeNameOrganization: Optional[str] = Field(
-        ...,
-        description="For ENTITY, the payee organization name"
+        ..., description="For ENTITY, the payee organization name"
     )
     payeeNameLast: Optional[str] = Field(
-        default=None,
-        description="For INDIVIDUAL, the payee last name"
+        default=None, description="For INDIVIDUAL, the payee last name"
     )
     payeeNameSuffixCd: Optional[str] = Field(
-        default=None,
-        description="For INDIVIDUAL, the payee suffix"
+        default=None, description="For INDIVIDUAL, the payee suffix"
     )
     payeeNameFirst: Optional[str] = Field(
-        default=None,
-        description="For INDIVIDUAL, the payee first name"
+        default=None, description="For INDIVIDUAL, the payee first name"
     )
     payeeNamePrefixCd: Optional[str] = Field(
-        default=None,
-        description="For INDIVIDUAL, the payee prefix"
+        default=None, description="For INDIVIDUAL, the payee prefix"
     )
     payeeNameShort: Optional[str] = Field(
-        default=None,
-        description="For INDIVIDUAL, the payee short name"
+        default=None, description="For INDIVIDUAL, the payee short name"
     )
     payeeNameFull: Optional[str] = Field(
-        default=None,
-        description="For INDIVIDUAL, the payee full name"
+        default=None, description="For INDIVIDUAL, the payee full name"
     )
-    payeeStreetAddr1: Optional[str] = Field(
-        ...,
-        description="Payee street address line 1"
-    )
-    payeeStreetAddr2: Optional[str] = Field(
-        default=None,
-        description="Payee street address line 2"
-    )
-    payeeStreetCity: Optional[str] = Field(
-        ...,
-        description="Payee street address city"
-    )
-    payeeStreetStateCd: str = Field(
-        ...,
-        description="Payee street address state code"
-    )
-    payeeStreetCountyCd: Optional[str] = Field(
-        ...,
-        description="Payee street address Texas county"
-    )
+    payeeStreetAddr1: Optional[str] = Field(..., description="Payee street address line 1")
+    payeeStreetAddr2: Optional[str] = Field(default=None, description="Payee street address line 2")
+    payeeStreetCity: Optional[str] = Field(..., description="Payee street address city")
+    payeeStreetStateCd: str = Field(..., description="Payee street address state code")
+    payeeStreetCountyCd: Optional[str] = Field(..., description="Payee street address Texas county")
     payeeStreetCountryCd: Optional[str] = Field(
-        ...,
-        description="Payee street address - country (e.g. USA, UMI, MEX, CAN)",
-        max_length=3
+        ..., description="Payee street address - country (e.g. USA, UMI, MEX, CAN)", max_length=3
     )
     payeeStreetPostalCode: Optional[str] = Field(
-        default=None,
-        description="Payee street address - postal code - for USA addresses only"
+        default=None, description="Payee street address - postal code - for USA addresses only"
     )
     payeeStreetRegion: Optional[str] = Field(
-        default=None,
-        description="Payee street address - region for country other than USA"
+        default=None, description="Payee street address - region for country other than USA"
     )
     creditCardIssuer: Optional[str] = Field(
-        default=None,
-        description="Financial institution issuing credit card"
+        default=None, description="Financial institution issuing credit card"
     )
-    repaymentDt: Optional[date] = Field(
-        default=None,
-        description="Repayment date"
-    )
-    file_origin: str = Field(
-        ...,
-        description="File origin"
-    )
-    download_date: date = Field(
-        ...,
-        description="Download date"
-    )
+    repaymentDt: Optional[date] = Field(default=None, description="Repayment date")
+    file_origin: str = Field(..., description="File origin")
+    download_date: date = Field(..., description="Download date")
 
     address_formatting = model_validator(mode="before")(tx_funcs.address_formatting)
     phone_number_validation = model_validator(mode="before")(tx_funcs.phone_number_validation)
@@ -194,43 +110,30 @@ class TECExpense(TECSettings, table=True):
     @model_validator(mode="before")
     @classmethod
     def _check_payee_field(cls, values):
-        if values["payeePersentTypeCd"] == "INDIVIDUAL":
-            if not values["payeeNameLast"]:
-                raise PydanticCustomError(
-                    'missing_required_value',
-                    "payeeNameLast is required for INDIVIDUAL payeePersentTypeCd",
-                    {
-                        'column': 'payeeNameLast',
-                        'value': values["payeeNameLast"]
-                    }
-                )
-            if not values["payeeNameFirst"]:
-                raise PydanticCustomError(
-                    'missing_required_value',
-                    "payeeNameFirst is required for INDIVIDUAL payeePersentTypeCd",
-                    {
-                        'column': 'payeeNameFirst',
-                        'value': values["payeeNameFirst"]
-                    }
-                )
-        elif values["payeePersentTypeCd"] == "ENTITY":
-            if not values["payeeNameOrganization"]:
-                raise PydanticCustomError(
-                    'missing_required_value',
-                    "payeeNameOrganization is required for ENTITY payeePersentTypeCd",
-                    {
-                        'column': 'payeeNameOrganization',
-                        'value': values["payeeNameOrganization"]
-                    }
-                )
-        else:
+        person_type = values.get("payeePersentTypeCd", "")
+        if person_type not in ("INDIVIDUAL", "ENTITY"):
             raise PydanticCustomError(
-                'incorrect_value',
+                "incorrect_value",
                 "payeePersentTypeCd must be INDIVIDUAL or ENTITY",
                 {
-                    'column': 'payeePersentTypeCd',
-                    'value': values["payeePersentTypeCd"]
-                }
+                    "column": "payeePersentTypeCd",
+                    "value": values.get("payeePersentTypeCd"),
+                },
+            )
+        values = validate_individual_entity_discriminator(
+            values,
+            type_field="payeePersentTypeCd",
+            individual_name_field="payeeNameLast",
+            entity_org_field="payeeNameOrganization",
+        )
+        if person_type == "INDIVIDUAL" and not values.get("payeeNameFirst"):
+            raise PydanticCustomError(
+                "missing_required_value",
+                "payeeNameFirst is required for INDIVIDUAL payeePersentTypeCd",
+                {
+                    "column": "payeeNameFirst",
+                    "value": values.get("payeeNameFirst"),
+                },
             )
         return values
 
@@ -239,16 +142,13 @@ class TECExpense(TECSettings, table=True):
     def format_payee_name(cls, values):
         return format_individual_payee_name(values)
 
-    @field_validator('filerName', 'expendDescr', 'payeeStreetStateCd', 'expendDt', 'receivedDt', mode='before')
+    @field_validator(
+        "filerName", "expendDescr", "payeeStreetStateCd", "expendDt", "receivedDt", mode="before"
+    )
     @classmethod
     def validate_required_fields(cls, v):
         if v == "" or v is None:
             raise PydanticCustomError(
-                'missing_required_value',
-                "Field is required",
-                {
-                    'column': 'filerName',
-                    'value': v
-                }
+                "missing_required_value", "Field is required", {"column": "filerName", "value": v}
             )
         return v

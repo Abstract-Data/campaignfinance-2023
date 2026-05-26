@@ -6,9 +6,9 @@ import json
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -37,6 +37,18 @@ _logger = Logger(__name__)
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _nonzero_amount_sum(column):
+    """SUM amounts matching legacy Python ``if tx.amount`` (excludes NULL and zero)."""
+    return func.coalesce(
+        func.sum(column).filter(column.isnot(None), column != 0),
+        0,
+    )
+
+
+def _transaction_type_key(tx_type: Any) -> str:
+    return tx_type.value if hasattr(tx_type, "value") else str(tx_type)
 
 
 def _contributor_display_name(tx: UnifiedTransaction) -> str | None:
@@ -84,7 +96,7 @@ def _record_version(
     entity: Any,
     version_model: type,
     fk_field: str,
-    fk_value: int,
+    fk_value: int | str,
     version_number: int,
     user: str | None,
     reason: str | None,
@@ -159,7 +171,7 @@ class UnifiedDatabaseManager:
         """
         SQLModel.metadata.create_all(self.engine)
 
-    def _resolve_state_record(self, session: Session, state_identifier: str) -> Optional[State]:
+    def _resolve_state_record(self, session: Session, state_identifier: str) -> State | None:
         if not state_identifier:
             return None
         code = state_identifier.strip().upper()
@@ -172,7 +184,7 @@ class UnifiedDatabaseManager:
         """Get a database session"""
         return Session(self.engine)
 
-    def load_data_from_file(self, file_path: Path, state: str) -> List[UnifiedTransaction]:
+    def load_data_from_file(self, file_path: Path, state: str) -> list[UnifiedTransaction]:
         """
         Load data from a file and convert to SQLModel instances.
 
@@ -204,7 +216,7 @@ class UnifiedDatabaseManager:
         _logger.info(f"Loaded {len(transactions)} transactions from {file_path}")
         return transactions
 
-    def save_transactions(self, transactions: List[UnifiedTransaction]) -> int:
+    def save_transactions(self, transactions: list[UnifiedTransaction]) -> int:
         """
         Save transactions to the database.
 
@@ -238,11 +250,11 @@ class UnifiedDatabaseManager:
 
     def get_transactions(
         self,
-        state: Optional[str] = None,
-        transaction_type: Optional[TransactionType] = None,
-        limit: Optional[int] = None,
+        state: str | None = None,
+        transaction_type: TransactionType | None = None,
+        limit: int | None = None,
         load_relationships: bool = True,
-    ) -> List[UnifiedTransaction]:
+    ) -> list[UnifiedTransaction]:
         """
         Get transactions from the database with optional filters.
 
@@ -281,7 +293,7 @@ class UnifiedDatabaseManager:
             results = session.exec(query).all()
             return results
 
-    def get_transaction_by_id(self, transaction_id: str) -> Optional[UnifiedTransaction]:
+    def get_transaction_by_id(self, transaction_id: str) -> UnifiedTransaction | None:
         """
         Get a specific transaction by its transaction ID.
 
@@ -297,7 +309,7 @@ class UnifiedDatabaseManager:
             )
             return session.exec(query).first()
 
-    def get_person_by_name(self, first_name: str, last_name: str) -> List[UnifiedPerson]:
+    def get_person_by_name(self, first_name: str, last_name: str) -> list[UnifiedPerson]:
         """
         Get persons by name.
 
@@ -314,7 +326,7 @@ class UnifiedDatabaseManager:
             )
             return session.exec(query).all()
 
-    def get_committee_by_name(self, name: str) -> List[UnifiedCommittee]:
+    def get_committee_by_name(self, name: str) -> list[UnifiedCommittee]:
         """
         Get committees by name.
 
@@ -329,8 +341,8 @@ class UnifiedDatabaseManager:
             return session.exec(query).all()
 
     def get_transactions_by_amount_range(
-        self, min_amount: float, max_amount: float, state: Optional[str] = None
-    ) -> List[UnifiedTransaction]:
+        self, min_amount: float, max_amount: float, state: str | None = None
+    ) -> list[UnifiedTransaction]:
         """
         Get transactions within an amount range.
 
@@ -356,8 +368,8 @@ class UnifiedDatabaseManager:
             return session.exec(query).all()
 
     def get_transactions_by_date_range(
-        self, start_date: str, end_date: str, state: Optional[str] = None
-    ) -> List[UnifiedTransaction]:
+        self, start_date: str, end_date: str, state: str | None = None
+    ) -> list[UnifiedTransaction]:
         """
         Get transactions within a date range.
 
@@ -388,145 +400,204 @@ class UnifiedDatabaseManager:
 
             return session.exec(query).all()
 
-    def get_summary_statistics(self) -> Dict[str, Any]:
-        """
-        Get summary statistics for all data in the database.
+    def _top_contributors_dict(self, session: Session, *, limit: int = 10) -> dict[str, float]:
+        """Top contributors by transaction amount (SQL aggregate, no full-table load)."""
+        person_name = func.trim(
+            func.concat_ws(
+                " ",
+                UnifiedPerson.first_name,
+                UnifiedPerson.middle_name,
+                UnifiedPerson.last_name,
+                UnifiedPerson.suffix,
+            )
+        )
+        display_name = case(
+            (
+                UnifiedPerson.id.isnot(None),
+                func.coalesce(
+                    func.nullif(person_name, ""),
+                    UnifiedPerson.organization,
+                    "Unknown",
+                ),
+            ),
+            else_=func.coalesce(UnifiedEntity.name, UnifiedEntity.normalized_name),
+        )
+        amount_sum = _nonzero_amount_sum(UnifiedTransaction.amount)
+        rows = session.exec(
+            select(display_name, amount_sum)
+            .join(
+                UnifiedContribution,
+                UnifiedContribution.transaction_id == UnifiedTransaction.id,
+            )
+            .join(
+                UnifiedEntity,
+                UnifiedContribution.contributor_entity_id == UnifiedEntity.id,
+            )
+            .outerjoin(UnifiedPerson, UnifiedEntity.person_id == UnifiedPerson.id)
+            .where(
+                UnifiedTransaction.amount.isnot(None),
+                UnifiedTransaction.amount != 0,
+            )
+            .group_by(display_name)
+            .having(display_name.isnot(None))
+            .order_by(amount_sum.desc())
+            .limit(limit)
+        ).all()
+        return {name: float(total or 0) for name, total in rows if name}
 
-        Returns:
-            Dictionary with summary statistics
-        """
+    def get_summary_statistics(self) -> dict[str, Any]:
+        """Get summary statistics for all data in the database."""
         with self.get_session() as session:
-            # Total transactions
-            total_transactions = session.exec(
-                select(UnifiedTransaction).options(*_transaction_analytics_options())
+            total_transactions, total_amount = session.exec(
+                select(
+                    func.count(UnifiedTransaction.id),
+                    _nonzero_amount_sum(UnifiedTransaction.amount),
+                )
+            ).one()
+
+            by_state_rows = session.exec(
+                select(
+                    func.coalesce(State.code, "UNKNOWN"),
+                    func.count(UnifiedTransaction.id),
+                    _nonzero_amount_sum(UnifiedTransaction.amount),
+                )
+                .join(State, UnifiedTransaction.state_id == State.id, isouter=True)
+                .group_by(State.code)
             ).all()
 
-            # Total amount
-            total_amount = sum(tx.amount for tx in total_transactions if tx.amount)
-
-            # By state
-            states = {}
-            for tx in total_transactions:
-                state_code = tx.state.code if tx.state else "UNKNOWN"
-                if state_code not in states:
-                    states[state_code] = {"count": 0, "total_amount": 0}
-                states[state_code]["count"] += 1
-                if tx.amount:
-                    states[state_code]["total_amount"] += tx.amount
-
-            # By transaction type
-            types = {}
-            for tx in total_transactions:
-                tx_type = tx.transaction_type.value
-                if tx_type not in types:
-                    types[tx_type] = {"count": 0, "total_amount": 0}
-                types[tx_type]["count"] += 1
-                if tx.amount:
-                    types[tx_type]["total_amount"] += tx.amount
-
-            # Top contributors (via contribution → contributor entity)
-            contributor_totals = {}
-            for tx in total_transactions:
-                contributor_name = _contributor_display_name(tx)
-                if contributor_name:
-                    contributor_totals.setdefault(contributor_name, 0)
-                    contributor_totals[contributor_name] += tx.amount
-
-            top_contributors = dict(
-                sorted(contributor_totals.items(), key=lambda x: x[1], reverse=True)[:10]
-            )
+            by_type_rows = session.exec(
+                select(
+                    UnifiedTransaction.transaction_type,
+                    func.count(UnifiedTransaction.id),
+                    _nonzero_amount_sum(UnifiedTransaction.amount),
+                ).group_by(UnifiedTransaction.transaction_type)
+            ).all()
 
             return {
-                "total_transactions": len(total_transactions),
-                "total_amount": float(total_amount),
-                "by_state": states,
-                "by_type": types,
-                "top_contributors": top_contributors,
+                "total_transactions": total_transactions,
+                "total_amount": float(total_amount or 0),
+                "by_state": {
+                    state_code: {
+                        "count": count,
+                        "total_amount": float(amount or 0),
+                    }
+                    for state_code, count, amount in by_state_rows
+                },
+                "by_type": {
+                    _transaction_type_key(tx_type): {
+                        "count": count,
+                        "total_amount": float(amount or 0),
+                    }
+                    for tx_type, count, amount in by_type_rows
+                },
+                "top_contributors": self._top_contributors_dict(session, limit=10),
             }
 
-    def get_cross_state_analysis(self) -> Dict[str, Any]:
-        """
-        Get cross-state analysis of the data.
-
-        Returns:
-            Dictionary with cross-state analysis
-        """
+    def get_cross_state_analysis(self) -> dict[str, Any]:
+        """Get cross-state analysis of the data."""
         with self.get_session() as session:
-            # Get all transactions with their relationships
-            query = select(UnifiedTransaction).options(
-                selectinload(UnifiedTransaction.persons),
-                *_transaction_analytics_options(),
-            )
-            transactions = session.exec(query).all()
+            total_transactions = session.exec(
+                select(func.count(UnifiedTransaction.id))
+            ).one()
 
-            analysis = {
-                "total_transactions": len(transactions),
-                "states": {},
-                "transaction_types": {},
+            state_rows = session.exec(
+                select(
+                    State.code,
+                    func.count(UnifiedTransaction.id),
+                    func.coalesce(func.sum(UnifiedTransaction.amount), 0),
+                )
+                .join(State, UnifiedTransaction.state_id == State.id, isouter=True)
+                .group_by(State.code)
+            ).all()
+
+            type_rows = session.exec(
+                select(
+                    UnifiedTransaction.transaction_type,
+                    func.count(UnifiedTransaction.id),
+                    func.coalesce(func.sum(UnifiedTransaction.amount), 0),
+                ).group_by(UnifiedTransaction.transaction_type)
+            ).all()
+
+            amount_range_rows = session.exec(
+                select(
+                    func.sum(
+                        case((UnifiedTransaction.amount <= 100, 1), else_=0)
+                    ),
+                    func.sum(
+                        case(
+                            (
+                                (UnifiedTransaction.amount > 100)
+                                & (UnifiedTransaction.amount <= 1000),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    func.sum(
+                        case(
+                            (
+                                (UnifiedTransaction.amount > 1000)
+                                & (UnifiedTransaction.amount <= 10000),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    func.sum(case((UnifiedTransaction.amount > 10000, 1), else_=0)),
+                )
+            ).one()
+
+            top_committee_rows = session.exec(
+                select(
+                    UnifiedCommittee.name,
+                    func.coalesce(func.sum(UnifiedTransaction.amount), 0),
+                )
+                .join(
+                    UnifiedTransaction,
+                    UnifiedTransaction.committee_id == UnifiedCommittee.filer_id,
+                    isouter=True,
+                )
+                .group_by(UnifiedCommittee.filer_id, UnifiedCommittee.name)
+                .order_by(func.coalesce(func.sum(UnifiedTransaction.amount), 0).desc())
+                .limit(10)
+            ).all()
+
+            return {
+                "total_transactions": total_transactions,
+                "states": {
+                    (row[0] or "UNKNOWN"): {
+                        "count": row[1],
+                        "total_amount": float(row[2] or 0),
+                    }
+                    for row in state_rows
+                },
+                "transaction_types": {
+                    row[0].value: {
+                        "count": row[1],
+                        "total_amount": float(row[2] or 0),
+                    }
+                    for row in type_rows
+                },
                 "top_contributors": {},
-                "top_committees": {},
-                "amount_ranges": {"0-100": 0, "100-1000": 0, "1000-10000": 0, "10000+": 0},
+                "top_committees": {
+                    row[0]: float(row[1] or 0)
+                    for row in top_committee_rows
+                    if row[0] is not None
+                },
+                "amount_ranges": {
+                    "0-100": int(amount_range_rows[0] or 0),
+                    "100-1000": int(amount_range_rows[1] or 0),
+                    "1000-10000": int(amount_range_rows[2] or 0),
+                    "10000+": int(amount_range_rows[3] or 0),
+                },
             }
-
-            # Analyze each transaction
-            for tx in transactions:
-                # State analysis
-                state_code = tx.state.code if tx.state else "UNKNOWN"
-                if state_code not in analysis["states"]:
-                    analysis["states"][state_code] = {"count": 0, "total_amount": 0}
-                analysis["states"][state_code]["count"] += 1
-                if tx.amount:
-                    analysis["states"][state_code]["total_amount"] += tx.amount
-
-                # Transaction type analysis
-                tx_type = tx.transaction_type.value
-                if tx_type not in analysis["transaction_types"]:
-                    analysis["transaction_types"][tx_type] = {"count": 0, "total_amount": 0}
-                analysis["transaction_types"][tx_type]["count"] += 1
-                if tx.amount:
-                    analysis["transaction_types"][tx_type]["total_amount"] += tx.amount
-
-                # Amount range analysis
-                if tx.amount:
-                    amount = float(tx.amount)
-                    if amount <= 100:
-                        analysis["amount_ranges"]["0-100"] += 1
-                    elif amount <= 1000:
-                        analysis["amount_ranges"]["100-1000"] += 1
-                    elif amount <= 10000:
-                        analysis["amount_ranges"]["1000-10000"] += 1
-                    else:
-                        analysis["amount_ranges"]["10000+"] += 1
-
-                # Contributor analysis (via contribution → contributor entity)
-                contributor_name = _contributor_display_name(tx)
-                if contributor_name:
-                    analysis["top_contributors"].setdefault(contributor_name, 0)
-                    analysis["top_contributors"][contributor_name] += tx.amount
-
-                # Committee analysis
-                if tx.committee and tx.amount:
-                    committee_name = tx.committee.name
-                    if committee_name not in analysis["top_committees"]:
-                        analysis["top_committees"][committee_name] = 0
-                    analysis["top_committees"][committee_name] += tx.amount
-
-            # Sort top contributors and committees
-            analysis["top_contributors"] = dict(
-                sorted(analysis["top_contributors"].items(), key=lambda x: x[1], reverse=True)[:10]
-            )
-            analysis["top_committees"] = dict(
-                sorted(analysis["top_committees"].items(), key=lambda x: x[1], reverse=True)[:10]
-            )
-
-            return analysis
 
     def export_to_json(
         self,
         output_path: Path,
-        state: Optional[str] = None,
-        transaction_type: Optional[TransactionType] = None,
-        limit: Optional[int] = None,
+        state: str | None = None,
+        transaction_type: TransactionType | None = None,
+        limit: int | None = None,
     ):
         """
         Export transactions to JSON format.
@@ -609,238 +680,172 @@ class UnifiedDatabaseManager:
 
         _logger.info(f"Exported {len(export_data)} transactions to {output_path}")
 
-    def update_transaction(
+    def _update_entity(
         self,
-        transaction_id: int,
+        entity_model: type,
+        entity_id: int | str,
         updates: dict,
-        user: Optional[str] = None,
-        reason: Optional[str] = None,
-        amendment_details: Optional[str] = None,
-    ) -> Optional[UnifiedTransaction]:
-        """
-        Update a transaction, saving a version snapshot before updating.
-        Args:
-            transaction_id: The id of the transaction to update
-            updates: Dict of fields to update
-            user: Who made the change
-            reason: Reason for change
-            amendment_details: Details about the amendment
-        Returns:
-            The updated UnifiedTransaction or None if not found
-        """
+        *,
+        version_model: type,
+        fk_field: str,
+        user: str | None = None,
+        reason: str | None = None,
+        amendment_details: str | None = None,
+    ) -> object | None:
+        """Generic update-with-versioning for any entity."""
         with self.get_session() as session:
-            tx = session.get(UnifiedTransaction, transaction_id)
-            if not tx:
+            entity = session.get(entity_model, entity_id)
+            if entity is None:
                 return None
-            # Get current version number
-            version_count = len(
-                session.exec(
-                    select(UnifiedTransactionVersion).where(
-                        UnifiedTransactionVersion.transaction_id == tx.id
-                    )
-                ).all()
-            )
+            version_count = session.exec(
+                select(func.count()).where(
+                    getattr(version_model, fk_field) == entity_id
+                )
+            ).one()
             _record_version(
                 session,
-                entity=tx,
-                version_model=UnifiedTransactionVersion,
-                fk_field="transaction_id",
-                fk_value=tx.id,
+                entity=entity,
+                version_model=version_model,
+                fk_field=fk_field,
+                fk_value=entity_id,
                 version_number=version_count + 1,
                 user=user,
                 reason=reason,
                 amendment_details=amendment_details,
             )
-            # Update fields
-            for k, v in updates.items():
-                setattr(tx, k, v)
-            tx.last_modified_at = _utc_now()
-            tx.last_modified_by = user
-            tx.change_reason = reason
-            tx.amendment_details = amendment_details
-            session.add(tx)
+            for key, value in updates.items():
+                if not hasattr(entity, key):
+                    raise AttributeError(
+                        f"{entity_model.__name__} has no field '{key}'"
+                    )
+                setattr(entity, key, value)
+            if hasattr(entity, "last_modified_at"):
+                entity.last_modified_at = _utc_now()
+            if hasattr(entity, "last_modified_by"):
+                entity.last_modified_by = user
+            if hasattr(entity, "change_reason"):
+                entity.change_reason = reason
+            if hasattr(entity, "amendment_details"):
+                entity.amendment_details = amendment_details
+            session.add(entity)
             session.commit()
-            session.refresh(tx)
-            return tx
+            session.refresh(entity)
+            return entity
+
+    def _get_versions(
+        self,
+        version_model: type,
+        fk_field: str,
+        entity_id: int | str,
+    ) -> list:
+        """Return all version records for an entity, ordered by version_number."""
+        with self.get_session() as session:
+            return session.exec(
+                select(version_model)
+                .where(getattr(version_model, fk_field) == entity_id)
+                .order_by(version_model.version_number)
+            ).all()
+
+    def update_transaction(
+        self,
+        transaction_id: int,
+        updates: dict,
+        user: str | None = None,
+        reason: str | None = None,
+        amendment_details: str | None = None,
+    ) -> UnifiedTransaction | None:
+        return self._update_entity(
+            UnifiedTransaction,
+            transaction_id,
+            updates,
+            version_model=UnifiedTransactionVersion,
+            fk_field="transaction_id",
+            user=user,
+            reason=reason,
+            amendment_details=amendment_details,
+        )
 
     def get_transaction_versions(self, transaction_id: int) -> list:
-        """
-        Get all versions for a transaction.
-        Args:
-            transaction_id: The id of the transaction
-        Returns:
-            List of UnifiedTransactionVersion objects
-        """
-        with self.get_session() as session:
-            versions = session.exec(
-                select(UnifiedTransactionVersion)
-                .where(UnifiedTransactionVersion.transaction_id == transaction_id)
-                .order_by(UnifiedTransactionVersion.version_number)
-            ).all()
-            return versions
+        return self._get_versions(
+            UnifiedTransactionVersion, "transaction_id", transaction_id
+        )
 
     def update_person(
         self,
         person_id: int,
         updates: dict,
-        user: Optional[str] = None,
-        reason: Optional[str] = None,
-        amendment_details: Optional[str] = None,
-    ) -> Optional[UnifiedPerson]:
-        """
-        Update a person, saving a version snapshot before updating.
-        """
-        with self.get_session() as session:
-            person = session.get(UnifiedPerson, person_id)
-            if not person:
-                return None
-            version_count = len(
-                session.exec(
-                    select(UnifiedPersonVersion).where(UnifiedPersonVersion.person_id == person.id)
-                ).all()
-            )
-            _record_version(
-                session,
-                entity=person,
-                version_model=UnifiedPersonVersion,
-                fk_field="person_id",
-                fk_value=person.id,
-                version_number=version_count + 1,
-                user=user,
-                reason=reason,
-                amendment_details=amendment_details,
-            )
-            for k, v in updates.items():
-                setattr(person, k, v)
-            session.add(person)
-            session.commit()
-            session.refresh(person)
-            return person
+        user: str | None = None,
+        reason: str | None = None,
+        amendment_details: str | None = None,
+    ) -> UnifiedPerson | None:
+        return self._update_entity(
+            UnifiedPerson,
+            person_id,
+            updates,
+            version_model=UnifiedPersonVersion,
+            fk_field="person_id",
+            user=user,
+            reason=reason,
+            amendment_details=amendment_details,
+        )
 
     def get_person_versions(self, person_id: int) -> list:
-        """
-        Get all versions for a person.
-        """
-        with self.get_session() as session:
-            versions = session.exec(
-                select(UnifiedPersonVersion)
-                .where(UnifiedPersonVersion.person_id == person_id)
-                .order_by(UnifiedPersonVersion.version_number)
-            ).all()
-            return versions
+        return self._get_versions(UnifiedPersonVersion, "person_id", person_id)
 
     def update_committee(
         self,
         committee_id: int,
         updates: dict,
-        user: Optional[str] = None,
-        reason: Optional[str] = None,
-        amendment_details: Optional[str] = None,
-    ) -> Optional[UnifiedCommittee]:
-        """
-        Update a committee, saving a version snapshot before updating.
-        """
-        with self.get_session() as session:
-            committee = session.get(UnifiedCommittee, committee_id)
-            if not committee:
-                return None
-            version_count = len(
-                session.exec(
-                    select(UnifiedCommitteeVersion).where(
-                        UnifiedCommitteeVersion.committee_id == committee.id
-                    )
-                ).all()
-            )
-            _record_version(
-                session,
-                entity=committee,
-                version_model=UnifiedCommitteeVersion,
-                fk_field="committee_id",
-                fk_value=committee.id,
-                version_number=version_count + 1,
-                user=user,
-                reason=reason,
-                amendment_details=amendment_details,
-            )
-            for k, v in updates.items():
-                setattr(committee, k, v)
-            session.add(committee)
-            session.commit()
-            session.refresh(committee)
-            return committee
+        user: str | None = None,
+        reason: str | None = None,
+        amendment_details: str | None = None,
+    ) -> UnifiedCommittee | None:
+        return self._update_entity(
+            UnifiedCommittee,
+            committee_id,
+            updates,
+            version_model=UnifiedCommitteeVersion,
+            fk_field="committee_id",
+            user=user,
+            reason=reason,
+            amendment_details=amendment_details,
+        )
 
     def get_committee_versions(self, committee_id: int) -> list:
-        """
-        Get all versions for a committee.
-        """
-        with self.get_session() as session:
-            versions = session.exec(
-                select(UnifiedCommitteeVersion)
-                .where(UnifiedCommitteeVersion.committee_id == committee_id)
-                .order_by(UnifiedCommitteeVersion.version_number)
-            ).all()
-            return versions
+        return self._get_versions(
+            UnifiedCommitteeVersion, "committee_id", committee_id
+        )
 
     def update_address(
         self,
         address_id: int,
         updates: dict,
-        user: Optional[str] = None,
-        reason: Optional[str] = None,
-        amendment_details: Optional[str] = None,
-    ) -> Optional[UnifiedAddress]:
-        """
-        Update an address, saving a version snapshot before updating.
-        """
-        with self.get_session() as session:
-            address = session.get(UnifiedAddress, address_id)
-            if not address:
-                return None
-            version_count = len(
-                session.exec(
-                    select(UnifiedAddressVersion).where(
-                        UnifiedAddressVersion.address_id == address.id
-                    )
-                ).all()
-            )
-            _record_version(
-                session,
-                entity=address,
-                version_model=UnifiedAddressVersion,
-                fk_field="address_id",
-                fk_value=address.id,
-                version_number=version_count + 1,
-                user=user,
-                reason=reason,
-                amendment_details=amendment_details,
-            )
-            for k, v in updates.items():
-                setattr(address, k, v)
-            session.add(address)
-            session.commit()
-            session.refresh(address)
-            return address
+        user: str | None = None,
+        reason: str | None = None,
+        amendment_details: str | None = None,
+    ) -> UnifiedAddress | None:
+        return self._update_entity(
+            UnifiedAddress,
+            address_id,
+            updates,
+            version_model=UnifiedAddressVersion,
+            fk_field="address_id",
+            user=user,
+            reason=reason,
+            amendment_details=amendment_details,
+        )
 
     def get_address_versions(self, address_id: int) -> list:
-        """
-        Get all versions for an address.
-        """
-        with self.get_session() as session:
-            versions = session.exec(
-                select(UnifiedAddressVersion)
-                .where(UnifiedAddressVersion.address_id == address_id)
-                .order_by(UnifiedAddressVersion.version_number)
-            ).all()
-            return versions
+        return self._get_versions(UnifiedAddressVersion, "address_id", address_id)
 
     def add_person_to_committee(
         self,
         person_id: int,
         committee_id: str,
         role: CommitteeRole,
-        start_date: Optional[date] = None,
-        notes: Optional[str] = None,
-        user: Optional[str] = None,
+        start_date: date | None = None,
+        notes: str | None = None,
+        user: str | None = None,
         *,
         session: Session | None = None,
     ) -> UnifiedCommitteePerson:
@@ -874,9 +879,9 @@ class UnifiedDatabaseManager:
         person_id: int,
         committee_id: int,
         role: CommitteeRole,
-        end_date: Optional[date] = None,
-        user: Optional[str] = None,
-        reason: Optional[str] = None,
+        end_date: date | None = None,
+        user: str | None = None,
+        reason: str | None = None,
     ) -> bool:
         """
         Remove a person from a committee role (set as inactive).
@@ -904,7 +909,7 @@ class UnifiedDatabaseManager:
 
     def get_person_committee_roles(
         self, person_id: int, active_only: bool = True
-    ) -> List[UnifiedCommitteePerson]:
+    ) -> list[UnifiedCommitteePerson]:
         """
         Get all committee roles for a specific person.
         """
@@ -921,8 +926,8 @@ class UnifiedDatabaseManager:
             return session.exec(query.order_by(UnifiedCommitteePerson.start_date)).all()
 
     def get_committee_persons(
-        self, committee_id: int, role: Optional[CommitteeRole] = None, active_only: bool = True
-    ) -> List[UnifiedCommitteePerson]:
+        self, committee_id: int, role: CommitteeRole | None = None, active_only: bool = True
+    ) -> list[UnifiedCommitteePerson]:
         """
         Get all people for a specific committee, optionally filtered by role.
         """
@@ -946,68 +951,31 @@ class UnifiedDatabaseManager:
         self,
         committee_person_id: int,
         updates: dict,
-        user: Optional[str] = None,
-        reason: Optional[str] = None,
-        amendment_details: Optional[str] = None,
-    ) -> Optional[UnifiedCommitteePerson]:
-        """
-        Update a committee-person relationship, saving a version snapshot before updating.
-        """
-        with self.get_session() as session:
-            cp = session.get(UnifiedCommitteePerson, committee_person_id)
-            if not cp:
-                return None
-
-            # Save version snapshot
-            version_count = len(
-                session.exec(
-                    select(UnifiedCommitteePersonVersion).where(
-                        UnifiedCommitteePersonVersion.committee_person_id == cp.id
-                    )
-                ).all()
-            )
-
-            _record_version(
-                session,
-                entity=cp,
-                version_model=UnifiedCommitteePersonVersion,
-                fk_field="committee_person_id",
-                fk_value=cp.id,
-                version_number=version_count + 1,
-                user=user,
-                reason=reason,
-                amendment_details=amendment_details,
-            )
-
-            # Apply updates
-            for k, v in updates.items():
-                setattr(cp, k, v)
-            cp.last_modified_at = _utc_now()
-            cp.last_modified_by = user
-            cp.change_reason = reason
-
-            session.add(cp)
-            session.commit()
-            session.refresh(cp)
-            return cp
+        user: str | None = None,
+        reason: str | None = None,
+        amendment_details: str | None = None,
+    ) -> UnifiedCommitteePerson | None:
+        return self._update_entity(
+            UnifiedCommitteePerson,
+            committee_person_id,
+            updates,
+            version_model=UnifiedCommitteePersonVersion,
+            fk_field="committee_person_id",
+            user=user,
+            reason=reason,
+            amendment_details=amendment_details,
+        )
 
     def get_committee_person_versions(
         self, committee_person_id: int
-    ) -> List[UnifiedCommitteePersonVersion]:
-        """
-        Get all versions for a committee-person relationship.
-        """
-        with self.get_session() as session:
-            versions = session.exec(
-                select(UnifiedCommitteePersonVersion)
-                .where(UnifiedCommitteePersonVersion.committee_person_id == committee_person_id)
-                .order_by(UnifiedCommitteePersonVersion.version_number)
-            ).all()
-            return versions
+    ) -> list[UnifiedCommitteePersonVersion]:
+        return self._get_versions(
+            UnifiedCommitteePersonVersion, "committee_person_id", committee_person_id
+        )
 
     def get_active_treasurers(
-        self, committee_id: Optional[int] = None
-    ) -> List[UnifiedCommitteePerson]:
+        self, committee_id: int | None = None
+    ) -> list[UnifiedCommitteePerson]:
         """
         Get all active treasurers, optionally filtered by committee.
         """
@@ -1026,7 +994,7 @@ class UnifiedDatabaseManager:
 
     def get_committee_officers(
         self, committee_id: int, active_only: bool = True
-    ) -> Dict[CommitteeRole, List[UnifiedCommitteePerson]]:
+    ) -> dict[CommitteeRole, list[UnifiedCommitteePerson]]:
         """
         Get all officers for a committee, grouped by role.
         """
@@ -1042,8 +1010,8 @@ class UnifiedDatabaseManager:
         self,
         transaction_person_id: int,
         committee_person_id: int,
-        user: Optional[str] = None,
-        notes: Optional[str] = None,
+        user: str | None = None,
+        notes: str | None = None,
     ) -> bool:
         """
         Link a transaction-person relationship to a committee role.
@@ -1063,7 +1031,7 @@ class UnifiedDatabaseManager:
             session.commit()
             return True
 
-    def get_officer_contributions(self, committee_person_id: int) -> List[UnifiedTransactionPerson]:
+    def get_officer_contributions(self, committee_person_id: int) -> list[UnifiedTransactionPerson]:
         """
         Get all contributions made by a committee officer.
         """
@@ -1082,7 +1050,7 @@ class UnifiedDatabaseManager:
             )
             return session.exec(query).all()
 
-    def get_officer_expenditures(self, committee_person_id: int) -> List[UnifiedTransactionPerson]:
+    def get_officer_expenditures(self, committee_person_id: int) -> list[UnifiedTransactionPerson]:
         """
         Get all expenditures received by a committee officer.
         """
@@ -1102,8 +1070,8 @@ class UnifiedDatabaseManager:
             return session.exec(query).all()
 
     def get_committee_officer_activities(
-        self, committee_id: int, role: Optional[CommitteeRole] = None
-    ) -> Dict[str, List[UnifiedTransactionPerson]]:
+        self, committee_id: int, role: CommitteeRole | None = None
+    ) -> dict[str, list[UnifiedTransactionPerson]]:
         """
         Get all financial activities (contributions and expenditures) for committee officers.
         """
@@ -1155,7 +1123,7 @@ class UnifiedDatabaseManager:
 
             return activities
 
-    def get_person_committee_financial_summary(self, person_id: int) -> Dict[str, Any]:
+    def get_person_committee_financial_summary(self, person_id: int) -> dict[str, Any]:
         """
         Get a financial summary for a person across all their committee roles.
         """
@@ -1242,8 +1210,8 @@ class UnifiedDatabaseManager:
             return summary
 
     def auto_link_transactions_to_committee_roles(
-        self, committee_id: str, user: Optional[str] = None
-    ) -> Dict[str, int]:
+        self, committee_id: str, user: str | None = None
+    ) -> dict[str, int]:
         """
         Automatically link existing transactions to committee roles based on person and committee matching.
         This is useful when you have existing data and want to retroactively link officer activities.
@@ -1290,7 +1258,7 @@ class UnifiedDatabaseManager:
             return linked_counts
 
     def process_transaction_with_officer_linking(
-        self, transaction_data: dict, committee_officers: List[dict], user: Optional[str] = None
+        self, transaction_data: dict, committee_officers: list[dict], user: str | None = None
     ) -> UnifiedTransaction:
         """
         Process a new transaction and automatically link it to committee officers if applicable.
@@ -1340,8 +1308,8 @@ class UnifiedDatabaseManager:
             return transaction
 
     def get_unlinked_officer_transactions(
-        self, committee_id: Optional[int] = None
-    ) -> List[UnifiedTransactionPerson]:
+        self, committee_id: int | None = None
+    ) -> list[UnifiedTransactionPerson]:
         """
         Find transactions involving committee officers that haven't been linked to their roles yet.
         Useful for identifying transactions that need manual review and linking.

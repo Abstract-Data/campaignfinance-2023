@@ -160,11 +160,14 @@ class StateConfig:
     @staticmethod
     @lru_cache
     def get_file_count(file: Path) -> int:
-        return pl.scan_csv(
-            file,
-            ignore_errors=True,
-            low_memory=True
-        ).collect().height
+        try:
+            return pl.scan_csv(
+                file,
+                ignore_errors=True,
+                low_memory=True,
+            ).collect().height
+        except pl.exceptions.ComputeError:
+            return 0
 
     def get_record_counts(self) -> Optional[Dict[str, int]]:
         files = list(self.TEMP_FOLDER.glob('*.csv'))

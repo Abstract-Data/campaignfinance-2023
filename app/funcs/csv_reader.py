@@ -1,4 +1,3 @@
-
 import csv
 import datetime
 from dataclasses import dataclass
@@ -14,6 +13,7 @@ def async_include_file_origin(func):
         async for record in func(*args, **kwargs):
             record["file_origin"] = file.stem
             yield record
+
     return wrapper
 
 
@@ -21,11 +21,15 @@ def async_include_download_date(func):
     async def wrapper(*args, **kwargs):
         file = Path(args[1])
         last_modified_timestamp = file.stat().st_mtime
-        last_modified_date = datetime.datetime.fromtimestamp(last_modified_timestamp).strftime("%Y-%m-%d")
+        last_modified_date = datetime.datetime.fromtimestamp(last_modified_timestamp).strftime(
+            "%Y-%m-%d"
+        )
         async for record in func(*args, **kwargs):
             record["download_date"] = last_modified_date
             yield record
+
     return wrapper
+
 
 def include_file_origin(func: Callable) -> Callable:
     def wrapper(*args, **kwargs) -> Generator[Dict[int, Dict], None, None]:
@@ -33,6 +37,7 @@ def include_file_origin(func: Callable) -> Callable:
         for record in func(*args, **kwargs):
             record["file_origin"] = file.stem
             yield record
+
     return wrapper
 
 
@@ -40,10 +45,13 @@ def include_download_date(func: Callable) -> Callable:
     def wrapper(*args, **kwargs) -> Generator[Dict[int, Dict], None, None]:
         file = Path(args[1])
         last_modified_timestamp = file.stat().st_mtime
-        last_modified_date = datetime.datetime.fromtimestamp(last_modified_timestamp).strftime("%Y-%m-%d")
+        last_modified_date = datetime.datetime.fromtimestamp(last_modified_timestamp).strftime(
+            "%Y-%m-%d"
+        )
         for record in func(*args, **kwargs):
             record["download_date"] = last_modified_date
             yield record
+
     return wrapper
 
 
@@ -58,23 +66,33 @@ class FileReader:
     @include_download_date
     def read_csv(self, file: Path, **kwargs) -> Generator[Dict[int, Dict], None, None]:
         try:
-            with open(file, "r", encoding='utf-8') as _file:
+            with open(file, "r", encoding="utf-8") as _file:
                 _records = csv.DictReader(_file)
-                if kwargs.get('lowercase_headers'):
+                if kwargs.get("lowercase_headers"):
                     _records.fieldnames = [x.lower() for x in _records.fieldnames]
                 for _record in _records:
-                    if kwargs.get('change_space_in_headers'):
-                        _record = {k.replace(' ', '_'): v for k, v in _record.items() if k is not None}
+                    if kwargs.get("change_space_in_headers"):
+                        _record = {
+                            k.replace(" ", "_"): v for k, v in _record.items() if k is not None
+                        }
                     yield _record
         except UnicodeDecodeError:
-            with open(file, 'r', encoding='ISO-8859-1') as f:
-                _records = csv.DictReader(f, delimiter=',', quotechar='"')
-                if kwargs.get('lowercase_headers'):
+            with open(file, "r", encoding="ISO-8859-1") as f:
+                _records = csv.DictReader(f, delimiter=",", quotechar='"')
+                if kwargs.get("lowercase_headers"):
                     _records.fieldnames = [x.lower() for x in _records.fieldnames]
                 for _record in _records:
-                    if kwargs.get('change_space_in_headers'):
-                        _record = {k.replace(' ', '_'): v for k, v in _record.items() if k is not None}
+                    if kwargs.get("change_space_in_headers"):
+                        _record = {
+                            k.replace(" ", "_"): v for k, v in _record.items() if k is not None
+                        }
                     yield _record
+
+    def read(self, file_path: Path, **kwargs) -> Generator[Dict[int, Dict], None, None]:
+        """Dispatch to read_parquet or read_csv based on file extension."""
+        if file_path.suffix.lower() == ".parquet":
+            return self.read_parquet(file_path, **kwargs)
+        return self.read_csv(file_path, **kwargs)
 
     def read_folder(self, folder: Path, **kwargs) -> Generator[Dict[int, Dict], None, None]:
         files = list(folder.glob("*.csv"))

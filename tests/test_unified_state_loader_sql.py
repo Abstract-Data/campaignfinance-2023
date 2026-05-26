@@ -43,7 +43,7 @@ def test_uses_sqlmodel_select_for_tx_persons() -> None:
 def test_uses_sqlmodel_select_for_committee_person() -> None:
     """Committee-person lookup must be parameterized; role passed as a bound value."""
     assert "select(UnifiedCommitteePerson).where(" in SOURCE
-    assert "UnifiedCommitteePerson.role == officer['role']" in SOURCE
+    assert 'UnifiedCommitteePerson.role == officer["role"]' in SOURCE
 
 
 def test_uses_sqlmodel_update_for_committee_person_id() -> None:

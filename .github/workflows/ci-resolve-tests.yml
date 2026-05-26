@@ -20,6 +20,10 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # Splink is pinned to 4.0.16 in pyproject.toml — update intentionally, not automatically
+      - name: Verify Splink version
+        run: uv run python -c "import splink; print('Splink:', splink.__version__)"
+
       - name: Run resolve tests
         run: >
           uv run pytest tests/resolve -m "not integration" -v --tb=short

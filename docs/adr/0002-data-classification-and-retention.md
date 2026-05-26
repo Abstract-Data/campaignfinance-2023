@@ -20,7 +20,10 @@ this data in the repository.
   unless a state agency formally retracts or amends a filing; do not implement
   automated deletion of donor/filer PII from the unified schema.
 - **Minimization in logs:** Never log raw PII fields at INFO or above; use record
-  IDs, file origins, and aggregate counts in operational logs.
+  IDs, file origins, and aggregate counts in operational logs. The
+  `UnifiedTransaction.raw_data` JSON column stores full source rows including PII —
+  it must never appear in DEBUG logs or API responses (see
+  `docs/DATA_DICTIONARY.md`).
 - **Downstream use:** Entity-resolution outputs may link records across filings;
   human review queues must treat matched clusters as sensitive.
 

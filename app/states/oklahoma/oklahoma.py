@@ -23,27 +23,30 @@ OklahomaValidatorType = Type[validators.OklahomaSettings]
 FileRecords = Generator[Dict, None, None]
 
 fields = funcs.read_toml(Path(__file__).parent / "oklahoma_fields.toml")
-
+OklahomaCategoryConfig = partial(CategoryConfig, FIELDS=fields)
 
 OKLAHOMA_CONFIGURATION = StateConfig(
     STATE_NAME="Oklahoma",
     STATE_ABBREVIATION="OK",
     CATEGORY_TYPES={
-            'expenses': CategoryConfig(
-                SUFFIX=fields['file-suffixes']['expenses'],
-                VALIDATOR=validators.OklahomaExpenditure),
-            'contributions': CategoryConfig(
-                SUFFIX=fields['file-suffixes']['contributions'],
-                VALIDATOR=validators.OklahomaContribution),
-            'lobby': CategoryConfig(
-                SUFFIX=fields['file-suffixes']['lobby'],
-                VALIDATOR=validators.OklahomaLobbyistExpenditure)
+        "expenses": OklahomaCategoryConfig(
+            DESC="expenses",
+            SUFFIX=fields["file-suffixes"]["expenses"],
+            VALIDATOR=validators.OklahomaExpenditure,
+        ),
+        "contributions": OklahomaCategoryConfig(
+            DESC="contributions",
+            SUFFIX=fields["file-suffixes"]["contributions"],
+            VALIDATOR=validators.OklahomaContributionCreate,
+        ),
+        "lobby": OklahomaCategoryConfig(
+            DESC="lobby",
+            SUFFIX=fields["file-suffixes"]["lobby"],
+            VALIDATOR=validators.OklahomaLobbyistExpenditure,
+        ),
     },
     DATABASE_ENGINE=ENGINE,
-    CSV_CONFIG=CSVReaderConfig(
-        lowercase_headers=True,
-        replace_space_in_headers=True
-    )
+    CSV_CONFIG=CSVReaderConfig(lowercase_headers=True, replace_space_in_headers=True),
 )
 
 

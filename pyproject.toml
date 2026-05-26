@@ -31,8 +31,9 @@ dependencies = [
     "polars>=1.19.0",
     "typer>=0.25.1",
     "jellyfish>=1.2.1",
-    "splink>=4.0.16",
+    "splink>=4.0.16,<4.0.17",
     "duckdb>=1.5.3",
+    "psycopg2-binary>=2.9.12",
 ]
 
 [project.scripts]
@@ -80,4 +81,4 @@ omit = [
 ]
 
 [tool.coverage.report]
-fail_under = 60
+fail_under = 70

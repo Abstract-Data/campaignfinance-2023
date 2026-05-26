@@ -215,7 +215,27 @@ class TestCrossStateAnalysis:
         assert analysis["total_transactions"] == 4
         assert analysis["states"]["TX"]["count"] == 2
         assert analysis["amount_ranges"]["10000+"] == 1
-        assert analysis["top_contributors"] == {}
+        assert isinstance(analysis["top_contributors"], dict)
+
+    def test_null_transaction_type_bucket(
+        self, analytics_db: UnifiedDatabaseManager, sqlite_engine
+    ) -> None:
+        with Session(sqlite_engine) as session:
+            state = State(name="texas", code="TX")
+            session.add(state)
+            session.flush()
+            session.add(
+                UnifiedTransaction(
+                    amount=Decimal("50.00"),
+                    transaction_type=None,
+                    transaction_date=date(2024, 1, 1),
+                    state_id=state.id,
+                )
+            )
+            session.commit()
+        analysis = analytics_db.get_cross_state_analysis()
+        assert analysis["total_transactions"] == 1
+        assert sum(b["count"] for b in analysis["transaction_types"].values()) == 1
 
 
 # ---------------------------------------------------------------------------

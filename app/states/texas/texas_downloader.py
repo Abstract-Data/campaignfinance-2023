@@ -52,7 +52,7 @@ class TECDownloader(FileDownloaderABC):
             verify_markup(
                 html,
                 expectation=TEXAS_TEC_PORTAL,
-                compare_fingerprint=False,
+                compare_fingerprint=True,
                 logger_instance=logger,
             )
         except ScraperMarkupError as exc:

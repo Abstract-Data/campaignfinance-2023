@@ -126,6 +126,7 @@ This project has comprehensive documentation. **Always consult the relevant docs
 | `docs/DEPLOYMENTS.md` | Build, environments, rollout, rollback | When running loaders or releasing |
 | `docs/DATA_RELATIONSHIPS.md` | Relationships across the unified model | When working with the unified schema |
 | `docs/adr/` | Architecture / AI decision records | When making or reviewing a significant decision |
+| `docs/GITBUTLER.md` | GitButler branch workflow, virtual branch conventions | When branching, stacking, or merging |
 | `CHANGELOG.md` | Version history, recent changes | When checking what's changed recently |
 
 ### Quick Reference
@@ -801,7 +802,7 @@ All Notion task creation goes through the `notion-publisher` subagent, which lin
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **campaignfinance** (4489 symbols, 10906 relationships, 246 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **campaignfinance** (5513 symbols, 12520 relationships, 286 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -906,7 +907,7 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 
 ## Learned User Preferences
 
-- For multi-agent pipeline work (data-resolution, state-data-cli), dispatch parallel agents within each wave and run waves sequentially; do not assign one monolithic agent to execute all waves
+- For multi-agent pipeline/remediation work, do not use one monolithic agent to implement wave tasks; never delegate an entire multi-wave plan to one background `generalPurpose` Task agent—interrupt if dispatched; dispatch parallel task agents plus one `*z` integrator per wave, run waves sequentially, and have the parent session merge outputs and run `/review` after each wave (orchestrator coordinates only)
 - Launch an entire parallel wave as one multitask batch (one background Task agent per task brief via `run_in_background: true`), then wait for that wave to complete and merge before starting the next wave
 - Integration tasks (`*z`) are single serial agents that run only after all parallel tasks in that wave are merged
 - Hand each worker the full `task-*.md` brief from `prompts/data-resolution-pipeline/` or `prompts/review-remediation*/`; do not summarize or substitute a shorter brief
@@ -914,22 +915,22 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 - Prefer incremental fixes over redesigns; describe structural or provider changes and wait for explicit approval before implementing
 - Do not reiterate or summarize subagent results to the user unless asked or multi-task synthesis is required
 - After `/review`, split recommended fixes across parallel agents partitioned by file ownership (same wave pattern as pipeline tasks)
-- After each wave or review-remediation batch (including `review-remediation-round2`), run `/review` and loop fix → re-review until DoD PASS; defer nothing from review reports
+- After each wave or review-remediation batch (including `review-remediation-run2`), run `/review` and loop fix → re-review until DoD PASS; defer nothing from review reports; remediation task agents run `/deslop` on owned files before wave merge
 - Parallel task agents must enforce strict brief scope (create ONLY listed files; do not edit sibling-task files or `*z`-owned registries like `review/__init__.py`)
 - When executing an attached `.cursor/plans/*.plan.md`, do NOT edit the plan file itself
 - When plan todos already exist, mark them in_progress/completed as you work; do not recreate them
 
 ## Learned Workspace Facts
 
-- Data-resolution pipeline is orchestrated in 11 waves (Wave 0–10) per `.cursor/plans/data_resolution_waves_d3596502.plan.md`; Phase 0 is a verification gate, not a greenfield rebuild
+- Data-resolution pipeline is orchestrated in 11 waves (Wave 0–10) per `.cursor/plans/data_resolution_waves_d3596502.plan.md`; post-`/review` parallel fixes use `.cursor/plans/resolution_pipeline_fixes_ea1848c8.plan.md`; Phase 0 is a verification gate, not a greenfield rebuild
 - Authoritative task briefs live under `prompts/data-resolution-pipeline/` (30 `task-*.md` files); parallel tasks create new files only and `*z` integration tasks own registries, `__init__.py`, and cross-task wiring
 - Phase 0 (Wave 0/`0z`) code paths live under `app/core/source_models/`, `scripts/loaders/`, and `tests/resolve/`; Wave 0 agents must not create or edit `app/resolve/`; gate failures commonly involve stubbed transaction loading, incomplete DB bootstrap (`states`/`file_origins`), and missing report reconciliation; before Phase 1 run `uv run cf prepare texas` then full load via `scripts/loaders/production_loader.py`
-- Post-implementation review remediation: round 1 briefs under `prompts/review-remediation/`; round 2 under `prompts/review-remediation-round2/` (waves 1–5 + `COMPLETION.md`); phase work uses `remediation/*` GitButler branches and may not be on `gitbutler/workspace`
+- Post-implementation review remediation: round 1 briefs under `prompts/review-remediation/` with plan `.cursor/plans/review_remediation_waves_1d9dad56.plan.md`; active Run 2 pack under `prompts/review-remediation-run2/` (waves 1–5 + `COMPLETION.md`) with plan `.cursor/plans/review_remediation_run_2_cfd210f4.plan.md` and phase branch `remediation-r3` (`prompts/review-remediation-round2/` is a separate earlier pack); work uses `remediation/*` GitButler branches and may not be on `gitbutler/workspace`; after Wave 3c, `app/core/unified_database.py` is a thin facade over `repository.py`, `officer_repository.py`, and `analytics.py`
 - Resolve pipeline code lives under `app/resolve/` (`models/`, `standardize/`, `stages/`, `review/`, `cli.py`, `run.py`, `reverse.py`); Phase 1 (1z) stages 1→2→3→7; Phase 2 (2z) adds 4→5→6 with survivorship (2d); Phase 3 is tasks 3a/3b/3c + 3z only (TASK-3d removed — feedback loop in 2b, verified by 3z)
 - Phase 2 inter-stage contracts: `candidate_pairs` → `scored_pairs` → `merge_edges` → `clusters`; parallel workers must not cross-import round-1 modules
 - `_resolution_schema_models()` in `app/resolve/run.py` must register all staging models (e.g. ScoredPair, ClusterAssignment) or stages 4/6 fail on schema create; `EntityCrosswalk.match_method` must reflect merge path (`exact`, `deterministic_rule`, `probabilistic`, `approved_review`)
-- Main app test gates: `uv run pytest tests app/tests --ignore=tests/resolve`; coverage gate `uv run pytest tests/ app/tests/ --cov=app --cov-fail-under=60 --ignore=tests/resolve`; resolve fast tier `uv run pytest tests/resolve -m "not integration"` (+ full `tests/resolve/` + `uv run ruff check app/resolve/` before resolve commits); CI via `ci-resolve-tests.yml` and `ci-resolve-integration.yml` (both `lfs: true`)
+- Main app test gates: `uv run pytest tests app/tests --ignore=tests/resolve`; coverage gate `uv run pytest tests/ app/tests/ --cov=app --cov-fail-under=60 --ignore=tests/resolve`; resolve fast tier `uv run pytest tests/resolve -m "not integration"` (+ full `tests/resolve/` + `uv run ruff check app/resolve/` before resolve commits); CI runs resolve via `ci.yml` job `resolve-tests` (reusable `ci-resolve-tests.yml`) plus `ci-resolve-integration.yml` (both `lfs: true`)
 - Golden-set CSVs at `tests/resolve/golden/*.csv` are Git LFS tracked; `.gitignore` negates `*.csv` for that path; fresh clones need `git lfs pull` for `test_match_quality.py`
-- GitButler often blocks raw `git checkout` of parallel virtual branches; parallel remediation commits may consolidate on one `remediation/*` branch — verify with `git ls-tree` and reconcile virtual branches before opening a PR
+- GitButler often blocks raw `git checkout`; virtual-branch overlap can leave fixes uncommitted — stack with `but move <child> <parent>`; if `but setup` fails with conflicts returning to `gitbutler/workspace`, use `but apply <phase-branch>` instead of raw git; for commit conflicts use `but resolve <commit-id>` → edit files (no `git add`/`git commit` during resolution) → `but resolve finish`; consolidate parallel remediation on one `remediation/*` branch and verify with `git ls-tree` before opening a PR
 - `scripts/loaders/production_loader.py` applies `max_records` per file (not globally) so subset loads reach all record types; nullable pledge entity FKs allow PLDG rows without Wave 1 entity resolution
 - Texas CSV→parquet conversion (`app/states/texas/texas_converter.py`) uses `infer_schema_length=0` (all-string columns) and skips `CFS-Codes`/`CFS-ReadMe` metadata `.txt` files; legacy imports expect `app/` on `sys.path` — CLI entry points must bootstrap paths for `uv run cf` without manual `PYTHONPATH`
