@@ -22,7 +22,7 @@ todos:
     status: completed
   - id: pr-optional
     content: "After final PASS: but push remediation-r3, open PR with backlog table + test plan"
-    status: in_progress
+    status: completed
 isProject: false
 ---
 
