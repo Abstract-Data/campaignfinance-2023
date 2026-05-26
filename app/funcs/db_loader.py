@@ -5,8 +5,9 @@ import itertools
 from collections.abc import Generator, Iterator
 from dataclasses import dataclass
 
-from app.logger import Logger
 from sqlmodel import Session, SQLModel, create_engine, select
+
+from app.logger import Logger
 
 
 @contextlib.contextmanager

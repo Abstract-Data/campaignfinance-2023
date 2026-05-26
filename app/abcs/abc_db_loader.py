@@ -7,8 +7,9 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 import inject
-from app.logger import Logger
 from sqlmodel import Session, SQLModel, create_engine, select
+
+from app.logger import Logger
 
 
 @dataclass
