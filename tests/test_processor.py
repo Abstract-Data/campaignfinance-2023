@@ -65,9 +65,7 @@ def test_process_record_stream_yields_lazily(processor: UnifiedSQLDataProcessor)
     def _source() -> Iterator[dict]:
         yield from records
 
-    results = list(
-        processor.process_record_stream(_source(), "texas", state_id=1, state_code="TX")
-    )
+    results = list(processor.process_record_stream(_source(), "texas", state_id=1, state_code="TX"))
     assert len(results) == 2
     assert results[0].transaction_type == TransactionType.CONTRIBUTION
     assert results[1].transaction_type == TransactionType.LOAN
