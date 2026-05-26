@@ -10,10 +10,10 @@ todos:
     status: completed
   - id: wave-2-batch
     content: "Multitask: 2a–2c parallel → 2z → gitnexus impact was pre-run → /review loop → /deslop"
-    status: in_progress
+    status: completed
   - id: wave-3-batch
     content: 3a+3b parallel → merge → 3c serial → 3z → expect 2-3 /review iterations → /deslop
-    status: pending
+    status: in_progress
   - id: wave-4-batch
     content: 4b+4d parallel → 4c → 4a → 4z (merge order per brief) → pipeline-auditor optional → /review loop → /deslop
     status: pending

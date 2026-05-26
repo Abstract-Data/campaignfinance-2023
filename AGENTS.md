@@ -802,7 +802,7 @@ All Notion task creation goes through the `notion-publisher` subagent, which lin
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **campaignfinance** (5463 symbols, 12465 relationships, 286 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **campaignfinance** (5513 symbols, 12520 relationships, 286 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
