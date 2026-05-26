@@ -124,7 +124,8 @@ def _finalize_transaction_for_persist(
 
     transaction.committee = None
     transaction.campaign = None
-    transaction.persons = []
+    # Keep transaction.persons — clearing orphans pending UnifiedTransactionPerson
+    # rows in the session with transaction_id=NULL (NotNullViolation on flush).
     transaction.committee_id = committee_filer
     transaction.report_ident = report_ident
 

@@ -33,6 +33,7 @@ dependencies = [
     "jellyfish>=1.2.1",
     "splink>=4.0.16",
     "duckdb>=1.5.3",
+    "psycopg2-binary>=2.9.12",
 ]
 
 [project.scripts]
