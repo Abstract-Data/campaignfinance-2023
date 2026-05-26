@@ -187,3 +187,6 @@ cython_debug/
 !tests/resolve/golden/*.csv
 *.txt
 .gitnexus
+
+# Local campaign finance source files (retain on disk)
+tmp/**/*.parquet
