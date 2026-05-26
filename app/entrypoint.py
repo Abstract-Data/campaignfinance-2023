@@ -166,7 +166,10 @@ def load(
 ) -> None:
     """Discover parquet/CSV under tmp/<state> and load into the database."""
     _shutdown.install()
-    raise typer.Exit(run_load(state, preset=preset, dry_run=dry_run))
+    try:
+        raise typer.Exit(run_load(state, preset=preset, dry_run=dry_run))
+    finally:
+        _shutdown.restore()
 
 
 def _scheduled_pipeline(state: State) -> None:
