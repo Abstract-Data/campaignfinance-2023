@@ -316,7 +316,7 @@ class UnifiedTransaction(SQLModel, table=True):
 
     # Core transaction fields
     transaction_id: str | None = Field(default=None, sa_column=Column(String(500)))
-    amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
     transaction_date: date | None = Field(default=None, index=True)
     description: str | None = Field(default=None, sa_column=Column(Text))
     transaction_type: TransactionType = Field(default=TransactionType.OTHER, index=True)
@@ -405,7 +405,7 @@ class UnifiedTransactionPerson(SQLModel, table=True):
     role: PersonRole = Field(index=True)
 
     # Additional metadata for the relationship
-    amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
     notes: str | None = Field(default=None, sa_column=Column(Text))
 
     # Metadata
@@ -638,7 +638,7 @@ class UnifiedContribution(SQLModel, table=True):
     contributor_entity_id: int = Field(foreign_key="unified_entities.id")
     recipient_entity_id: int = Field(foreign_key="unified_entities.id")
     state_id: int | None = Field(default=None, foreign_key="states.id")
-    amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
     receipt_date: date | None = Field(default=None, index=True)
     contribution_type: str | None = Field(default=None, sa_column=Column(String(200)))
     is_anonymous: bool = Field(default=False, index=True)
@@ -673,7 +673,7 @@ class UnifiedLoan(SQLModel, table=True):
     lender_entity_id: int = Field(foreign_key="unified_entities.id")
     borrower_entity_id: int = Field(foreign_key="unified_entities.id")
     state_id: int | None = Field(default=None, foreign_key="states.id")
-    amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
     loan_date: date | None = Field(default=None, index=True)
     due_date: date | None = Field(default=None, index=True)
     interest_rate: Decimal | None = Field(default=None, sa_column=Column(Numeric(9, 4)))
@@ -715,8 +715,8 @@ class UnifiedDebt(SQLModel, table=True):
     state_id: int | None = Field(default=None, foreign_key="states.id")
 
     # Debt details
-    amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(15, 2)))
-    original_amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
+    original_amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
     debt_date: date | None = Field(default=None, index=True)
     due_date: date | None = Field(default=None, index=True)
     description: str | None = Field(default=None, sa_column=Column(Text))
@@ -724,11 +724,11 @@ class UnifiedDebt(SQLModel, table=True):
     # Guarantor information
     is_guaranteed: bool = Field(default=False, index=True)
     guarantor_name: str | None = Field(default=None, sa_column=Column(String(200)))
-    guarantee_amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    guarantee_amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
 
     # Status
     is_paid: bool = Field(default=False, index=True)
-    payment_amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    payment_amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
     payment_date: date | None = Field(default=None)
 
     metadata_json: str | None = Field(default=None, sa_column=Column(Text))
@@ -766,7 +766,7 @@ class UnifiedCredit(SQLModel, table=True):
     state_id: int | None = Field(default=None, foreign_key="states.id")
 
     # Credit details
-    amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
     credit_date: date | None = Field(default=None, index=True)
     credit_type: str | None = Field(
         default=None, sa_column=Column(String(100))
@@ -813,10 +813,10 @@ class UnifiedTravel(SQLModel, table=True):
     # Parent transaction info (travel is often a sub-item of contribution/expenditure)
     parent_transaction_type: str | None = Field(default=None, sa_column=Column(String(50)))
     parent_transaction_id: str | None = Field(default=None, sa_column=Column(String(500)))
-    parent_amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    parent_amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
 
     # Travel details
-    amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
     travel_date: date | None = Field(default=None, index=True)
 
     # Transportation
@@ -874,13 +874,13 @@ class UnifiedAsset(SQLModel, table=True):
 
     # Valuation
     acquisition_date: date | None = Field(default=None, index=True)
-    acquisition_cost: Decimal | None = Field(default=None, sa_column=Column(Numeric(15, 2)))
-    current_value: Decimal | None = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    acquisition_cost: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
+    current_value: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
     valuation_date: date | None = Field(default=None)
 
     # Disposition (if sold/disposed)
     disposition_date: date | None = Field(default=None)
-    disposition_amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(15, 2)))
+    disposition_amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
     is_disposed: bool = Field(default=False, index=True)
 
     metadata_json: str | None = Field(default=None, sa_column=Column(Text))

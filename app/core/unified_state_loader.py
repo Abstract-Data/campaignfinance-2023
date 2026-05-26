@@ -28,6 +28,8 @@ from app.funcs.csv_reader import FileReader
 from app.logger import Logger
 
 from .unified_database import UnifiedDatabaseManager, get_db_manager
+from .unified_field_library import UnifiedFieldLibrary
+from .unified_field_library import field_library as field_library_default
 
 logger = Logger(__name__)
 
@@ -81,11 +83,13 @@ class UnifiedStateLoader:
         data_directory: Path,
         *,
         db_manager: UnifiedDatabaseManager | None = None,
+        field_library: UnifiedFieldLibrary | None = None,
     ):
         self.state = state.lower()
         self.data_directory = Path(data_directory)
         self.state_data_dir = self.data_directory / self.state
         self._db_manager = db_manager or get_db_manager()
+        self.field_library = field_library or field_library_default
 
         # Track processing statistics
         self.stats = {
@@ -106,6 +110,11 @@ class UnifiedStateLoader:
 
         # Committee officer mappings from state data
         self.committee_officers = {}  # committee_id -> List[officer_data]
+
+    @property
+    def db_manager(self) -> UnifiedDatabaseManager:
+        """Injectable database manager (defaults to process-wide singleton)."""
+        return self._db_manager
 
     def load_state_data(
         self,
@@ -248,23 +257,7 @@ class UnifiedStateLoader:
     def _extract_officer_from_record(self, record: dict[str, Any]) -> dict[str, Any] | None:
         """Extract officer information from a data record based on state-specific mappings."""
 
-        # State-specific field mappings for officer extraction
-        state_mappings = {
-            'texas': {
-                'treasurer_name': ['treasurer_name', 'treasurer', 'treasurer_first_name', 'treasurer_last_name'],
-                'chair_name': ['chair_name', 'chair', 'chair_first_name', 'chair_last_name'],
-                'committee_id': ['filer_id', 'committee_id', 'filer_number'],
-                'committee_name': ['committee_name', 'filer_name', 'committee_title']
-            },
-            'oklahoma': {
-                'treasurer_name': ['treasurer_name', 'treasurer'],
-                'chair_name': ['chair_name', 'chair'],
-                'committee_id': ['committee_id', 'filer_id'],
-                'committee_name': ['committee_name', 'committee_title']
-            }
-        }
-
-        mapping = state_mappings.get(self.state, {})
+        mapping = self.field_library.get_officer_fields(self.state)
 
         # Extract committee information
         committee_id = None
