@@ -83,6 +83,7 @@ _entity_snapshot = entity_snapshot
 _record_version = record_version
 
 TEntity = TypeVar("TEntity")
+TVersion = TypeVar("TVersion")
 
 
 class UnifiedVersionedRepository:
@@ -141,10 +142,10 @@ class UnifiedVersionedRepository:
 
     def _get_versions(
         self,
-        version_model: type,
+        version_model: type[TVersion],
         fk_field: str,
         entity_id: int | str,
-    ) -> list:
+    ) -> list[TVersion]:
         """Return all version records for an entity, ordered by version_number."""
         with self._get_session() as session:
             return session.exec(
