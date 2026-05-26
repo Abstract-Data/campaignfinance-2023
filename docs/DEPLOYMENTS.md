@@ -20,15 +20,57 @@ Environment-specific agent guardrails: see `AGENTS.md` (base, dev) and
 - `uv sync` installs the locked dependency set from `uv.lock`.
 - `Dockerfile` builds a container image for reproducible pipeline runs.
 
+## Container deployment
+
+Build and run the pipeline with Docker Compose (Postgres + `cf` CLI). Set
+`POSTGRES_PASSWORD` in the environment or a `.env` file beside `docker-compose.yml`.
+
+```bash
+# Build and start Postgres
+docker compose up --build -d db
+
+# Initialize schema (same as host `uv run cf bootstrap`)
+docker compose run --rm app bootstrap
+
+# Scrape and convert Texas data (read-only mount at ./tmp)
+docker compose run --rm app prepare texas
+
+# Load discovered parquet into Postgres
+docker compose run --rm app load texas --preset production
+
+# One-off help / subcommands
+docker compose run --rm app --help
+```
+
+The image entrypoint is `uv run cf` (see `Dockerfile`). Override `command` in
+Compose for ad-hoc subcommands. Legacy host cron can call the same subcommands via
+`docker compose run --rm app …` instead of a long-running `cf schedule` process.
+
 ## Running a load
 
 ```
-# tables
-uv run python scripts/db/recreate_tables.py
+# schema + connection (uses get_db_manager / POSTGRES_* from .env)
+uv run cf bootstrap
 
-# production loader with a preset (development | testing | production | high_performance | safe)
-uv run python scripts/loaders/production_loader.py testing oklahoma_2020
+# scrape → convert → verify (Texas today)
+uv run cf prepare texas
+
+# load discovered parquet under tmp/<state> into Postgres
+uv run cf load texas --preset production
+
+# optional in-process cadence (stdlib scheduler; SIGTERM finishes current cycle)
+uv run cf schedule texas --interval-hours 24
 ```
+
+Legacy script entry (still supported):
+
+```
+uv run python scripts/loaders/production_loader.py testing texas
+```
+
+Host cron is the preferred production scheduler: invoke `cf prepare` and
+`cf load` on a fixed schedule instead of a long-running `cf schedule` process
+when possible.
 
 Always run a load against **staging** at full volume before production. A
 production load is a human-only action (see `docs/GUARDRAILS.md` — Privilege

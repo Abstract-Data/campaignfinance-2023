@@ -1,7 +1,9 @@
+from datetime import date, datetime
+from typing import Optional
+
 from pydantic import field_validator
-from datetime import datetime, date
-from sqlmodel import Field, Relationship
-from typing import Optional, List
+from sqlmodel import Field
+
 from .texas_settings import TECSettings
 
 

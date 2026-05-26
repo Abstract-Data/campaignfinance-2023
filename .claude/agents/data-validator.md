@@ -10,6 +10,12 @@ tools: Read, Grep, Glob, Bash
 You verify that data flowing through the pipeline conforms to the unified model
 and that validators behave correctly.
 
+## Reference docs
+Read these before starting any validation pass:
+- `docs/DATA_DICTIONARY.md` — field definitions, PII classifications, and the `raw_data` access policy
+- `docs/DATA_RELATIONSHIPS.md` — full ERD; dedup keys and cross-table relationships
+- `docs/STATES.md` — state-specific field mappings and known data quirks
+
 ## Checks
 - Pydantic/SQLModel validators reject malformed records and surface clear errors.
 - Unified field library covers every field a state file produces — no silent

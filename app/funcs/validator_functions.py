@@ -1,15 +1,17 @@
 from __future__ import annotations
-import phonenumbers
-from datetime import datetime
-from typing import List, Tuple, Dict, Optional
-from nameparser import HumanName
-import probablepeople
-from functools import singledispatch
-import usaddress
-import re
-from pydantic_core import PydanticCustomError
-from pydantic import ValidationError
+
 import hashlib
+import re
+from datetime import datetime
+from functools import singledispatch
+from typing import Dict, List, Optional, Tuple
+
+import phonenumbers
+import probablepeople
+import usaddress
+from nameparser import HumanName
+from pydantic import ValidationError
+from pydantic_core import PydanticCustomError
 from sqlmodel import SQLModel
 
 
@@ -21,9 +23,11 @@ def create_record_id(record: SQLModel) -> str:
     """
     record = dict(record)
     record.pop("id", None)  # Remove the ID field to generate a unique ID
-    record.pop('file_origin', None)
-    record.pop('download_date', None)
-    record_hash = hashlib.shake_256(str([x for x in record.values() if x is not None]).encode()).hexdigest(10)
+    record.pop("file_origin", None)
+    record.pop("download_date", None)
+    record_hash = hashlib.shake_256(
+        str([x for x in record.values() if x is not None]).encode()
+    ).hexdigest(10)
     return record_hash
 
 
@@ -56,21 +60,16 @@ def validate_phone_number(column: str, phone_number: str | int) -> Optional[str]
             )
         except phonenumbers.phonenumberutil.NumberParseException:
             raise PydanticCustomError(
-                'bad_phone_number_format',
+                "bad_phone_number_format",
                 "Phone is not a parseable phone number",
-                {
-                    'column': column,
-                    'value': phone_number
-                }
+                {"column": column, "value": phone_number},
             )
 
         if not phonenumbers.is_valid_number(_number):
             raise PydanticCustomError(
-                'bad_phone_number_format',
+                "bad_phone_number_format",
                 "Phone is not a valid phone number",
-                {
-                    'column': column,
-                    'value': phone_number}
+                {"column": column, "value": phone_number},
             )
         formatted_phone = phonenumbers.format_number(_number, phonenumbers.PhoneNumberFormat.E164)
         return formatted_phone
@@ -82,12 +81,7 @@ def validate_date(v, fmt="%Y%m%d"):
             _value = datetime.strptime(str(v), fmt).date()
         except ValueError:
             raise PydanticCustomError(
-                'bad_date_format',
-                f"Date must be in {fmt} format",
-                {
-                    'column': 'date',
-                    'value': v
-                }
+                "bad_date_format", f"Date must be in {fmt} format", {"column": "date", "value": v}
             )
         return _value
 
@@ -106,62 +100,49 @@ def format_address(column, address: str | List[str]) -> Tuple[str, str]:
         address2 = []
 
         for component, tag in parsed_address:
-            if tag in ['AddressNumber', 'StreetName', 'StreetNamePostType']:
+            if tag in ["AddressNumber", "StreetName", "StreetNamePostType"]:
                 address1.append(component)
-            elif tag in ['OccupancyType', 'OccupancyIdentifier']:
+            elif tag in ["OccupancyType", "OccupancyIdentifier"]:
                 address2.append(component)
 
-        address1 = ' '.join(address1)
-        address2 = ' '.join(address2)
+        address1 = " ".join(address1)
+        address2 = " ".join(address2)
     except ValidationError:
         raise PydanticCustomError(
-            'bad_address_format',
+            "bad_address_format",
             "Address must be a valid address",
-            {
-                'column': column,
-                'value': address
-            }
+            {"column": column, "value": address},
         )
 
     return address1, address2
 
 
 def format_zipcode(column, zipcode: str) -> str:
+    """Normalise a zipcode to 5-digit or 5+4 format."""
     zipcode = zipcode.strip()
-    if re.match(r"^\d{9}$", zipcode):
-        zipc = zipcode[:5]
-        plus4 = zipcode[5:]
-        strings = [zipc, plus4]
-        return '-'.join(strings)
-    elif re.match(r"^\d{5}-$", zipcode):
-        return zipcode[:5]
-    elif re.match(r"^\d{5}-\d{4}$", zipcode):
+    if not zipcode:
         return zipcode
-    elif re.match(r"^\d{5}$", zipcode):
+
+    digits = re.sub(r"\D", "", zipcode)
+    if len(digits) == 5:
+        return digits
+    if len(digits) == 4:
+        return "0" + digits
+    if len(digits) == 9:
+        return f"{digits[:5]}-{digits[5:]}"
+    if re.match(r"^\d{5}-\d{4}$", zipcode):
         return zipcode
-    else:
-        if len(zipcode) > 5:
-            raise PydanticCustomError(
-                'bad_zipcode_format',
-                "Zipcode is less than 5 chars",
-                {
-                    'column': column,
-                    'value': zipcode
-                }
-            )
-        elif 5 < len(zipcode) > 9:
-            raise PydanticCustomError(
-                'bad_zipcode_format',
-                "Zipcode is more than 5 and less than 9 chars",
-            )
+    if len(zipcode) > 5:
         raise PydanticCustomError(
-            'bad_zipcode_format',
-            "Zipcode must be in 5 digit format or 5 digit + 4 digit format",
-            {
-                'column': column,
-                'value': zipcode
-            }
+            "bad_zipcode_format",
+            "Zipcode is less than 5 chars",
+            {"column": column, "value": zipcode},
         )
+    raise PydanticCustomError(
+        "bad_zipcode_format",
+        "Zipcode must be in 5 digit format or 5 digit + 4 digit format",
+        {"column": column, "value": zipcode},
+    )
 
 
 @singledispatch

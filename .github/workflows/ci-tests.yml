@@ -24,10 +24,10 @@ jobs:
 
       - name: Run tests with coverage
         run: >
-          uv run pytest app/tests
+          uv run pytest tests app/tests
           --cov=app --cov-branch
           --cov-report=xml --cov-report=term-missing
-          --cov-fail-under=70
+          --cov-fail-under=80
           --junitxml=junit.xml -o junit_family=legacy
         env:
           PYTHONPATH: .

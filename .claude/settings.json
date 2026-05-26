@@ -20,16 +20,35 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "bash .claude/hooks/block-dangerous.sh" },
-          { "type": "command", "command": "bash .claude/hooks/block-op-read.sh" },
-          { "type": "command", "command": "bash .claude/hooks/pre-commit.sh" }
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/block-dangerous.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/block-op-read.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/block-raw-git.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pre-commit.sh"
+          }
         ]
       },
       {
         "matcher": "Edit|Write",
         "hooks": [
-          { "type": "command", "command": "bash .claude/hooks/block-env-writes.sh" },
-          { "type": "command", "command": "bash .claude/hooks/sql-injection-check.sh" }
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/block-env-writes.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/sql-injection-check.sh"
+          }
         ]
       }
     ],
@@ -37,10 +56,22 @@
       {
         "matcher": "Edit|Write",
         "hooks": [
-          { "type": "command", "command": "bash .claude/hooks/domain-purity-check.sh" },
-          { "type": "command", "command": "bash .claude/hooks/router-boundary-check.sh" },
-          { "type": "command", "command": "bash .claude/hooks/no-print-check.sh" },
-          { "type": "command", "command": "bash .claude/hooks/env-leak-check.sh" }
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/domain-purity-check.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/router-boundary-check.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/no-print-check.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/env-leak-check.sh"
+          }
         ]
       }
     ],
@@ -48,7 +79,10 @@
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "bash .claude/hooks/verify-completion.sh" }
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/verify-completion.sh"
+          }
         ]
       }
     ]

@@ -1,18 +1,17 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
+
 from pydantic import field_validator, model_validator
-from sqlmodel import Field
 from pydantic_core import PydanticCustomError
+from sqlmodel import Field
+
+import app.states.texas.funcs.tx_validation_funcs as tx_funcs
+from app.abcs.base_models import CreateValidatorModel
+
 from .texas_settings import TECSettings
-import states.texas.funcs.tx_validation_funcs as tx_funcs
 
 
-class TECContribution(TECSettings, table=True):
-    __tablename__ = "tx_contributions"
-    __table_args__ = {"schema": "texas"}
-    id: Optional[str] = Field(
-        default=None,
-        description="Unique identifier")
+class TECContributionBase(CreateValidatorModel, TECSettings):
     recordType: str = Field(
         ...,
         description="Record type code - always RCPT"
@@ -189,61 +188,9 @@ class TECContribution(TECSettings, table=True):
                 values[k] = None
         return values
 
-    # clear_blank_strings = model_validator(mode='before')(funcs.clear_blank_strings)
-    check_dates = model_validator(mode='before')(tx_funcs.validate_dates)
-    check_zipcodes = model_validator(mode='before')(tx_funcs.check_zipcodes)
-    check_phone_numbers = model_validator(mode='before')(tx_funcs.phone_number_validation)
-    check_address_format = model_validator(mode='before')(tx_funcs.address_formatting)
-
-    # @model_validator(mode="before")
-    # @classmethod
-    # def _check_state_code(cls, values):
-    #     if "contributorStreetCountryCd" not in values:
-    #         return values
-    #     if values["contributorStreetCountryCd"] == "USA":
-    #         if not values["contributorStreetPostalCode"]:
-    #             raise PydanticCustomError(
-    #                 'state_code_check',
-    #                 "contributorStreetPostalCode is required for USA contributorStreetCountryCd",
-    #                 {
-    #                     'column': 'contributorStreetPostalCode',
-    #                     'value': values["contributorStreetPostalCode"]
-    #                 }
-    #             )
-    #     elif values["contributorStreetCountryCd"] != "UMI":
-    #         if not values["contributorStreetRegion"]:
-    #             raise PydanticCustomError(
-    #                 'state_code_check',
-    #                 "contributorStreetRegion is required for non-USA country",
-    #                 {
-    #                     'column': 'contributorStreetRegion',
-    #                     'value': values["contributorStreetRegion"]
-    #                 }
-    #             )
-    #     else:
-    #         pass
-    #         # raise PydanticCustomError(
-    #         #     'state_code_check',
-    #         #     "contributorStreetCountryCd not valid",
-    #         #     {
-    #         #         'column': 'contributorStreetCountryCd',
-    #         #         'value': values["contributorStreetCountryCd"]
-    #         #     }
-    #         # )
-    #     return values
-
-    # @model_validator(mode="before")
-    # @classmethod
-    # def copy_sos_fullname_first_and_last(cls, values):
-    #     if values["contributorNameFull"]:
-    #         values["sosContributorNameFull"] = values["contributorNameFull"]
-    #
-    #     if values['contributorNameLast']:
-    #         values['sosContributorNameLast'] = values['contributorNameLast']
-    #
-    #     if values['contributorNameFirst']:
-    #         values['sosContributorNameFirst'] = values['contributorNameFirst']
-    #     return values
+    # Contribution records use a stricter blank-string rule than funcs.clear_blank_strings.
+    check_phone_numbers = model_validator(mode="before")(tx_funcs.phone_number_validation)
+    check_address_format = model_validator(mode="before")(tx_funcs.address_formatting)
 
     @model_validator(mode="before")
     @classmethod
@@ -292,3 +239,25 @@ class TECContribution(TECSettings, table=True):
                 }
             )
         return v
+
+
+class TECContributionCreate(TECContributionBase):
+    """Ingestion/API create shape — excludes server-set ``id``."""
+
+
+class TECContributionRead(TECContributionBase):
+    """Downstream read shape — includes server-set metadata."""
+
+    id: str
+    created_at: datetime
+
+
+class TECContribution(TECContributionBase, table=True):
+    """Database table model for Texas contributions."""
+
+    __tablename__ = "tx_contributions"
+    __table_args__ = {"schema": "texas"}
+    id: Optional[str] = Field(
+        default=None,
+        description="Unique identifier",
+    )

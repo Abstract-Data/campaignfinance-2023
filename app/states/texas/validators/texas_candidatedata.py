@@ -1,8 +1,10 @@
-from datetime import datetime, date
-from sqlmodel import Field
-from pydantic import ValidationError, model_validator, field_validator
-from pydantic_core import PydanticCustomError
+from datetime import date
 from typing import Optional
+
+from pydantic import field_validator, model_validator
+from pydantic_core import PydanticCustomError
+from sqlmodel import Field
+
 from .texas_settings import TECSettings
 
 

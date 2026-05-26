@@ -1,7 +1,9 @@
-from pydantic import Field, field_validator
-from datetime import datetime, date
-from .texas_settings import TECSettings
+from datetime import date, datetime
 from typing import Optional
+
+from pydantic import Field, field_validator
+
+from .texas_settings import TECSettings
 
 
 class PledgeData(TECSettings):

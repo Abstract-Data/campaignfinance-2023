@@ -39,3 +39,5 @@ What becomes easier? What becomes harder? What follow-up is required?
 | ADR | Title | Status |
 |-----|-------|--------|
 | [0001](0001-initial-tool-selection.md) | Initial tool & stack selection | accepted |
+| [0002](0002-data-classification-and-retention.md) | Data classification and retention | accepted |
+| [0003](0003-ai-governance-entity-resolution.md) | AI governance for entity resolution | accepted |

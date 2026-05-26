@@ -1,13 +1,16 @@
-from typing import Optional
-from pydantic import field_validator, model_validator
-from sqlmodel import Field
-from pydantic_core import PydanticCustomError
 from datetime import date
+from typing import Optional
+
+from pydantic import field_validator, model_validator
+from pydantic_core import PydanticCustomError
+from sqlmodel import Field
+
+import app.funcs.validator_functions as funcs
+
 from .ok_settings import OklahomaSettings
-import funcs.validator_functions as funcs
 
 """
-Oklahoma Expenditure Model/Validator 
+Oklahoma Expenditure Model/Validator
 Based on key information from the Oklahoma Ethics Commission
 URL: https://guardian.ok.gov/PublicSite/Resources/PublicDocuments/OKLobbyistExpendituresFileLayout.pdf
 """
@@ -148,7 +151,7 @@ class OklahomaLobbyistExpenditure(OklahomaSettings, table=True):
             else:
                 raise PydanticCustomError(
                     'invalid_type',
-                    f"Recipient type is not a valid recipient type",
+                    "Recipient type is not a valid recipient type",
                     {
                         'column': 'recipient_type',
                         'value': values['recipient_type']
