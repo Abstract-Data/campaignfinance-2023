@@ -1,10 +1,13 @@
 from __future__ import annotations
-from pydantic import BaseModel, ValidationError, model_validator, Field
-from typing import List, Dict, Optional
-import pandas as pd
-from icecream import ic
 
-ic.configureOutput(prefix='abc_validation_errors|')
+from typing import Dict, List, Optional
+
+import pandas as pd
+from pydantic import BaseModel, Field, ValidationError, model_validator
+
+from app.logger import Logger
+
+_logger = Logger(__name__)
 
 
 class RecordValidationError(BaseModel):
@@ -49,7 +52,7 @@ class ValidationErrorList(BaseModel):
             self.errors.extend(record_error_list)
             # record_error_list.clear()
         except ValidationError as e:
-            ic(e)
+            _logger.debug(f"ValidationError while building error list: {e}")
 
         return self
 
@@ -58,10 +61,10 @@ class ValidationErrorList(BaseModel):
             self.add_record_errors(record)
         return self
 
-    def _error_dataframe(self) -> pd.DataFrame | ic:
+    def _error_dataframe(self) -> pd.DataFrame | None:
         _errors = [dict(error) for error in self.errors]
         if not _errors:
-            return
+            return None
         df = pd.DataFrame(
             [
                 dict(error) for error in self.errors
@@ -85,11 +88,14 @@ class ValidationErrorList(BaseModel):
     def show_errors(self):
         summary = self._error_summary()
         if summary is None:
-            ic('No errors found')
+            _logger.debug('No errors found')
             return
         validator_list = summary.index.get_level_values(0).unique()
-        ic(f'Error Summary for {validator_list[0]}')
-        ic(summary)
+        _logger.debug(f'Error Summary for {validator_list[0]}')
+        _logger.debug(str(summary))
 
     def to_df(self) -> pd.DataFrame | object:
-        return self.summary if self.summary is not None else ic('No errors found')
+        if self.summary is not None:
+            return self.summary
+        _logger.debug('No errors found')
+        return None

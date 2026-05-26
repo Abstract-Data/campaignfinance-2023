@@ -1,10 +1,14 @@
-from typing import Optional
-from pydantic import field_validator, model_validator
-from sqlmodel import Field
-from pydantic_core import PydanticCustomError
 from datetime import date
+from typing import Optional
+
+import app.funcs.validator_functions as funcs
+from pydantic import field_validator, model_validator
+from pydantic_core import PydanticCustomError
+from sqlmodel import Field
+
+from ._helpers import parse_candidate_name as apply_candidate_name
+from ._helpers import parse_zipcode as apply_zipcode
 from .ok_settings import OklahomaSettings
-import funcs.validator_functions as funcs
 
 """
 Oklahoma Expenditure Model/Validator 
@@ -56,44 +60,15 @@ class OklahomaContribution(OklahomaSettings, table=True):
             'receipt_date', 'filed_date',
             mode='before')(lambda v: funcs.validate_date(v, fmt='%m/%d/%Y'))
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def parse_candidate_name(cls, values):
-        if values.get('candidate_name'):
-            name = funcs.person_name_parser(values['candidate_name'])
-            values['candidate_firstname'] = name.first
-            values['candidate_lastname'] = name.last
-            values['candidate_middlename'] = name.middle
-        return values
+        return apply_candidate_name(values)
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def parse_zipcode(cls, values):
-        if values.get('zip'):
-            if len(values['zip']) == 9 and values['zip'].isdigit():
-                values['zip5'] = int(values['zip'][:5])
-                values['zip4'] = int(values['zip'][5:])
-            elif len(values['zip']) == 5:
-                values['zip5'] = int(values['zip'])
-            elif '-' in values['zip']:
-                _zip5 = int(values['zip'].split('-')[0])
-                _zip4 = int(values['zip'].split('-')[1])
-                if len(str(_zip5)) == 5 and len(str(_zip4)) == 4:
-                    values['zip5'] = _zip5
-                    values['zip4'] = _zip4
-            elif not values['zip'].isdigit():
-                values['zip_foreign'] = values['zip']
-                values['country'] = values['state']
-            else:
-                raise PydanticCustomError(
-                    'zip_code_format',
-                    "Zipcode is not a valid zip code format",
-                    {
-                        'column': 'zip',
-                        'value': values['zip']
-                    }
-                )
-        return values
+        return apply_zipcode(values)
 
     @field_validator('amended', mode='before')
     @classmethod

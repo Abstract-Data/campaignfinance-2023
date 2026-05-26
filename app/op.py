@@ -1,11 +1,25 @@
 from __future__ import annotations
+
 import asyncio
-from onepassword.lib.aarch64.op_uniffi_core import Error
-from onepassword.client import Client
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import SecretStr, BaseModel
 from pathlib import Path
 from typing import Callable, Dict
+
+from onepassword.client import Client
+from onepassword.lib.aarch64.op_uniffi_core import Error
+from pydantic import BaseModel, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
+
+from app.logger import Logger
+
+_logger: Logger | None = None
+
+
+def _get_logger() -> Logger:
+    global _logger
+    if _logger is None:
+        _logger = Logger(__name__)
+    return _logger
 
 
 def return_if_not_empty(func: Callable):
@@ -19,7 +33,7 @@ def return_if_not_empty(func: Callable):
 
 
 class OnePasswordSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=Path(__file__).parent / '.env', extra='ignore')
+    model_config = SettingsConfigDict(env_file=Path(__file__).parent / '.env', extra='forbid')
     op_service_account_token: str
 
     async def _get_value(self, secret_ref: str) -> SecretStr | None:
@@ -35,8 +49,9 @@ class OnePasswordSettings(BaseSettings):
                 secret_ref = f"op://Dev/{secret_ref}"
             value = await client.secrets.resolve(secret_ref)
             return SecretStr(value)
-        except Error:
-            return None
+        except Error as exc:
+            _get_logger().error(f"Failed to resolve 1Password secret '{secret_ref}': {exc}")
+            raise
 
     async def refs(self, *secret_refs: str) -> asyncio.gather:
         tasks = [self._get_value(secret_ref) for secret_ref in secret_refs]
@@ -108,18 +123,22 @@ class OnePasswordItem(BaseModel):
         return self.__secrets.get(f"{self.name}/role")
 
     @property
-    def database_url(self) -> SecretStr | None:
+    def database_url(self) -> URL | None:
         if self.db_type.get_secret_value() == "postgresql":
-            _url = (
-                f"postgresql://{self.usr.get_secret_value()}"
-                f":{self.pwd.get_secret_value()}"
-                f"@{self.server.get_secret_value()}"
-                f":{self.port.get_secret_value()}"
-                f"/{self.database.get_secret_value()}"
+            query = (
+                {"currentSchema": self.db_schema.get_secret_value()}
+                if self.db_schema
+                else None
             )
-            if self.db_schema:
-                _url += f"?currentSchema={self.db_schema.get_secret_value()}"
-            return SecretStr(_url)
+            return URL.create(
+                "postgresql",
+                username=self.usr.get_secret_value() if self.usr else None,
+                password=self.pwd.get_secret_value() if self.pwd else None,
+                host=self.server.get_secret_value() if self.server else None,
+                port=int(self.port.get_secret_value()) if self.port else None,
+                database=self.database.get_secret_value() if self.database else None,
+                query=query,
+            )
 
     @property
     def database_params(self) -> Dict[str, str] | None:

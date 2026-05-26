@@ -1,15 +1,17 @@
 from __future__ import annotations
-import phonenumbers
-from datetime import datetime
-from typing import List, Tuple, Dict, Optional
-from nameparser import HumanName
-import probablepeople
-from functools import singledispatch
-import usaddress
-import re
-from pydantic_core import PydanticCustomError
-from pydantic import ValidationError
+
 import hashlib
+import re
+from datetime import datetime
+from functools import singledispatch
+from typing import Dict, List, Optional, Tuple
+
+import phonenumbers
+import probablepeople
+import usaddress
+from nameparser import HumanName
+from pydantic import ValidationError
+from pydantic_core import PydanticCustomError
 from sqlmodel import SQLModel
 
 

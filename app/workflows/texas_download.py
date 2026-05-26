@@ -33,7 +33,7 @@
 # contributions.read()
 # contributions.validate()
 # contributions.write_to_csv(
-#     records=contributions.validation.passed, 
+#     records=contributions.validation.passed,
 #     validation_status="passed"
 # ).write_to_csv(
 #     records=contributions.validation.failed,

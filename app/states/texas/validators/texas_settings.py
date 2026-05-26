@@ -1,8 +1,10 @@
-from pydantic import ConfigDict, model_validator
+import app.states.texas.funcs.tx_validation_funcs as tx_funcs
+from app.funcs.record_keygen import RecordKeyGenerator
+from pydantic import ConfigDict
+from pydantic import model_validator
 from sqlmodel import SQLModel
-import states.texas.funcs.tx_validation_funcs as tx_funcs
-import funcs.validator_functions as funcs
-from funcs.record_keygen import RecordKeyGenerator
+
+from ._mixins import AddressValidatedModel
 
 """
 ======================
@@ -11,7 +13,7 @@ from funcs.record_keygen import RecordKeyGenerator
 """
 
 
-class TECSettings(SQLModel):
+class TECSettings(AddressValidatedModel, SQLModel):
     model_config = ConfigDict(
         str_strip_whitespace=True,
         str_to_upper=True,
@@ -21,11 +23,7 @@ class TECSettings(SQLModel):
     def __repr__(self):
         return self.__class__.__name__
 
-    clear_blank_strings = model_validator(mode='before')(funcs.clear_blank_strings)
-    check_dates = model_validator(mode='before')(tx_funcs.validate_dates)
-    # check_zipcodes = model_validator(mode='before')(tx_funcs.check_zipcodes)
-    check_phone_numbers = model_validator(mode='before')(tx_funcs.phone_number_validation)
-    # check_address_format = model_validator(mode='before')(tx_funcs.address_formatting)
+    check_phone_numbers = model_validator(mode="before")(tx_funcs.phone_number_validation)
 
     @staticmethod
     def generate_key(*args):

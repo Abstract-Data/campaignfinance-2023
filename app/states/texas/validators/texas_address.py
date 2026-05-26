@@ -1,19 +1,16 @@
 from __future__ import annotations
-from datetime import date
-from typing import Optional, Annotated, Any
-from sqlmodel import Field, Relationship
-from pydantic import field_validator, model_validator, ValidatorFunctionWrapHandler, WrapValidator, BeforeValidator
-from pydantic_extra_types.phone_numbers import PhoneNumber
-from pydantic_core import PydanticCustomError
 
-from . import TECSettings
-import funcs.validator_functions as funcs
-import states.texas.funcs.tx_validation_funcs as tx_funcs
+from typing import Optional
+
+import usaddress
+from pydantic import (
+    model_validator,
+)
 from scourgify import NormalizeAddress
 from scourgify.exceptions import AddressNormalizationError
-import usaddress
-from icecream import ic
-from funcs.record_keygen import RecordKeyGenerator
+from sqlmodel import Field
+
+from . import TECSettings
 
 ADDRESS_LIST = {}
 
@@ -73,7 +70,7 @@ class TECAddress(TECSettings):
                 _normalize = NormalizeAddress(_address).normalize()
                 self.standardized = ", ".join(x for x in _normalize.values() if x)
                 return self
-            except AddressNormalizationError as e:
+            except AddressNormalizationError:
                 pass
 
 

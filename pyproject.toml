@@ -29,7 +29,26 @@ dependencies = [
     "jupyter>=1.1.1",
     "rich>=13.9.4",
     "polars>=1.19.0",
+    "typer>=0.25.1",
+    "jellyfish>=1.2.1",
+    "splink>=4.0.16",
+    "duckdb>=1.5.3",
 ]
+
+[project.scripts]
+cf = "app.entrypoint:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.uv]
+package = true
+# probablepeople pins doublemetaphone 1.1 (sdist-only); 1.2 ships cp312 wheels.
+override-dependencies = ["doublemetaphone==1.2"]
 
 [tool.uv.workspace]
 members = ["packages/*"]
@@ -39,4 +58,26 @@ members = ["packages/*"]
 project_type = "pipeline"
 template_version = "1.8.8"
 aligned = "2026-05-23"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.152.9",
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+]
 # Ruff configuration lives in .ruff.toml.
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: requires tmp/texas and/or Postgres; excluded from default CI",
+]
+
+[tool.coverage.run]
+core = "sysmon"
+# Resolve pipeline has its own CI job (tests/resolve); omit from the main gate.
+omit = [
+    "app/resolve/*",
+]
+
+[tool.coverage.report]
+fail_under = 60

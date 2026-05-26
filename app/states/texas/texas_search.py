@@ -1,10 +1,10 @@
-from states.texas.texas_database import SessionLocal
-import pandas as pd
-from states.texas.texas import TECFilerRecord, TECExpenseRecord, TECContributionRecord
 from dataclasses import dataclass, field
-from typing import ClassVar, Union
+
+import pandas as pd
 from nameparser import HumanName
-from matplotlib import pyplot as plt
+from app.states.texas.texas import TECContributionRecord, TECExpenseRecord, TECFilerRecord
+from app.states.texas.texas_database import SessionLocal
+
 
 @dataclass
 class TECCampaignSearch:

@@ -1,7 +1,9 @@
-from datetime import datetime, date
-from pydantic import Field
-from .texas_settings import TECSettings
+from datetime import date, datetime
 from typing import Optional
+
+from pydantic import Field
+
+from .texas_settings import TECSettings
 
 
 class AssetRecord(TECSettings):
