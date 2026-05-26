@@ -10,7 +10,7 @@ import json
 from collections.abc import Callable
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from typing import Any
+from typing import Any, TypeVar
 
 from sqlmodel import Session, func, select
 
@@ -82,6 +82,8 @@ _to_json_safe = to_json_safe
 _entity_snapshot = entity_snapshot
 _record_version = record_version
 
+TEntity = TypeVar("TEntity")
+
 
 class UnifiedVersionedRepository:
     """CRUD + version snapshotting for unified entities."""
@@ -91,7 +93,7 @@ class UnifiedVersionedRepository:
 
     def _update_entity(
         self,
-        entity_model: type,
+        entity_model: type[TEntity],
         entity_id: int | str,
         updates: dict,
         *,
@@ -100,7 +102,7 @@ class UnifiedVersionedRepository:
         user: str | None = None,
         reason: str | None = None,
         amendment_details: str | None = None,
-    ) -> object | None:
+    ) -> TEntity | None:
         """Generic update-with-versioning for any entity."""
         with self._get_session() as session:
             entity = session.get(entity_model, entity_id)

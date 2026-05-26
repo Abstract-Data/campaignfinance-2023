@@ -224,13 +224,13 @@ class UnifiedAnalyticsService:
                     for row in state_rows
                 },
                 "transaction_types": {
-                    row[0].value: {
+                    transaction_type_key(row[0]): {
                         "count": row[1],
                         "total_amount": float(row[2] or 0),
                     }
                     for row in type_rows
                 },
-                "top_contributors": {},
+                "top_contributors": self.top_contributors_dict(session, limit=10),
                 "top_committees": {
                     row[0]: float(row[1] or 0) for row in top_committee_rows if row[0] is not None
                 },

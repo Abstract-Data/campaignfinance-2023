@@ -29,6 +29,7 @@ from app.core.repository import (
     UnifiedVersionedRepository,
     _to_json_safe,
 )
+from app.funcs.csv_reader import FileReader
 from app.logger import Logger
 from app.states.postgres_config import PostgresConfig
 
@@ -145,8 +146,6 @@ class UnifiedDatabaseManager:
         return Session(self.engine)
 
     def load_data_from_file(self, file_path: Path, state: str) -> list[UnifiedTransaction]:
-        from ..funcs.csv_reader import FileReader
-
         reader = FileReader()
         records: list[dict] = []
 
