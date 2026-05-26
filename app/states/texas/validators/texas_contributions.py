@@ -192,56 +192,6 @@ class TECContributionBase(CreateValidatorModel, TECSettings):
     check_phone_numbers = model_validator(mode="before")(tx_funcs.phone_number_validation)
     check_address_format = model_validator(mode="before")(tx_funcs.address_formatting)
 
-    # @model_validator(mode="before")
-    # @classmethod
-    # def _check_state_code(cls, values):
-    #     if "contributorStreetCountryCd" not in values:
-    #         return values
-    #     if values["contributorStreetCountryCd"] == "USA":
-    #         if not values["contributorStreetPostalCode"]:
-    #             raise PydanticCustomError(
-    #                 'state_code_check',
-    #                 "contributorStreetPostalCode is required for USA contributorStreetCountryCd",
-    #                 {
-    #                     'column': 'contributorStreetPostalCode',
-    #                     'value': values["contributorStreetPostalCode"]
-    #                 }
-    #             )
-    #     elif values["contributorStreetCountryCd"] != "UMI":
-    #         if not values["contributorStreetRegion"]:
-    #             raise PydanticCustomError(
-    #                 'state_code_check',
-    #                 "contributorStreetRegion is required for non-USA country",
-    #                 {
-    #                     'column': 'contributorStreetRegion',
-    #                     'value': values["contributorStreetRegion"]
-    #                 }
-    #             )
-    #     else:
-    #         pass
-    #         # raise PydanticCustomError(
-    #         #     'state_code_check',
-    #         #     "contributorStreetCountryCd not valid",
-    #         #     {
-    #         #         'column': 'contributorStreetCountryCd',
-    #         #         'value': values["contributorStreetCountryCd"]
-    #         #     }
-    #         # )
-    #     return values
-
-    # @model_validator(mode="before")
-    # @classmethod
-    # def copy_sos_fullname_first_and_last(cls, values):
-    #     if values["contributorNameFull"]:
-    #         values["sosContributorNameFull"] = values["contributorNameFull"]
-    #
-    #     if values['contributorNameLast']:
-    #         values['sosContributorNameLast'] = values['contributorNameLast']
-    #
-    #     if values['contributorNameFirst']:
-    #         values['sosContributorNameFirst'] = values['contributorNameFirst']
-    #     return values
-
     @model_validator(mode="before")
     @classmethod
     def format_contributor_name(cls, values):

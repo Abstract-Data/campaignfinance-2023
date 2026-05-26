@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import Column, String, Text
@@ -28,5 +28,5 @@ class SpacLink(SQLModel, table=True):
     position: Optional[str] = Field(default=None, sa_column=Column(String(20)))
     state_id: Optional[int] = Field(default=None, foreign_key="states.id")
     raw_data: Optional[str] = Field(default=None, sa_column=Column(Text))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
