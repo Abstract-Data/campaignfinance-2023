@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-import app.funcs.validator_functions as funcs
 from pydantic_core import PydanticCustomError
+
+import app.funcs.validator_functions as funcs
 
 
 def parse_candidate_name(values: dict[str, Any]) -> dict[str, Any]:
