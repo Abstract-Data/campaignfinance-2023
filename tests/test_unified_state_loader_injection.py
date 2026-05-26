@@ -27,7 +27,9 @@ def test_get_officer_fields_delegates_to_field_library() -> None:
 
 def test_extract_officer_uses_field_library_not_inline_mappings() -> None:
     lib = UnifiedFieldLibrary()
-    loader = UnifiedStateLoader("texas", Path("/tmp"), field_library=lib)
+    # Inject a mock db_manager so no Postgres connection is attempted; the
+    # method under test only consults the field_library, never the DB.
+    loader = UnifiedStateLoader("texas", Path("/tmp"), field_library=lib, db_manager=MagicMock())
     record = {
         "filer_id": "123",
         "treasurer_name": "Jane Treasurer",
