@@ -1,4 +1,4 @@
-from op import OnePasswordItem
+from app.op import OnePasswordItem
 from snowflake.snowpark import Session
 
 """ Database connection notes:
