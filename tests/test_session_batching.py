@@ -21,7 +21,8 @@ class _RecordModel(BaseModel):
 def loader(tmp_path: Path) -> UnifiedStateLoader:
     state_dir = tmp_path / "texas"
     state_dir.mkdir()
-    return UnifiedStateLoader("texas", tmp_path)
+    mock_db = MagicMock()
+    return UnifiedStateLoader("texas", tmp_path, db_manager=mock_db)
 
 
 def test_process_stats_total() -> None:
@@ -34,18 +35,17 @@ def test_batch_opens_single_session(loader: UnifiedStateLoader) -> None:
     records = [{"a": 1}, {"a": 2}, {"a": 3}]
     session_cm = MagicMock()
     session = session_cm.__enter__.return_value
-    mock_db = MagicMock()
-    mock_db.get_session.return_value = session_cm
+    loader._db_manager.get_session.return_value = session_cm
 
     with (
-        patch("app.core.unified_state_loader.db_manager", mock_db),
-        patch.object(loader, "_load_batch_indexes", return_value=({}, {}, 1)),
+        patch.object(loader, "_load_batch_indexes", return_value=({}, {}, 1, "TX")),
         patch.object(loader, "_persist_transaction_from_record", return_value=MagicMock(id=1)),
     ):
         stats = loader.process_records_batch(records, auto_link_officers=False)
 
-    mock_db.get_session.assert_called_once()
+    loader._db_manager.get_session.assert_called_once()
     session_cm.__enter__.assert_called_once()
+    session.commit.assert_called_once()
     assert stats.success == 3
 
 
@@ -54,7 +54,6 @@ def test_validation_error_increments_failures_and_continues(
 ) -> None:
     records = [{"ok": 1}, {"bad": 2}, {"ok": 3}]
     session_cm = MagicMock()
-    session = session_cm.__enter__.return_value
 
     def _persist(record: dict, *_args, **_kwargs):
         if record.get("bad"):
@@ -64,12 +63,10 @@ def test_validation_error_increments_failures_and_continues(
             )
         return MagicMock(id=1)
 
-    mock_db = MagicMock()
-    mock_db.get_session.return_value = session_cm
+    loader._db_manager.get_session.return_value = session_cm
 
     with (
-        patch("app.core.unified_state_loader.db_manager", mock_db),
-        patch.object(loader, "_load_batch_indexes", return_value=({}, {}, 1)),
+        patch.object(loader, "_load_batch_indexes", return_value=({}, {}, 1, "TX")),
         patch.object(loader, "_persist_transaction_from_record", side_effect=_persist),
     ):
         stats = loader.process_records_batch(records, auto_link_officers=False)
@@ -85,12 +82,10 @@ def test_sqlalchemy_error_increments_db_errors_and_rolls_back(
     session_cm = MagicMock()
     session = session_cm.__enter__.return_value
 
-    mock_db = MagicMock()
-    mock_db.get_session.return_value = session_cm
+    loader._db_manager.get_session.return_value = session_cm
 
     with (
-        patch("app.core.unified_state_loader.db_manager", mock_db),
-        patch.object(loader, "_load_batch_indexes", return_value=({}, {}, 1)),
+        patch.object(loader, "_load_batch_indexes", return_value=({}, {}, 1, "TX")),
         patch.object(
             loader,
             "_persist_transaction_from_record",

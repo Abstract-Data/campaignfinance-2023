@@ -836,7 +836,7 @@ class UnifiedDatabaseManager:
     def add_person_to_committee(
         self,
         person_id: int,
-        committee_id: int,
+        committee_id: str,
         role: CommitteeRole,
         start_date: Optional[date] = None,
         notes: Optional[str] = None,
@@ -1242,7 +1242,7 @@ class UnifiedDatabaseManager:
             return summary
 
     def auto_link_transactions_to_committee_roles(
-        self, committee_id: int, user: Optional[str] = None
+        self, committee_id: str, user: Optional[str] = None
     ) -> Dict[str, int]:
         """
         Automatically link existing transactions to committee roles based on person and committee matching.

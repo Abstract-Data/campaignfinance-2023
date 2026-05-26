@@ -27,7 +27,7 @@ from app.core.processor import ProcessStats, unified_sql_processor
 from app.funcs.csv_reader import FileReader
 from app.logger import Logger
 
-from .unified_database import db_manager
+from .unified_database import UnifiedDatabaseManager, get_db_manager
 
 logger = Logger(__name__)
 
@@ -75,10 +75,17 @@ class UnifiedStateLoader:
     - Cross-reference validation
     """
 
-    def __init__(self, state: str, data_directory: Path):
+    def __init__(
+        self,
+        state: str,
+        data_directory: Path,
+        *,
+        db_manager: UnifiedDatabaseManager | None = None,
+    ):
         self.state = state.lower()
         self.data_directory = Path(data_directory)
         self.state_data_dir = self.data_directory / self.state
+        self._db_manager = db_manager or get_db_manager()
 
         # Track processing statistics
         self.stats = {
@@ -363,14 +370,17 @@ class UnifiedStateLoader:
 
     def _load_batch_indexes(
         self, session: Session
-    ) -> tuple[CommitteeIndex, PersonIndex, int | None]:
+    ) -> tuple[CommitteeIndex, PersonIndex, int | None, str | None]:
         """Resolve state id and pre-load committee/person lookup dicts for a batch."""
-        state_record = db_manager._resolve_state_record(session, self.state)
-        state_id = state_record.id if state_record else None
+        state_record = self._db_manager._resolve_state_record(session, self.state)
+        if state_record is None:
+            return {}, {}, None, None
+        state_id = state_record.id
         return (
             _load_committee_index(session, state_id),
             _load_person_index(session, state_id),
             state_id,
+            state_record.code,
         )
 
     def process_records_batch(
@@ -387,37 +397,50 @@ class UnifiedStateLoader:
 
         file_name = file_path.name if file_path else "batch"
 
-        with db_manager.get_session() as session:
-            _committees, _persons, state_id = self._load_batch_indexes(session)
-            state_code = None
-            if state_id is not None:
-                state_record = db_manager._resolve_state_record(session, self.state)
-                state_code = state_record.code if state_record else None
+        with self._db_manager.get_session() as session:
+            _committees, _persons, state_id, state_code = self._load_batch_indexes(session)
+            if state_id is None:
+                msg = (
+                    f"State '{self.state}' is not present in the states table; "
+                    "cannot load records with NULL state_id"
+                )
+                logger.error(msg)
+                raise ValueError(msg)
 
-            for record in records:
-                record = dict(record)
-                record["state"] = self.state
-                record["file_origin"] = file_name
-                try:
-                    transaction = self._persist_transaction_from_record(
-                        record,
-                        session,
-                        state_id=state_id,
-                        state_code=state_code,
-                    )
-                    if transaction is None:
-                        stats.skipped += 1
-                        continue
-                    stats.success += 1
-                    if auto_link_officers:
-                        self._link_transaction_to_officers(transaction, record, session)
-                except (ValidationError, KeyError, ValueError) as exc:
-                    logger.error(f"Record failed: {exc} — {record!r}")
-                    stats.failures += 1
-                except SQLAlchemyError as exc:
-                    logger.error(f"DB error on record: {exc}")
-                    session.rollback()
-                    stats.db_errors += 1
+            try:
+                for record in records:
+                    record = dict(record)
+                    record["state"] = self.state
+                    record["file_origin"] = file_name
+                    try:
+                        transaction = self._persist_transaction_from_record(
+                            record,
+                            session,
+                            state_id=state_id,
+                            state_code=state_code,
+                        )
+                        if transaction is None:
+                            stats.skipped += 1
+                            continue
+                        stats.success += 1
+                        if auto_link_officers:
+                            self._link_transaction_to_officers(
+                                transaction, record, session
+                            )
+                    except (ValidationError, KeyError, ValueError) as exc:
+                        logger.error(f"Record failed: {exc} — {record!r}")
+                        stats.failures += 1
+                    except SQLAlchemyError as exc:
+                        logger.error(f"DB error on record: {exc}")
+                        session.rollback()
+                        stats.db_errors += 1
+                        return stats
+
+                session.commit()
+            except SQLAlchemyError as exc:
+                logger.error(f"DB error committing batch: {exc}")
+                session.rollback()
+                stats.db_errors += 1
 
         return stats
 
@@ -438,13 +461,14 @@ class UnifiedStateLoader:
             session=session,
         )
 
-        if transaction.committee_id:
-            committee = unified_sql_processor.get_builder(
-                self.state, state_id=state_id, state_code=state_code, session=session
-            ).build_committee(record)
-            if committee:
-                session.merge(committee)
-                session.flush()
+        if transaction.committee:
+            filer_id = transaction.committee.filer_id
+            existing_committee = session.get(UnifiedCommittee, filer_id)
+            if existing_committee is not None:
+                transaction.committee = existing_committee
+                transaction.committee_id = filer_id
+            else:
+                session.add(transaction.committee)
 
         for tx_person in transaction.persons:
             if tx_person.person and tx_person.person.address:
@@ -465,8 +489,7 @@ class UnifiedStateLoader:
                     session.flush()
 
         session.add(transaction)
-        session.commit()
-        session.refresh(transaction)
+        session.flush()
         return transaction
 
     def _link_transaction_to_officers(
@@ -543,7 +566,7 @@ class UnifiedStateLoader:
                     .where(UnifiedTransactionPerson.id == tx_person_id)
                     .values(committee_person_id=committee_person.id)
                 )
-                session.commit()
+                session.flush()
 
         except (SQLAlchemyError, KeyError) as e:
             logger.error(f"Error creating officer link: {e}")
@@ -552,8 +575,15 @@ class UnifiedStateLoader:
         """Create committee-person relationships from extracted officer data."""
         logger.info("Creating committee-person relationships...")
 
-        with db_manager.get_session() as session:
-            _, persons, state_id = self._load_batch_indexes(session)
+        with self._db_manager.get_session() as session:
+            _, persons, state_id, _state_code = self._load_batch_indexes(session)
+            if state_id is None:
+                msg = (
+                    f"State '{self.state}' is not present in the states table; "
+                    "cannot create committee relationships"
+                )
+                logger.error(msg)
+                raise ValueError(msg)
 
             for committee_id, officers_data in self.committee_officers.items():
                 try:
@@ -563,9 +593,9 @@ class UnifiedStateLoader:
                                 officer["name"], session, persons, state_id=state_id
                             )
                             if person:
-                                db_manager.add_person_to_committee(
+                                self._db_manager.add_person_to_committee(
                                     person_id=person.id,
-                                    committee_id=int(committee_id),
+                                    committee_id=str(committee_id),
                                     role=officer["role"],
                                     start_date=date.today(),
                                     user="state_loader",
@@ -579,6 +609,8 @@ class UnifiedStateLoader:
                         f"Error creating committee relationship for {committee_id}: {e}"
                     )
                     continue
+
+            session.commit()
 
     def _find_or_create_person(
         self,
@@ -620,8 +652,7 @@ class UnifiedStateLoader:
                     state_id=state_id,
                 )
                 session.add(person)
-                session.commit()
-                session.refresh(person)
+                session.flush()
                 self.stats["persons_created"] += 1
                 if person.id is not None:
                     persons[index_key] = person.id
@@ -640,7 +671,9 @@ class UnifiedStateLoader:
         # Get all committees that have officers
         for committee_id in self.committee_officers.keys():
             try:
-                linked_counts = db_manager.auto_link_transactions_to_committee_roles(int(committee_id))
+                linked_counts = self._db_manager.auto_link_transactions_to_committee_roles(
+                    str(committee_id)
+                )
                 self.stats["transaction_links_created"] += linked_counts["total"]
 
             except (SQLAlchemyError, KeyError, ValueError) as e:
