@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import model_validator
+
 import app.funcs.validator_functions as funcs
 import app.states.texas.funcs.tx_validation_funcs as tx_funcs
-from pydantic import model_validator
 
 
 def _tec_address(**fields: Any) -> Any:
@@ -69,15 +70,53 @@ def format_filer_check_name(values: dict[str, Any]) -> dict[str, Any]:
     return values
 
 
+def validate_individual_entity_discriminator(
+    values: dict[str, Any],
+    *,
+    type_field: str,
+    individual_name_field: str,
+    entity_org_field: str,
+) -> dict[str, Any]:
+    """Validate INDIVIDUAL/ENTITY discriminator pattern.
+
+    Raises PydanticCustomError if:
+    - type is INDIVIDUAL but individual_name_field is empty
+    - type is ENTITY but entity_org_field is empty
+    """
+    from pydantic_core import PydanticCustomError
+
+    person_type = values.get(type_field, "")
+
+    if person_type == "INDIVIDUAL":
+        if not values.get(individual_name_field):
+            raise PydanticCustomError(
+                "missing_required_value",
+                f"{individual_name_field} is required for INDIVIDUAL {type_field}",
+                {
+                    "column": individual_name_field,
+                    "value": values.get(individual_name_field),
+                },
+            )
+    elif person_type == "ENTITY":
+        if not values.get(entity_org_field):
+            raise PydanticCustomError(
+                "missing_required_value",
+                f"{entity_org_field} is required for ENTITY {type_field}",
+                {
+                    "column": entity_org_field,
+                    "value": values.get(entity_org_field),
+                },
+            )
+    return values
+
+
 def format_individual_payee_name(values: dict[str, Any]) -> dict[str, Any]:
     """Normalize payee individual name fields (TEC expense records)."""
     if values.get("payeePersentTypeCd") != "INDIVIDUAL":
         return values
 
     payee_name_fields = [
-        key
-        for key in values
-        if key.startswith("payeeName") and key != "payeeNameOrganization"
+        key for key in values if key.startswith("payeeName") and key != "payeeNameOrganization"
     ]
     name_parts = [values[key] for key in payee_name_fields if values.get(key) != ""]
     payee_name = funcs.person_name_parser(" ".join(name_parts))

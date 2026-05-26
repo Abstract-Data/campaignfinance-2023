@@ -149,10 +149,7 @@ class UnifiedDatabaseManager:
         reader = FileReader()
         records: list[dict] = []
 
-        if file_path.suffix.lower() == ".parquet":
-            records = list(reader.read_parquet(file_path))
-        elif file_path.suffix.lower() == ".csv":
-            records = list(reader.read_csv(file_path))
+        records = list(reader.read(file_path))
 
         with self.get_session() as session:
             state_record = self._resolve_state_record(session, state)

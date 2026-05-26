@@ -100,7 +100,7 @@ class UnifiedStateLoader:
             "addresses_created": 0,
             "committee_relationships_created": 0,
             "transaction_links_created": 0,
-            "errors": []
+            "errors": [],
         }
 
         # Cache for deduplication and relationship building
@@ -154,17 +154,20 @@ class UnifiedStateLoader:
                 TextColumn("[progress.description]{task.description}"),
                 BarColumn(),
                 TaskProgressColumn(),
-                console=None
+                console=None,
             ) as progress:
-
-                main_task = progress.add_task(f"Processing {self.state.upper()} data...", total=len(files))
+                main_task = progress.add_task(
+                    f"Processing {self.state.upper()} data...", total=len(files)
+                )
 
                 for file_path in files:
                     try:
                         progress.update(main_task, description=f"Processing {file_path.name}")
 
                         # Process the file
-                        file_stats = self._process_data_file(file_path, auto_link_officers, max_records)
+                        file_stats = self._process_data_file(
+                            file_path, auto_link_officers, max_records
+                        )
 
                         # Update progress
                         progress.advance(main_task)
@@ -211,7 +214,7 @@ class UnifiedStateLoader:
             "contributions*.parquet",
             "expenditures*.parquet",
             "committees*.parquet",
-            "candidates*.parquet"
+            "candidates*.parquet",
         ]
 
         for pattern in patterns:
@@ -228,23 +231,26 @@ class UnifiedStateLoader:
         logger.info("Extracting committee officer information...")
 
         # Look for committee/officer files
-        officer_files = [f for f in files if any(keyword in f.name.lower()
-                                                for keyword in ['committee', 'officer', 'filer', 'candidate'])]
+        officer_files = [
+            f
+            for f in files
+            if any(
+                keyword in f.name.lower()
+                for keyword in ["committee", "officer", "filer", "candidate"]
+            )
+        ]
 
         for file_path in officer_files:
             try:
                 # Read the file
                 file_reader = FileReader()
-                if file_path.suffix.lower() == '.parquet':
-                    data_generator = file_reader.read_parquet(file_path)
-                else:
-                    data_generator = file_reader.read_csv(file_path)
+                data_generator = file_reader.read(file_path)
 
                 # Extract officer information based on state-specific field mappings
                 for record in data_generator:
                     officer_data = self._extract_officer_from_record(record)
                     if officer_data:
-                        committee_id = officer_data.get('committee_id')
+                        committee_id = officer_data.get("committee_id")
                         if committee_id:
                             if committee_id not in self.committee_officers:
                                 self.committee_officers[committee_id] = []
@@ -261,7 +267,7 @@ class UnifiedStateLoader:
 
         # Extract committee information
         committee_id = None
-        for field in mapping.get('committee_id', []):
+        for field in mapping.get("committee_id", []):
             if field in record and record[field]:
                 committee_id = str(record[field])
                 break
@@ -274,36 +280,36 @@ class UnifiedStateLoader:
 
         # Check for treasurer
         treasurer_name = None
-        for field in mapping.get('treasurer_name', []):
+        for field in mapping.get("treasurer_name", []):
             if field in record and record[field]:
                 treasurer_name = str(record[field]).strip()
                 break
 
         if treasurer_name:
-            officers.append({
-                'name': treasurer_name,
-                'role': CommitteeRole.TREASURER,
-                'committee_id': committee_id
-            })
+            officers.append(
+                {
+                    "name": treasurer_name,
+                    "role": CommitteeRole.TREASURER,
+                    "committee_id": committee_id,
+                }
+            )
 
         # Check for chair
         chair_name = None
-        for field in mapping.get('chair_name', []):
+        for field in mapping.get("chair_name", []):
             if field in record and record[field]:
                 chair_name = str(record[field]).strip()
                 break
 
         if chair_name:
-            officers.append({
-                'name': chair_name,
-                'role': CommitteeRole.CHAIR,
-                'committee_id': committee_id
-            })
+            officers.append(
+                {"name": chair_name, "role": CommitteeRole.CHAIR, "committee_id": committee_id}
+            )
 
         return {
-            'committee_id': committee_id,
-            'committee_name': self._extract_field(record, mapping.get('committee_name', [])),
-            'officers': officers
+            "committee_id": committee_id,
+            "committee_name": self._extract_field(record, mapping.get("committee_name", [])),
+            "officers": officers,
         }
 
     def _extract_field(self, record: dict[str, Any], field_names: list[str]) -> str | None:
@@ -331,10 +337,7 @@ class UnifiedStateLoader:
 
         try:
             file_reader = FileReader()
-            if file_path.suffix.lower() == ".parquet":
-                data_generator = file_reader.read_parquet(file_path)
-            else:
-                data_generator = file_reader.read_csv(file_path)
+            data_generator = file_reader.read(file_path)
 
             records: list[dict[str, Any]] = []
             for record in data_generator:
@@ -417,9 +420,7 @@ class UnifiedStateLoader:
                             continue
                         stats.success += 1
                         if auto_link_officers:
-                            self._link_transaction_to_officers(
-                                transaction, record, session
-                            )
+                            self._link_transaction_to_officers(transaction, record, session)
                     except (ValidationError, KeyError, ValueError) as exc:
                         logger.error(f"Record failed: {exc} — {record!r}")
                         stats.failures += 1
@@ -508,12 +509,8 @@ class UnifiedStateLoader:
             for tx_person in tx_persons:
                 for officer_data in committee_officers:
                     for officer in officer_data.get("officers", []):
-                        if self._person_matches_officer(
-                            tx_person.person_id, officer, session
-                        ):
-                            self._create_officer_link(
-                                tx_person.id, officer, committee_id, session
-                            )
+                        if self._person_matches_officer(tx_person.person_id, officer, session):
+                            self._create_officer_link(tx_person.id, officer, committee_id, session)
                             self.stats["transaction_links_created"] += 1
                             break
 
@@ -549,7 +546,7 @@ class UnifiedStateLoader:
             committee_person = session.exec(
                 select(UnifiedCommitteePerson).where(
                     UnifiedCommitteePerson.committee_id == str(committee_id),
-                    UnifiedCommitteePerson.role == officer['role'],
+                    UnifiedCommitteePerson.role == officer["role"],
                 )
             ).first()
 
@@ -598,9 +595,7 @@ class UnifiedStateLoader:
                                 self.stats["committee_relationships_created"] += 1
 
                 except (SQLAlchemyError, KeyError, ValueError) as e:
-                    logger.error(
-                        f"Error creating committee relationship for {committee_id}: {e}"
-                    )
+                    logger.error(f"Error creating committee relationship for {committee_id}: {e}")
                     continue
 
             session.commit()
@@ -686,9 +681,9 @@ class UnifiedStateLoader:
                 "total_committees": self.stats["committees_created"],
                 "total_relationships": self.stats["committee_relationships_created"],
                 "total_links": self.stats["transaction_links_created"],
-                "error_count": len(self.stats["errors"])
+                "error_count": len(self.stats["errors"]),
             },
-            "errors": self.stats["errors"][:10]  # First 10 errors
+            "errors": self.stats["errors"][:10],  # First 10 errors
         }
 
 
@@ -716,5 +711,5 @@ def load_state_data(
     return loader.load_state_data(
         auto_link_officers=auto_link_officers,
         create_relationships=create_relationships,
-        progress_callback=progress_callback
+        progress_callback=progress_callback,
     )
