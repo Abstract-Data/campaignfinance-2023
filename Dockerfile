@@ -1,26 +1,16 @@
-# Use an official Python runtime as a parent image
-FROM python:3.10.5
+FROM python:3.12-slim
 
-# Set the working directory in the container to /app
+RUN pip install --no-cache-dir uv
+
 WORKDIR /app
 
-# Add metadata to the image to describe that the container is listening on the specified port at runtime.
-EXPOSE 8000
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
 
-# Copy the current directory contents into the container at /app
-COPY . /app
+COPY app/ ./app/
 
-# Copy the contents of the local /tmp folder into the /tmp volume on the container
-COPY ./tmp /tmp
+RUN useradd --create-home appuser && chown -R appuser:appuser /app
+USER appuser
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --upgrade pip
-RUN pip install poetry
-RUN poetry config virtualenvs.create false
-RUN poetry install --no-dev
-
-# Create a volume for tmp
-VOLUME /tmp
-
-# Run the application
-CMD ["python", "main.py"]
+ENTRYPOINT ["uv", "run", "cf"]
+CMD ["--help"]

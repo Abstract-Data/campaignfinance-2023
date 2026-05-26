@@ -29,6 +29,7 @@ jobs:
     uses: ./.github/workflows/ci-tests.yml
     secrets: inherit
 
+  # Splink is pinned to 4.0.16 in pyproject.toml — update intentionally, not automatically
   resolve-tests:
     name: Resolve Tests
     uses: ./.github/workflows/ci-resolve-tests.yml

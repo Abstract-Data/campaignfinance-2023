@@ -279,7 +279,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.3" },
     { name = "rich", specifier = ">=13.9.4" },
     { name = "selenium", specifier = ">=4.27.1" },
-    { name = "splink", specifier = ">=4.0.16" },
+    { name = "splink", specifier = ">=4.0.16,<4.0.17" },
     { name = "sqlmodel", specifier = ">=0.0.22" },
     { name = "tomli", specifier = ">=2.2.1" },
     { name = "tqdm", specifier = ">=4.67.1" },

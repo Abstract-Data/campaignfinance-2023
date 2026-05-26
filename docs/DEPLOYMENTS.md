@@ -20,6 +20,32 @@ Environment-specific agent guardrails: see `AGENTS.md` (base, dev) and
 - `uv sync` installs the locked dependency set from `uv.lock`.
 - `Dockerfile` builds a container image for reproducible pipeline runs.
 
+## Container deployment
+
+Build and run the pipeline with Docker Compose (Postgres + `cf` CLI). Set
+`POSTGRES_PASSWORD` in the environment or a `.env` file beside `docker-compose.yml`.
+
+```bash
+# Build and start Postgres
+docker compose up --build -d db
+
+# Initialize schema (same as host `uv run cf bootstrap`)
+docker compose run --rm app bootstrap
+
+# Scrape and convert Texas data (read-only mount at ./tmp)
+docker compose run --rm app prepare texas
+
+# Load discovered parquet into Postgres
+docker compose run --rm app load texas --preset production
+
+# One-off help / subcommands
+docker compose run --rm app --help
+```
+
+The image entrypoint is `uv run cf` (see `Dockerfile`). Override `command` in
+Compose for ad-hoc subcommands. Legacy host cron can call the same subcommands via
+`docker compose run --rm app …` instead of a long-running `cf schedule` process.
+
 ## Running a load
 
 ```
