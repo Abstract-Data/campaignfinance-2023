@@ -99,6 +99,27 @@ class StateFieldMapping:
     notes: str = ""
 
 
+_OFFICER_FIELD_REGISTRY: dict[str, dict[str, list[str]]] = {
+    "texas": {
+        "treasurer_name": [
+            "treasurer_name",
+            "treasurer",
+            "treasurer_first_name",
+            "treasurer_last_name",
+        ],
+        "chair_name": ["chair_name", "chair", "chair_first_name", "chair_last_name"],
+        "committee_id": ["filer_id", "committee_id", "filer_number"],
+        "committee_name": ["committee_name", "filer_name", "committee_title"],
+    },
+    "oklahoma": {
+        "treasurer_name": ["treasurer_name", "treasurer"],
+        "chair_name": ["chair_name", "chair"],
+        "committee_id": ["committee_id", "filer_id"],
+        "committee_name": ["committee_name", "committee_title"],
+    },
+}
+
+
 class UnifiedFieldLibrary:
     """
     Unified field library for campaign finance data across all states.
@@ -598,6 +619,10 @@ class UnifiedFieldLibrary:
         )
         self.state_mappings[state].append(mapping)
     
+    def get_officer_fields(self, state: str) -> dict[str, list[str]]:
+        """Return officer field name mappings for the given state."""
+        return _OFFICER_FIELD_REGISTRY.get(state.lower(), {})
+
     def add_unified_field(self, field_definition: FieldDefinition):
         """Add a new unified field definition"""
         self.unified_fields[field_definition.name] = field_definition
