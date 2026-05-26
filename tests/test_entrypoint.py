@@ -2,16 +2,32 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 from typer.testing import CliRunner
 
+import app.entrypoint as ep
 from app.entrypoint import app
 from app.scheduler import CadenceScheduler, GracefulShutdown
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_entrypoint_shutdown() -> Iterator[None]:
+    """Replace module-global shutdown state so tests cannot leak _requested or handlers."""
+    original = ep._shutdown
+    isolated = GracefulShutdown()
+    ep._shutdown = isolated
+    try:
+        yield
+    finally:
+        isolated.restore()
+        ep._shutdown = original
+        original.restore()
 
 
 def test_cf_help_lists_production_commands() -> None:
@@ -93,8 +109,6 @@ def test_load_uses_discover_and_load(
 def test_load_shutdown_after_run_exits_zero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import app.entrypoint as ep
-
     def _load_with_shutdown(*args, **kwargs):
         ep._shutdown.request()
         return 0
