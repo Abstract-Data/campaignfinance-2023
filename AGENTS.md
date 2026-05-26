@@ -907,14 +907,14 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 ## Learned User Preferences
 
 - For multi-agent pipeline work (data-resolution, state-data-cli), dispatch parallel agents within each wave and run waves sequentially; do not assign one monolithic agent to execute all waves
-- Launch an entire parallel wave as one multitask batch (one agent per task brief), then wait for that wave to complete and merge before starting the next wave
+- Launch an entire parallel wave as one multitask batch (one background Task agent per task brief via `run_in_background: true`), then wait for that wave to complete and merge before starting the next wave
 - Integration tasks (`*z`) are single serial agents that run only after all parallel tasks in that wave are merged
-- Hand each worker the full `task-*.md` brief from `prompts/data-resolution-pipeline/`; do not summarize or substitute a shorter brief
+- Hand each worker the full `task-*.md` brief from `prompts/data-resolution-pipeline/` or `prompts/review-remediation*/`; do not summarize or substitute a shorter brief
 - Use GitButler (`but` commands) for branch/commit workflow; consolidate worker output on one phase branch with one commit per task
 - Prefer incremental fixes over redesigns; describe structural or provider changes and wait for explicit approval before implementing
 - Do not reiterate or summarize subagent results to the user unless asked or multi-task synthesis is required
 - After `/review`, split recommended fixes across parallel agents partitioned by file ownership (same wave pattern as pipeline tasks)
-- After each wave or review-fix batch, run `/review` and loop fix → re-review until PASS; defer nothing from review reports
+- After each wave or review-remediation batch (including `review-remediation-round2`), run `/review` and loop fix → re-review until DoD PASS; defer nothing from review reports
 - Parallel task agents must enforce strict brief scope (create ONLY listed files; do not edit sibling-task files or `*z`-owned registries like `review/__init__.py`)
 - When executing an attached `.cursor/plans/*.plan.md`, do NOT edit the plan file itself
 - When plan todos already exist, mark them in_progress/completed as you work; do not recreate them
@@ -924,12 +924,12 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 - Data-resolution pipeline is orchestrated in 11 waves (Wave 0–10) per `.cursor/plans/data_resolution_waves_d3596502.plan.md`; Phase 0 is a verification gate, not a greenfield rebuild
 - Authoritative task briefs live under `prompts/data-resolution-pipeline/` (30 `task-*.md` files); parallel tasks create new files only and `*z` integration tasks own registries, `__init__.py`, and cross-task wiring
 - Phase 0 (Wave 0/`0z`) code paths live under `app/core/source_models/`, `scripts/loaders/`, and `tests/resolve/`; Wave 0 agents must not create or edit `app/resolve/`; gate failures commonly involve stubbed transaction loading, incomplete DB bootstrap (`states`/`file_origins`), and missing report reconciliation; before Phase 1 run `uv run cf prepare texas` then full load via `scripts/loaders/production_loader.py`
-- Post-implementation review remediation briefs live under `prompts/review-remediation/` (waves 1–5); orchestrated by `.cursor/plans/resolution_pipeline_fixes_ea1848c8.plan.md` (branch `resolve/review-fixes`)
+- Post-implementation review remediation: round 1 briefs under `prompts/review-remediation/`; round 2 under `prompts/review-remediation-round2/` (waves 1–5 + `COMPLETION.md`); phase work uses `remediation/*` GitButler branches and may not be on `gitbutler/workspace`
 - Resolve pipeline code lives under `app/resolve/` (`models/`, `standardize/`, `stages/`, `review/`, `cli.py`, `run.py`, `reverse.py`); Phase 1 (1z) stages 1→2→3→7; Phase 2 (2z) adds 4→5→6 with survivorship (2d); Phase 3 is tasks 3a/3b/3c + 3z only (TASK-3d removed — feedback loop in 2b, verified by 3z)
 - Phase 2 inter-stage contracts: `candidate_pairs` → `scored_pairs` → `merge_edges` → `clusters`; parallel workers must not cross-import round-1 modules
 - `_resolution_schema_models()` in `app/resolve/run.py` must register all staging models (e.g. ScoredPair, ClusterAssignment) or stages 4/6 fail on schema create; `EntityCrosswalk.match_method` must reflect merge path (`exact`, `deterministic_rule`, `probabilistic`, `approved_review`)
-- Resolve test gates: `uv run pytest tests/resolve -m "not integration"` (fast), full `tests/resolve/` + `uv run ruff check app/resolve/` before commit; CI via `ci-resolve-tests.yml` and `ci-resolve-integration.yml` (both `lfs: true`) wired into umbrella `ci.yml`
+- Main app test gates: `uv run pytest tests app/tests --ignore=tests/resolve`; coverage gate `uv run pytest tests/ app/tests/ --cov=app --cov-fail-under=60 --ignore=tests/resolve`; resolve fast tier `uv run pytest tests/resolve -m "not integration"` (+ full `tests/resolve/` + `uv run ruff check app/resolve/` before resolve commits); CI via `ci-resolve-tests.yml` and `ci-resolve-integration.yml` (both `lfs: true`)
 - Golden-set CSVs at `tests/resolve/golden/*.csv` are Git LFS tracked; `.gitignore` negates `*.csv` for that path; fresh clones need `git lfs pull` for `test_match_quality.py`
-- GitButler virtual-branch overlap can leave plan-completed files only in the working tree, absent from feature-branch commits — verify with `git ls-tree` before opening a PR
+- GitButler often blocks raw `git checkout` of parallel virtual branches; parallel remediation commits may consolidate on one `remediation/*` branch — verify with `git ls-tree` and reconcile virtual branches before opening a PR
 - `scripts/loaders/production_loader.py` applies `max_records` per file (not globally) so subset loads reach all record types; nullable pledge entity FKs allow PLDG rows without Wave 1 entity resolution
 - Texas CSV→parquet conversion (`app/states/texas/texas_converter.py`) uses `infer_schema_length=0` (all-string columns) and skips `CFS-Codes`/`CFS-ReadMe` metadata `.txt` files; legacy imports expect `app/` on `sys.path` — CLI entry points must bootstrap paths for `uv run cf` without manual `PYTHONPATH`
