@@ -6,7 +6,7 @@ import json
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
@@ -159,7 +159,7 @@ class UnifiedDatabaseManager:
         """
         SQLModel.metadata.create_all(self.engine)
 
-    def _resolve_state_record(self, session: Session, state_identifier: str) -> Optional[State]:
+    def _resolve_state_record(self, session: Session, state_identifier: str) -> State | None:
         if not state_identifier:
             return None
         code = state_identifier.strip().upper()
@@ -172,7 +172,7 @@ class UnifiedDatabaseManager:
         """Get a database session"""
         return Session(self.engine)
 
-    def load_data_from_file(self, file_path: Path, state: str) -> List[UnifiedTransaction]:
+    def load_data_from_file(self, file_path: Path, state: str) -> list[UnifiedTransaction]:
         """
         Load data from a file and convert to SQLModel instances.
 
@@ -204,7 +204,7 @@ class UnifiedDatabaseManager:
         _logger.info(f"Loaded {len(transactions)} transactions from {file_path}")
         return transactions
 
-    def save_transactions(self, transactions: List[UnifiedTransaction]) -> int:
+    def save_transactions(self, transactions: list[UnifiedTransaction]) -> int:
         """
         Save transactions to the database.
 
@@ -238,11 +238,11 @@ class UnifiedDatabaseManager:
 
     def get_transactions(
         self,
-        state: Optional[str] = None,
-        transaction_type: Optional[TransactionType] = None,
-        limit: Optional[int] = None,
+        state: str | None = None,
+        transaction_type: TransactionType | None = None,
+        limit: int | None = None,
         load_relationships: bool = True,
-    ) -> List[UnifiedTransaction]:
+    ) -> list[UnifiedTransaction]:
         """
         Get transactions from the database with optional filters.
 
@@ -281,7 +281,7 @@ class UnifiedDatabaseManager:
             results = session.exec(query).all()
             return results
 
-    def get_transaction_by_id(self, transaction_id: str) -> Optional[UnifiedTransaction]:
+    def get_transaction_by_id(self, transaction_id: str) -> UnifiedTransaction | None:
         """
         Get a specific transaction by its transaction ID.
 
@@ -297,7 +297,7 @@ class UnifiedDatabaseManager:
             )
             return session.exec(query).first()
 
-    def get_person_by_name(self, first_name: str, last_name: str) -> List[UnifiedPerson]:
+    def get_person_by_name(self, first_name: str, last_name: str) -> list[UnifiedPerson]:
         """
         Get persons by name.
 
@@ -314,7 +314,7 @@ class UnifiedDatabaseManager:
             )
             return session.exec(query).all()
 
-    def get_committee_by_name(self, name: str) -> List[UnifiedCommittee]:
+    def get_committee_by_name(self, name: str) -> list[UnifiedCommittee]:
         """
         Get committees by name.
 
@@ -329,8 +329,8 @@ class UnifiedDatabaseManager:
             return session.exec(query).all()
 
     def get_transactions_by_amount_range(
-        self, min_amount: float, max_amount: float, state: Optional[str] = None
-    ) -> List[UnifiedTransaction]:
+        self, min_amount: float, max_amount: float, state: str | None = None
+    ) -> list[UnifiedTransaction]:
         """
         Get transactions within an amount range.
 
@@ -356,8 +356,8 @@ class UnifiedDatabaseManager:
             return session.exec(query).all()
 
     def get_transactions_by_date_range(
-        self, start_date: str, end_date: str, state: Optional[str] = None
-    ) -> List[UnifiedTransaction]:
+        self, start_date: str, end_date: str, state: str | None = None
+    ) -> list[UnifiedTransaction]:
         """
         Get transactions within a date range.
 
@@ -388,7 +388,7 @@ class UnifiedDatabaseManager:
 
             return session.exec(query).all()
 
-    def get_summary_statistics(self) -> Dict[str, Any]:
+    def get_summary_statistics(self) -> dict[str, Any]:
         """
         Get summary statistics for all data in the database.
 
@@ -444,7 +444,7 @@ class UnifiedDatabaseManager:
                 "top_contributors": top_contributors,
             }
 
-    def get_cross_state_analysis(self) -> Dict[str, Any]:
+    def get_cross_state_analysis(self) -> dict[str, Any]:
         """
         Get cross-state analysis of the data.
 
@@ -524,9 +524,9 @@ class UnifiedDatabaseManager:
     def export_to_json(
         self,
         output_path: Path,
-        state: Optional[str] = None,
-        transaction_type: Optional[TransactionType] = None,
-        limit: Optional[int] = None,
+        state: str | None = None,
+        transaction_type: TransactionType | None = None,
+        limit: int | None = None,
     ):
         """
         Export transactions to JSON format.
@@ -613,10 +613,10 @@ class UnifiedDatabaseManager:
         self,
         transaction_id: int,
         updates: dict,
-        user: Optional[str] = None,
-        reason: Optional[str] = None,
-        amendment_details: Optional[str] = None,
-    ) -> Optional[UnifiedTransaction]:
+        user: str | None = None,
+        reason: str | None = None,
+        amendment_details: str | None = None,
+    ) -> UnifiedTransaction | None:
         """
         Update a transaction, saving a version snapshot before updating.
         Args:
@@ -683,10 +683,10 @@ class UnifiedDatabaseManager:
         self,
         person_id: int,
         updates: dict,
-        user: Optional[str] = None,
-        reason: Optional[str] = None,
-        amendment_details: Optional[str] = None,
-    ) -> Optional[UnifiedPerson]:
+        user: str | None = None,
+        reason: str | None = None,
+        amendment_details: str | None = None,
+    ) -> UnifiedPerson | None:
         """
         Update a person, saving a version snapshot before updating.
         """
@@ -733,10 +733,10 @@ class UnifiedDatabaseManager:
         self,
         committee_id: int,
         updates: dict,
-        user: Optional[str] = None,
-        reason: Optional[str] = None,
-        amendment_details: Optional[str] = None,
-    ) -> Optional[UnifiedCommittee]:
+        user: str | None = None,
+        reason: str | None = None,
+        amendment_details: str | None = None,
+    ) -> UnifiedCommittee | None:
         """
         Update a committee, saving a version snapshot before updating.
         """
@@ -785,10 +785,10 @@ class UnifiedDatabaseManager:
         self,
         address_id: int,
         updates: dict,
-        user: Optional[str] = None,
-        reason: Optional[str] = None,
-        amendment_details: Optional[str] = None,
-    ) -> Optional[UnifiedAddress]:
+        user: str | None = None,
+        reason: str | None = None,
+        amendment_details: str | None = None,
+    ) -> UnifiedAddress | None:
         """
         Update an address, saving a version snapshot before updating.
         """
@@ -838,9 +838,9 @@ class UnifiedDatabaseManager:
         person_id: int,
         committee_id: str,
         role: CommitteeRole,
-        start_date: Optional[date] = None,
-        notes: Optional[str] = None,
-        user: Optional[str] = None,
+        start_date: date | None = None,
+        notes: str | None = None,
+        user: str | None = None,
         *,
         session: Session | None = None,
     ) -> UnifiedCommitteePerson:
@@ -874,9 +874,9 @@ class UnifiedDatabaseManager:
         person_id: int,
         committee_id: int,
         role: CommitteeRole,
-        end_date: Optional[date] = None,
-        user: Optional[str] = None,
-        reason: Optional[str] = None,
+        end_date: date | None = None,
+        user: str | None = None,
+        reason: str | None = None,
     ) -> bool:
         """
         Remove a person from a committee role (set as inactive).
@@ -904,7 +904,7 @@ class UnifiedDatabaseManager:
 
     def get_person_committee_roles(
         self, person_id: int, active_only: bool = True
-    ) -> List[UnifiedCommitteePerson]:
+    ) -> list[UnifiedCommitteePerson]:
         """
         Get all committee roles for a specific person.
         """
@@ -921,8 +921,8 @@ class UnifiedDatabaseManager:
             return session.exec(query.order_by(UnifiedCommitteePerson.start_date)).all()
 
     def get_committee_persons(
-        self, committee_id: int, role: Optional[CommitteeRole] = None, active_only: bool = True
-    ) -> List[UnifiedCommitteePerson]:
+        self, committee_id: int, role: CommitteeRole | None = None, active_only: bool = True
+    ) -> list[UnifiedCommitteePerson]:
         """
         Get all people for a specific committee, optionally filtered by role.
         """
@@ -946,10 +946,10 @@ class UnifiedDatabaseManager:
         self,
         committee_person_id: int,
         updates: dict,
-        user: Optional[str] = None,
-        reason: Optional[str] = None,
-        amendment_details: Optional[str] = None,
-    ) -> Optional[UnifiedCommitteePerson]:
+        user: str | None = None,
+        reason: str | None = None,
+        amendment_details: str | None = None,
+    ) -> UnifiedCommitteePerson | None:
         """
         Update a committee-person relationship, saving a version snapshot before updating.
         """
@@ -993,7 +993,7 @@ class UnifiedDatabaseManager:
 
     def get_committee_person_versions(
         self, committee_person_id: int
-    ) -> List[UnifiedCommitteePersonVersion]:
+    ) -> list[UnifiedCommitteePersonVersion]:
         """
         Get all versions for a committee-person relationship.
         """
@@ -1006,8 +1006,8 @@ class UnifiedDatabaseManager:
             return versions
 
     def get_active_treasurers(
-        self, committee_id: Optional[int] = None
-    ) -> List[UnifiedCommitteePerson]:
+        self, committee_id: int | None = None
+    ) -> list[UnifiedCommitteePerson]:
         """
         Get all active treasurers, optionally filtered by committee.
         """
@@ -1026,7 +1026,7 @@ class UnifiedDatabaseManager:
 
     def get_committee_officers(
         self, committee_id: int, active_only: bool = True
-    ) -> Dict[CommitteeRole, List[UnifiedCommitteePerson]]:
+    ) -> dict[CommitteeRole, list[UnifiedCommitteePerson]]:
         """
         Get all officers for a committee, grouped by role.
         """
@@ -1042,8 +1042,8 @@ class UnifiedDatabaseManager:
         self,
         transaction_person_id: int,
         committee_person_id: int,
-        user: Optional[str] = None,
-        notes: Optional[str] = None,
+        user: str | None = None,
+        notes: str | None = None,
     ) -> bool:
         """
         Link a transaction-person relationship to a committee role.
@@ -1063,7 +1063,7 @@ class UnifiedDatabaseManager:
             session.commit()
             return True
 
-    def get_officer_contributions(self, committee_person_id: int) -> List[UnifiedTransactionPerson]:
+    def get_officer_contributions(self, committee_person_id: int) -> list[UnifiedTransactionPerson]:
         """
         Get all contributions made by a committee officer.
         """
@@ -1082,7 +1082,7 @@ class UnifiedDatabaseManager:
             )
             return session.exec(query).all()
 
-    def get_officer_expenditures(self, committee_person_id: int) -> List[UnifiedTransactionPerson]:
+    def get_officer_expenditures(self, committee_person_id: int) -> list[UnifiedTransactionPerson]:
         """
         Get all expenditures received by a committee officer.
         """
@@ -1102,8 +1102,8 @@ class UnifiedDatabaseManager:
             return session.exec(query).all()
 
     def get_committee_officer_activities(
-        self, committee_id: int, role: Optional[CommitteeRole] = None
-    ) -> Dict[str, List[UnifiedTransactionPerson]]:
+        self, committee_id: int, role: CommitteeRole | None = None
+    ) -> dict[str, list[UnifiedTransactionPerson]]:
         """
         Get all financial activities (contributions and expenditures) for committee officers.
         """
@@ -1155,7 +1155,7 @@ class UnifiedDatabaseManager:
 
             return activities
 
-    def get_person_committee_financial_summary(self, person_id: int) -> Dict[str, Any]:
+    def get_person_committee_financial_summary(self, person_id: int) -> dict[str, Any]:
         """
         Get a financial summary for a person across all their committee roles.
         """
@@ -1242,8 +1242,8 @@ class UnifiedDatabaseManager:
             return summary
 
     def auto_link_transactions_to_committee_roles(
-        self, committee_id: str, user: Optional[str] = None
-    ) -> Dict[str, int]:
+        self, committee_id: str, user: str | None = None
+    ) -> dict[str, int]:
         """
         Automatically link existing transactions to committee roles based on person and committee matching.
         This is useful when you have existing data and want to retroactively link officer activities.
@@ -1290,7 +1290,7 @@ class UnifiedDatabaseManager:
             return linked_counts
 
     def process_transaction_with_officer_linking(
-        self, transaction_data: dict, committee_officers: List[dict], user: Optional[str] = None
+        self, transaction_data: dict, committee_officers: list[dict], user: str | None = None
     ) -> UnifiedTransaction:
         """
         Process a new transaction and automatically link it to committee officers if applicable.
@@ -1340,8 +1340,8 @@ class UnifiedDatabaseManager:
             return transaction
 
     def get_unlinked_officer_transactions(
-        self, committee_id: Optional[int] = None
-    ) -> List[UnifiedTransactionPerson]:
+        self, committee_id: int | None = None
+    ) -> list[UnifiedTransactionPerson]:
         """
         Find transactions involving committee officers that haven't been linked to their roles yet.
         Useful for identifying transactions that need manual review and linking.

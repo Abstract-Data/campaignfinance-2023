@@ -49,7 +49,7 @@ class DBLoaderClass(abc.ABC):
             yield session
             session.commit()
             self.logger.info("Session committed using session_scope method")
-        except:
+        except Exception:
             session.rollback()
             raise
         finally:
