@@ -10,7 +10,7 @@ import json
 from collections.abc import Callable
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from typing import Any, TypeVar
+from typing import Any
 
 from sqlmodel import Session, func, select
 
@@ -82,9 +82,6 @@ _to_json_safe = to_json_safe
 _entity_snapshot = entity_snapshot
 _record_version = record_version
 
-TEntity = TypeVar("TEntity")
-TVersion = TypeVar("TVersion")
-
 
 class UnifiedVersionedRepository:
     """CRUD + version snapshotting for unified entities."""
@@ -92,9 +89,9 @@ class UnifiedVersionedRepository:
     def __init__(self, get_session_fn: Callable[[], Session]) -> None:
         self._get_session = get_session_fn
 
-    def _update_entity(
+    def update_entity(
         self,
-        entity_model: type[TEntity],
+        entity_model: type,
         entity_id: int | str,
         updates: dict,
         *,
@@ -103,7 +100,7 @@ class UnifiedVersionedRepository:
         user: str | None = None,
         reason: str | None = None,
         amendment_details: str | None = None,
-    ) -> TEntity | None:
+    ) -> object | None:
         """Generic update-with-versioning for any entity."""
         with self._get_session() as session:
             entity = session.get(entity_model, entity_id)
@@ -140,12 +137,12 @@ class UnifiedVersionedRepository:
             session.refresh(entity)
             return entity
 
-    def _get_versions(
+    def get_versions(
         self,
-        version_model: type[TVersion],
+        version_model: type,
         fk_field: str,
         entity_id: int | str,
-    ) -> list[TVersion]:
+    ) -> list:
         """Return all version records for an entity, ordered by version_number."""
         with self._get_session() as session:
             return session.exec(
@@ -162,7 +159,7 @@ class UnifiedVersionedRepository:
         reason: str | None = None,
         amendment_details: str | None = None,
     ) -> UnifiedTransaction | None:
-        return self._update_entity(
+        return self.update_entity(
             UnifiedTransaction,
             transaction_id,
             updates,
@@ -173,8 +170,8 @@ class UnifiedVersionedRepository:
             amendment_details=amendment_details,
         )
 
-    def get_transaction_versions(self, transaction_id: int) -> list[UnifiedTransactionVersion]:
-        return self._get_versions(UnifiedTransactionVersion, "transaction_id", transaction_id)
+    def get_transaction_versions(self, transaction_id: int) -> list:
+        return self.get_versions(UnifiedTransactionVersion, "transaction_id", transaction_id)
 
     def update_person(
         self,
@@ -184,7 +181,7 @@ class UnifiedVersionedRepository:
         reason: str | None = None,
         amendment_details: str | None = None,
     ) -> UnifiedPerson | None:
-        return self._update_entity(
+        return self.update_entity(
             UnifiedPerson,
             person_id,
             updates,
@@ -195,8 +192,8 @@ class UnifiedVersionedRepository:
             amendment_details=amendment_details,
         )
 
-    def get_person_versions(self, person_id: int) -> list[UnifiedPersonVersion]:
-        return self._get_versions(UnifiedPersonVersion, "person_id", person_id)
+    def get_person_versions(self, person_id: int) -> list:
+        return self.get_versions(UnifiedPersonVersion, "person_id", person_id)
 
     def update_committee(
         self,
@@ -206,7 +203,7 @@ class UnifiedVersionedRepository:
         reason: str | None = None,
         amendment_details: str | None = None,
     ) -> UnifiedCommittee | None:
-        return self._update_entity(
+        return self.update_entity(
             UnifiedCommittee,
             committee_id,
             updates,
@@ -217,8 +214,8 @@ class UnifiedVersionedRepository:
             amendment_details=amendment_details,
         )
 
-    def get_committee_versions(self, committee_id: int) -> list[UnifiedCommitteeVersion]:
-        return self._get_versions(UnifiedCommitteeVersion, "committee_id", committee_id)
+    def get_committee_versions(self, committee_id: int) -> list:
+        return self.get_versions(UnifiedCommitteeVersion, "committee_id", committee_id)
 
     def update_address(
         self,
@@ -228,7 +225,7 @@ class UnifiedVersionedRepository:
         reason: str | None = None,
         amendment_details: str | None = None,
     ) -> UnifiedAddress | None:
-        return self._update_entity(
+        return self.update_entity(
             UnifiedAddress,
             address_id,
             updates,
@@ -239,8 +236,8 @@ class UnifiedVersionedRepository:
             amendment_details=amendment_details,
         )
 
-    def get_address_versions(self, address_id: int) -> list[UnifiedAddressVersion]:
-        return self._get_versions(UnifiedAddressVersion, "address_id", address_id)
+    def get_address_versions(self, address_id: int) -> list:
+        return self.get_versions(UnifiedAddressVersion, "address_id", address_id)
 
     def update_committee_person(
         self,
@@ -250,7 +247,7 @@ class UnifiedVersionedRepository:
         reason: str | None = None,
         amendment_details: str | None = None,
     ) -> UnifiedCommitteePerson | None:
-        return self._update_entity(
+        return self.update_entity(
             UnifiedCommitteePerson,
             committee_person_id,
             updates,
@@ -264,6 +261,6 @@ class UnifiedVersionedRepository:
     def get_committee_person_versions(
         self, committee_person_id: int
     ) -> list[UnifiedCommitteePersonVersion]:
-        return self._get_versions(
+        return self.get_versions(
             UnifiedCommitteePersonVersion, "committee_person_id", committee_person_id
         )

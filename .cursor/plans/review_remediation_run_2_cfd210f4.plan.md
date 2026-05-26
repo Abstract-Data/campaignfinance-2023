@@ -13,16 +13,16 @@ todos:
     status: completed
   - id: wave-3-batch
     content: 3a+3b parallel → merge → 3c serial → 3z → expect 2-3 /review iterations → /deslop
-    status: in_progress
+    status: completed
   - id: wave-4-batch
     content: 4b+4d parallel → 4c → 4a → 4z (merge order per brief) → pipeline-auditor optional → /review loop → /deslop
-    status: pending
+    status: completed
   - id: wave-5-batch
     content: 5a–5d parallel → 5z (80% cov, COMPLETION.md, tag remediation-r3/complete) → final /review + /deslop
-    status: pending
+    status: completed
   - id: pr-optional
     content: "After final PASS: but push remediation-r3, open PR with backlog table + test plan"
-    status: pending
+    status: in_progress
 isProject: false
 ---
 
