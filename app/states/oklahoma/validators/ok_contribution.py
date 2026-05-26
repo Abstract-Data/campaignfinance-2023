@@ -1,11 +1,27 @@
 from datetime import date
 from typing import Optional
 
+<<<<<<< New base: fix(ok): ruff I001/W291 in Oklahoma validators
 import app.funcs.validator_functions as funcs
 from pydantic import field_validator, model_validator
+||||||| Common ancestor
+import app.funcs.validator_functions as funcs
+from pydantic import ConfigDict, field_validator, model_validator
+=======
+from pydantic import ConfigDict, field_validator, model_validator
+>>>>>>> Current commit: fix(ok): ruff I001/W291 in Oklahoma validators
 from pydantic_core import PydanticCustomError
 from sqlmodel import Field
 
+<<<<<<< New base: fix(ok): ruff I001/W291 in Oklahoma validators
+||||||| Common ancestor
+from app.abcs.base_models import CreateValidatorModel, ReadValidatorModel
+
+=======
+import app.funcs.validator_functions as funcs
+from app.abcs.base_models import CreateValidatorModel, ReadValidatorModel
+
+>>>>>>> Current commit: fix(ok): ruff I001/W291 in Oklahoma validators
 from ._helpers import parse_candidate_name as apply_candidate_name
 from ._helpers import parse_zipcode as apply_zipcode
 from .ok_settings import OklahomaSettings
