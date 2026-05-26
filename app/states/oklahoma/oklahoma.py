@@ -23,19 +23,22 @@ OklahomaValidatorType = Type[validators.OklahomaSettings]
 FileRecords = Generator[Dict, None, None]
 
 fields = funcs.read_toml(Path(__file__).parent / "oklahoma_fields.toml")
-
+OklahomaCategoryConfig = partial(CategoryConfig, FIELDS=fields)
 
 OKLAHOMA_CONFIGURATION = StateConfig(
     STATE_NAME="Oklahoma",
     STATE_ABBREVIATION="OK",
     CATEGORY_TYPES={
-            'expenses': CategoryConfig(
+            'expenses': OklahomaCategoryConfig(
+                DESC='expenses',
                 SUFFIX=fields['file-suffixes']['expenses'],
                 VALIDATOR=validators.OklahomaExpenditure),
-            'contributions': CategoryConfig(
+            'contributions': OklahomaCategoryConfig(
+                DESC='contributions',
                 SUFFIX=fields['file-suffixes']['contributions'],
                 VALIDATOR=validators.OklahomaContribution),
-            'lobby': CategoryConfig(
+            'lobby': OklahomaCategoryConfig(
+                DESC='lobby',
                 SUFFIX=fields['file-suffixes']['lobby'],
                 VALIDATOR=validators.OklahomaLobbyistExpenditure)
     },
