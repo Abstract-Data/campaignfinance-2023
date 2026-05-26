@@ -1,8 +1,11 @@
 """
-UnifiedAnalyticsService — SQL aggregate analytics.
+UnifiedAnalyticsService — SQL aggregate analytics (RF-CPLX-002, Wave 3b).
 
-Extracted from UnifiedDatabaseManager in Wave 3c (RF-CPLX-001).
-All aggregate paths use SQL — no full-table loads for summaries.
+``get_summary_statistics`` and ``get_cross_state_analysis`` use SQL aggregates
+(``func.sum``, ``func.count``, ``GROUP BY``) — never full-table
+``select(UnifiedTransaction).all()`` scans.
+
+Extracted from ``UnifiedDatabaseManager`` in Wave 3c (RF-CPLX-001).
 """
 
 from __future__ import annotations
@@ -229,9 +232,7 @@ class UnifiedAnalyticsService:
                 },
                 "top_contributors": {},
                 "top_committees": {
-                    row[0]: float(row[1] or 0)
-                    for row in top_committee_rows
-                    if row[0] is not None
+                    row[0]: float(row[1] or 0) for row in top_committee_rows if row[0] is not None
                 },
                 "amount_ranges": {
                     "0-100": int(amount_range_rows[0] or 0),
@@ -250,7 +251,9 @@ class UnifiedAnalyticsService:
     ) -> None:
         """Export transactions to JSON format."""
         if self._get_transactions is None:
-            raise RuntimeError("export_to_json requires get_transactions_fn on UnifiedAnalyticsService")
+            raise RuntimeError(
+                "export_to_json requires get_transactions_fn on UnifiedAnalyticsService"
+            )
         transactions = self._get_transactions(state, transaction_type, limit)
 
         export_data = []
