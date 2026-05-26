@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import contextlib
 import itertools
+from collections.abc import Generator, Iterator
 from dataclasses import dataclass
-from typing import Generator, Iterator, List, Type
 
 from app.logger import Logger
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -50,8 +50,8 @@ class DBLoader:
         SQLModel.metadata.create_all(self.engine)
 
     def remove_existing_records(self,
-                                records: List[SQLModel] | Iterator[SQLModel],
-                                validator: Type[SQLModel]) -> Iterator[SQLModel]:
+                                records: list[SQLModel] | Iterator[SQLModel],
+                                validator: type[SQLModel]) -> Iterator[SQLModel]:
         """
         Check for existing data in the database.
         :param session:
@@ -73,13 +73,10 @@ class DBLoader:
         :param records: Iterable[SQLModel]
         :return: None
         """
-        try:
-            self.logger.info("Adding all records.")
-            for record in records:
-                session.add(record)
-            session.commit()
-        except StopIteration:
-            self.logger.info("No records in iterator.")
+        self.logger.info("Adding all records.")
+        for record in records:
+            session.add(record)
+        session.commit()
 
     def add_with_limits(self, records: Generator[SQLModel, None, None], limit: int, session: Session) -> None:
         """
@@ -100,7 +97,7 @@ class DBLoader:
             added_count += len(record_limit)
             self.logger.info(f"{added_count:,} records added")
 
-    def add(self, records: Iterator[SQLModel], record_type: Type[SQLModel], **kwargs) -> None:
+    def add(self, records: Iterator[SQLModel], record_type: type[SQLModel], **kwargs) -> None:
         """
         Add records to the database with optional limit.
         Uses add_all or add_with_limits.

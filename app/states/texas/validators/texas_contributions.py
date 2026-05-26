@@ -1,5 +1,4 @@
 from datetime import date, datetime
-from typing import Optional
 
 from pydantic import field_validator, model_validator
 from pydantic_core import PydanticCustomError

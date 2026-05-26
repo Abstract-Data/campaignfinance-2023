@@ -3,8 +3,8 @@ from __future__ import annotations
 import abc
 import contextlib
 import itertools
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Iterator, List, Type
 
 import inject
 from app.logger import Logger
@@ -68,8 +68,8 @@ class DBLoaderClass(abc.ABC):
 
     @inject.autoparams()
     def remove_existing_records(self,
-                                records: List[SQLModel] | Iterator[SQLModel],
-                                validator: Type[SQLModel],
+                                records: list[SQLModel] | Iterator[SQLModel],
+                                validator: type[SQLModel],
                                 session: Session) -> Iterator[SQLModel]:
         """
         Check for existing data in the database.
@@ -92,12 +92,9 @@ class DBLoaderClass(abc.ABC):
         :param records: Iterable[SQLModel]
         :return: None
         """
-        try:
-            for record in records:
-                session.add(record)
-            session.commit()
-        except StopIteration:
-            self.logger.info("No records in iterator.")
+        for record in records:
+            session.add(record)
+        session.commit()
 
     @inject.autoparams()
     def add_with_limits(self, records: Iterator[SQLModel], limit: int, session: Session) -> None:
