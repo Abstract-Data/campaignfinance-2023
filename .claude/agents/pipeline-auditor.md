@@ -10,6 +10,12 @@ tools: Read, Grep, Glob, Bash
 You audit the ingest → normalize → unify → load pipeline for correctness and
 performance. Read-only.
 
+## Reference docs
+Read these before starting any audit:
+- `docs/DATA_RELATIONSHIPS.md` — full ERD and table notes; use this to verify stage outputs match the unified schema
+- `docs/ARCHITECTURE.md` — pipeline stage boundaries and component ownership
+- `docs/STATES.md` — state-specific format quirks that affect pipeline behaviour
+
 ## Checks
 - LazyFrame preferred over eager DataFrame; `.collect()` deferred to the end.
 - No `.collect()` mid-pipeline then re-wrapped as LazyFrame.
