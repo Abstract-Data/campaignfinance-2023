@@ -25,6 +25,7 @@ from app.core.models import (
 )
 from app.core.unified_field_library import field_library
 from app.core.value_objects import AddressParts, PersonName
+from app.logger import Logger
 
 
 class UnifiedSQLModelBuilder:
@@ -51,11 +52,14 @@ class UnifiedSQLModelBuilder:
         state_code: str | None = None,
         *,
         session: Session | None = None,
+        strict_field_resolution: bool = False,
     ):
         self.state_slug = state
         self.state_id = state_id
         self.state_code = state_code
         self.session = session
+        self.strict_field_resolution = strict_field_resolution
+        self.logger = Logger(self.__class__.__name__)
         self.field_mappings = {
             mapping.state_field: mapping.unified_field
             for mapping in field_library.get_state_mappings(state)
@@ -153,9 +157,7 @@ class UnifiedSQLModelBuilder:
         )
 
         entity_type = (
-            EntityType.ORGANIZATION
-            if person_type == PersonType.ORGANIZATION
-            else EntityType.PERSON
+            EntityType.ORGANIZATION if person_type == PersonType.ORGANIZATION else EntityType.PERSON
         )
         entity_name = person.organization if person.organization else person.full_name
         entity = self._get_or_create_entity(
@@ -280,16 +282,34 @@ class UnifiedSQLModelBuilder:
             if mapped_field == unified_field and state_field in raw_data:
                 return raw_data[state_field]
 
-        # If no direct mapping, try fuzzy matching (but avoid matching other unified field names)
-        for field_name, value in raw_data.items():
-            if field_name is not None:
-                # Skip fuzzy matching on fields that look like unified field names
-                # (they start with common prefixes like 'person_', 'address_', 'committee_')
-                if field_name.startswith(("person_", "address_", "committee_", "transaction_")):
-                    continue
-                if self._fuzzy_match(field_name, unified_field):
-                    return value
+        if self.strict_field_resolution:
+            raise ValueError(
+                f"No explicit mapping found for field '{unified_field}' in state "
+                f"'{self.state_slug}'. Add a mapping to UnifiedFieldLibrary."
+            )
 
+        fuzzy_result = self._fuzzy_field_match(raw_data, unified_field)
+        if fuzzy_result is not None:
+            self.logger.debug(
+                "Field '%s' resolved via fuzzy match for state '%s' — "
+                "consider adding an explicit mapping to UnifiedFieldLibrary",
+                unified_field,
+                self.state_slug,
+            )
+            return fuzzy_result
+
+        return None
+
+    def _fuzzy_field_match(self, raw_data: dict[str, Any], unified_field: str) -> Any | None:
+        """Word-overlap fallback when no explicit mapping exists."""
+        for field_name, value in raw_data.items():
+            if field_name is None:
+                continue
+            # Skip fields that look like unified field names (already normalized).
+            if field_name.startswith(("person_", "address_", "committee_", "transaction_")):
+                continue
+            if self._fuzzy_match(field_name, unified_field):
+                return value
         return None
 
     def _fuzzy_match(self, state_field: str, unified_field: str) -> bool:
@@ -642,5 +662,3 @@ class UnifiedSQLModelBuilder:
         if isinstance(obj, (datetime, date)):
             return obj.isoformat()
         return str(obj)
-
-
