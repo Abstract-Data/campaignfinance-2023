@@ -1,15 +1,16 @@
 from datetime import date
 from typing import Optional
 
-import app.funcs.validator_functions as funcs
 from pydantic import field_validator, model_validator
 from pydantic_core import PydanticCustomError
 from sqlmodel import Field
 
+import app.funcs.validator_functions as funcs
+
 from .ok_settings import OklahomaSettings
 
 """
-Oklahoma Expenditure Model/Validator 
+Oklahoma Expenditure Model/Validator
 Based on key information from the Oklahoma Ethics Commission
 URL: https://guardian.ok.gov/PublicSite/Resources/PublicDocuments/OKLobbyistExpendituresFileLayout.pdf
 """
