@@ -26,6 +26,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
+from app.states.oklahoma.validators._helpers import parse_zipcode
 from app.states.oklahoma.validators.ok_expenditure import (
     OklahomaExpenditureBase,
     OklahomaExpenditureCreate,
@@ -140,6 +141,32 @@ class TestOklahomaExpenditureValid:
     def test_optional_fields_default_to_none(self) -> None:
         record = OklahomaExpenditureBase(**_valid_expenditure())
         assert record.description is not None or record.description is None
+
+
+# ---------------------------------------------------------------------------
+# Zipcode normalization helper
+# ---------------------------------------------------------------------------
+
+
+class TestZipcodeNormalization:
+    def test_int_zip_coerced_from_parquet_like_input(self) -> None:
+        result = parse_zipcode({"zip": 73102, "state": "OK"})
+        assert result["zip5"] == 73102
+
+    def test_nine_digit_int_zip_splits_zip5_and_zip4(self) -> None:
+        result = parse_zipcode({"zip": 731021234, "state": "OK"})
+        assert result["zip5"] == 73102
+        assert result["zip4"] == 1234
+
+    def test_foreign_zip_uses_state_when_present(self) -> None:
+        result = parse_zipcode({"zip": "SW1A 1AA", "state": "GB"})
+        assert result["zip_foreign"] == "SW1A 1AA"
+        assert result["country"] == "GB"
+
+    def test_foreign_zip_without_state_does_not_key_error(self) -> None:
+        result = parse_zipcode({"zip": "SW1A 1AA"})
+        assert result["zip_foreign"] == "SW1A 1AA"
+        assert "country" not in result
 
 
 # ---------------------------------------------------------------------------

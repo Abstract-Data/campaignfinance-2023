@@ -14,6 +14,7 @@ logger = Logger(__name__)
 
 _ENCODINGS = ("utf-8", "cp1252", "latin-1")
 _METADATA_STEM_PREFIXES = ("CFS-Codes", "CFS-ReadMe")
+_CSV_ENCODING_RETRY_ERRORS = (UnicodeDecodeError,)
 
 
 @dataclass
@@ -43,7 +44,7 @@ def _read_delimited_file(path: Path) -> pl.DataFrame:
     for encoding in _ENCODINGS:
         try:
             return pl.read_csv(path, encoding=encoding, **read_kwargs)
-        except Exception as exc:
+        except _CSV_ENCODING_RETRY_ERRORS as exc:
             last_error = exc
     if last_error is not None:
         raise last_error

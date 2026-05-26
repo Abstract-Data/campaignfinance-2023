@@ -24,6 +24,10 @@ def parse_zipcode(values: dict[str, Any], *, zip_key: str = "zip") -> dict[str, 
     if not raw_zip:
         return values
 
+    raw_zip = str(raw_zip).strip()
+    if not raw_zip:
+        return values
+
     if len(raw_zip) == 9 and raw_zip.isdigit():
         values["zip5"] = int(raw_zip[:5])
         values["zip4"] = int(raw_zip[5:])
@@ -37,7 +41,8 @@ def parse_zipcode(values: dict[str, Any], *, zip_key: str = "zip") -> dict[str, 
             values["zip4"] = zip4
     elif not raw_zip.isdigit():
         values["zip_foreign"] = raw_zip
-        values["country"] = values["state"]
+        if state := values.get("state"):
+            values["country"] = state
     else:
         raise PydanticCustomError(
             "zip_code_format",

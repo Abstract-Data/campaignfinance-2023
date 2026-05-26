@@ -69,6 +69,14 @@ def test_texas_contribution_create_succeeds_with_required_fields():
     assert record.contributionInfoId == 999
 
 
+def test_texas_contribution_create_parses_raw_yyyymmdd_contribution_date():
+    """AddressValidatedModel.format_dates runs before field coercion (MRO)."""
+    data = {**_TEXAS_CONTRIB_MINIMAL, "contributionDt": "20240115"}
+    record = TECContributionCreate.model_validate(data)
+    assert isinstance(record.contributionDt, date)
+    assert record.contributionDt == date(2024, 1, 15)
+
+
 def test_texas_contribution_create_has_no_id_field():
     assert "id" not in TECContributionCreate.model_fields
 
