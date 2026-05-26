@@ -31,7 +31,7 @@ class TECContributionBase(CreateValidatorModel, TECSettings):
         ...,
         description="Date report received by TEC"
     )
-    infoOnlyFlag: Optional[bool] = Field(
+    infoOnlyFlag: bool | None = Field(
         default=None,
         description="Superseded by other report"
     )
@@ -59,105 +59,105 @@ class TECContributionBase(CreateValidatorModel, TECSettings):
         ...,
         description="Contribution amount"
     )
-    contributionDescr: Optional[str] = Field(
+    contributionDescr: str | None = Field(
         default=None,
         description="Contribution description"
     )
-    itemizeFlag: Optional[bool] = Field(
+    itemizeFlag: bool | None = Field(
         default=None,
         description="Y indicates that the contribution is itemized"
     )
-    travelFlag: Optional[bool] = Field(
+    travelFlag: bool | None = Field(
         default=None,
         description="Y indicates that the contribution has associated travel"
     )
     contributorPersentTypeCd: str = Field(...,
                                           description="Type of contributor name data - INDIVIDUAL or ENTITY"
                                           )
-    contributorNameOrganization: Optional[str] = Field(
+    contributorNameOrganization: str | None = Field(
         default=None,
         description="For ENTITY, the contributor organization name"
     )
-    contributorNameLast: Optional[str] = Field(
+    contributorNameLast: str | None = Field(
         default=None,
         description="For INDIVIDUAL, the contributor last name"
     )
-    contributorNameSuffixCd: Optional[str] = Field(
+    contributorNameSuffixCd: str | None = Field(
         default=None,
         description="For INDIVIDUAL, the contributor suffix"
     )
-    contributorNameFirst: Optional[str] = Field(
+    contributorNameFirst: str | None = Field(
         default=None,
         description="For INDIVIDUAL, the contributor first name"
     )
-    contributorNamePrefixCd: Optional[str] = Field(
+    contributorNamePrefixCd: str | None = Field(
         default=None,
         description="For INDIVIDUAL, the contributor prefix"
     )
-    contributorNameShort: Optional[str] = Field(
+    contributorNameShort: str | None = Field(
         default=None,
         description="For INDIVIDUAL, the contributor short name (nickname)"
     )
-    contributorNameFull: Optional[str] = Field(
+    contributorNameFull: str | None = Field(
         default=None,
         description="For INDIVIDUAL, the contributor full name"
     )
-    contributorStreetCity: Optional[str] = Field(
+    contributorStreetCity: str | None = Field(
         default=None,
         description="The contributor street address city"
     )
-    contributorStreetStateCd: Optional[str] = Field(
+    contributorStreetStateCd: str | None = Field(
         default=None,
         description="Contributor street address - state code (e.g. TX, CA) - for  \
      country=USA/UMI only"
     )
-    contributorStreetCountyCd: Optional[str] = Field(
+    contributorStreetCountyCd: str | None = Field(
         default=None,
         description="Contributor street address - Texas county")
-    contributorStreetCountryCd: Optional[str] = Field(
+    contributorStreetCountryCd: str | None = Field(
         default=None,
         description="Contributor street address - country (e.g. USA, UMI, MEX, CAN)"
     )
-    contributorStreetPostalCode: Optional[str] = Field(
+    contributorStreetPostalCode: str | None = Field(
         default=None,
         description="Contributor street address - postal code - for USA addresses only"
     )
-    contributorStreetRegion: Optional[str] = Field(
+    contributorStreetRegion: str | None = Field(
         default=None,
         description="Contributor street address - region for country other than USA"
     )
-    contributorEmployer: Optional[str] = Field(
+    contributorEmployer: str | None = Field(
         default=None,
         description="Contributor employer"
     )
-    contributorOccupation: Optional[str] = Field(
+    contributorOccupation: str | None = Field(
         default=None,
         description="Contributor occupation"
     )
-    contributorJobTitle: Optional[str] = Field(
+    contributorJobTitle: str | None = Field(
         default=None,
         description="Contributor job title"
     )
-    contributorPacFein: Optional[str] = Field(
+    contributorPacFein: str | None = Field(
         description="FEC ID of out-of-state PAC contributor",
     )
-    contributorOosPacFlag: Optional[bool] = Field(
+    contributorOosPacFlag: bool | None = Field(
         default=None,
         description="Indicates if contributor is an out-of-state PAC "
     )
-    contributorLawFirmName: Optional[str] = Field(
+    contributorLawFirmName: str | None = Field(
         default=None,
         description="Contributor law firm name"
     )
-    contributorSpouseLawFirmName: Optional[str] = Field(
+    contributorSpouseLawFirmName: str | None = Field(
         default=None,
         description="Contributor spouse law firm name"
     )
-    contributorParent1LawFirmName: Optional[str] = Field(
+    contributorParent1LawFirmName: str | None = Field(
         default=None,
         description="Contributor parent #1 law firm name"
     )
-    contributorParent2LawFirmName: Optional[str] = Field(
+    contributorParent2LawFirmName: str | None = Field(
         default=None,
         description="Contributor parent #2 law firm name"
     )
@@ -256,7 +256,7 @@ class TECContribution(TECContributionBase, table=True):
 
     __tablename__ = "tx_contributions"
     __table_args__ = {"schema": "texas"}
-    id: Optional[str] = Field(
+    id: str | None = Field(
         default=None,
         description="Unique identifier",
     )
