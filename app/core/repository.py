@@ -172,7 +172,7 @@ class UnifiedVersionedRepository:
             amendment_details=amendment_details,
         )
 
-    def get_transaction_versions(self, transaction_id: int) -> list:
+    def get_transaction_versions(self, transaction_id: int) -> list[UnifiedTransactionVersion]:
         return self._get_versions(UnifiedTransactionVersion, "transaction_id", transaction_id)
 
     def update_person(
@@ -194,7 +194,7 @@ class UnifiedVersionedRepository:
             amendment_details=amendment_details,
         )
 
-    def get_person_versions(self, person_id: int) -> list:
+    def get_person_versions(self, person_id: int) -> list[UnifiedPersonVersion]:
         return self._get_versions(UnifiedPersonVersion, "person_id", person_id)
 
     def update_committee(
@@ -216,7 +216,7 @@ class UnifiedVersionedRepository:
             amendment_details=amendment_details,
         )
 
-    def get_committee_versions(self, committee_id: int) -> list:
+    def get_committee_versions(self, committee_id: int) -> list[UnifiedCommitteeVersion]:
         return self._get_versions(UnifiedCommitteeVersion, "committee_id", committee_id)
 
     def update_address(
@@ -238,7 +238,7 @@ class UnifiedVersionedRepository:
             amendment_details=amendment_details,
         )
 
-    def get_address_versions(self, address_id: int) -> list:
+    def get_address_versions(self, address_id: int) -> list[UnifiedAddressVersion]:
         return self._get_versions(UnifiedAddressVersion, "address_id", address_id)
 
     def update_committee_person(
