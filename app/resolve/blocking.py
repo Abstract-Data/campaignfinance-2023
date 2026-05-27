@@ -8,7 +8,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from itertools import combinations
 
-from sqlalchemy import Column, String
+from sqlalchemy import Column, String, UniqueConstraint
 from sqlmodel import Field, SQLModel, delete, select
 
 from app.resolve.models.resolution import SOURCE_ID_MAX_LENGTH
@@ -17,6 +17,7 @@ from app.resolve.standardize.staging import ResolutionInput
 LOGGER = logging.getLogger(__name__)
 
 ADDRESS_FIELDS = frozenset({"line_1", "line_2", "city", "state", "zip5", "zip4", "zip3"})
+VIRTUAL_FIELDS = frozenset({"zip3", "first_initial"})
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,13 @@ class BlockingRule:
                 if len(raw_zip) < 3:
                     return None
                 parts.append(raw_zip[:3])
+                continue
+
+            if field_name == "first_initial":
+                first_name = (row.first_name or "").strip()
+                if not first_name:
+                    return None
+                parts.append(first_name[0].lower())
                 continue
 
             value = getattr(row, field_name, None)
@@ -54,6 +62,16 @@ class CandidatePair(SQLModel, table=True):
     """Per-run blocked pairs consumed by downstream matching stages."""
 
     __tablename__ = "candidate_pairs"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "source_a_type",
+            "source_a_id",
+            "source_b_type",
+            "source_b_id",
+            name="uq_candidate_pairs_run_sources",
+        ),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     run_id: int = Field(index=True)
@@ -65,13 +83,24 @@ class CandidatePair(SQLModel, table=True):
 
 
 def default_blocking_rules() -> list[BlockingRule]:
-    """Return conservative default blocking rules."""
+    """Return conservative default blocking rules for release-scale runs.
+
+    Person rules require either ZIP3 or first-initial disambiguation — never
+    phonetic last name alone (which explodes pair counts on common surnames).
+    Organization/committee rules require ZIP3 alongside normalized name.
+    """
     return [
-        BlockingRule(name="person_last_phonetic", fields=("last_name_phonetic",)),
-        BlockingRule(name="org_normalized", fields=("normalized_org",)),
         BlockingRule(
             name="person_last_phonetic_zip3",
             fields=("last_name_phonetic", "zip3"),
+        ),
+        BlockingRule(
+            name="person_first_initial_last_phonetic",
+            fields=("first_initial", "last_name_phonetic"),
+        ),
+        BlockingRule(
+            name="org_normalized_zip3",
+            fields=("normalized_org", "zip3"),
         ),
     ]
 
@@ -158,9 +187,49 @@ def generate_candidate_pairs(
                 yield pair
 
 
-def run_blocking_stage(session, run_id: int, config: dict) -> dict:
-    """Run stage 2 and persist candidate pairs for downstream stages."""
+def _cap_pairs(pairs: list[CandidatePair], max_pairs_per_run: int | None) -> list[CandidatePair]:
+    """Return at most *max_pairs_per_run* pairs in deterministic source-id order."""
+    if max_pairs_per_run is None or len(pairs) <= max_pairs_per_run:
+        return pairs
+
+    LOGGER.warning(
+        "Capping candidate pairs from %s to max_pairs_per_run=%s (golden-set tuning guardrail)",
+        len(pairs),
+        max_pairs_per_run,
+    )
+    ordered = sorted(
+        pairs,
+        key=lambda pair: (
+            pair.source_a_type,
+            pair.source_a_id,
+            pair.source_b_type,
+            pair.source_b_id,
+            pair.rule_name,
+        ),
+    )
+    return ordered[:max_pairs_per_run]
+
+
+def resolve_blocking_backend(session, config: dict) -> str:
+    """Return ``python`` or ``sql`` for stage-2 blocking."""
+    configured = config.get("blocking_backend")
+    if configured is not None:
+        backend = str(configured).strip().lower()
+        if backend not in {"python", "sql"}:
+            raise ValueError(
+                f"blocking_backend must be 'python' or 'sql', got {configured!r}"
+            )
+        return backend
+
+    bind = session.get_bind()
+    dialect = bind.dialect.name if bind is not None else "sqlite"
+    return "sql" if dialect == "postgresql" else "python"
+
+
+def _run_blocking_stage_python(session, run_id: int, config: dict) -> dict:
     max_block_size = int(config.get("max_block_size", 500))
+    max_pairs_raw = config.get("max_pairs_per_run")
+    max_pairs_per_run = int(max_pairs_raw) if max_pairs_raw is not None else None
     rules = _rules_from_config(config)
 
     session.exec(delete(CandidatePair).where(CandidatePair.run_id == run_id))
@@ -172,6 +241,17 @@ def run_blocking_stage(session, run_id: int, config: dict) -> dict:
             max_block_size=max_block_size,
         )
     )
+    pairs = _cap_pairs(pairs, max_pairs_per_run)
     session.add_all(pairs)
     session.commit()
     return {"pairs_compared": len(pairs)}
+
+
+def run_blocking_stage(session, run_id: int, config: dict) -> dict:
+    """Run stage 2 and persist candidate pairs for downstream stages."""
+    backend = resolve_blocking_backend(session, config)
+    if backend == "sql":
+        from app.resolve.blocking_sql import run_blocking_stage_sql
+
+        return run_blocking_stage_sql(session, run_id, config)
+    return _run_blocking_stage_python(session, run_id, config)
