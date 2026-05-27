@@ -35,6 +35,9 @@ _MIN_RECORDS_FOR_EM = 4
 # Fallback score when a pair falls outside Splink's blocking coverage.
 _FALLBACK_SCORE = 0.0
 
+# Bulk-insert scored pairs in chunks to avoid huge ORM flushes.
+_SCORED_PAIR_BATCH_SIZE = 5_000
+
 # ---------------------------------------------------------------------------
 # ScoredPair staging table (written by this stage; read by stage-5 classify)
 # ---------------------------------------------------------------------------
@@ -73,18 +76,27 @@ def _build_uid(source_type: str, source_id: str) -> str:
 
 def _row_to_dict(row: ResolutionInput) -> dict[str, Any]:
     """Flatten a ResolutionInput row to a Splink-compatible dict."""
+    zip5 = row.zip5 or ""
+    first_name = row.first_name or ""
     return {
         "unique_id": _build_uid(row.source_type, row.source_id),
         "source_id": row.source_id,
         "source_type": row.source_type,
-        "first_name": row.first_name or "",
+        "first_name": first_name,
+        "first_initial": first_name[:1].lower() if first_name.strip() else "",
         "last_name": row.last_name or "",
         "last_name_phonetic": row.last_name_phonetic or "",
         "normalized_org": row.normalized_org or "",
         "line_1": row.line_1 or "",
         "city": row.city or "",
-        "zip5": row.zip5 or "",
+        "state": row.state or "",
+        "zip5": zip5,
+        "zip3": zip5[:3] if len(zip5) >= 3 else "",
     }
+
+
+def _normalize_pair_key(uid_a: str, uid_b: str) -> tuple[str, str]:
+    return tuple(sorted((uid_a, uid_b)))
 
 
 def _load_entity_config(entity_type: str) -> types.ModuleType | None:
@@ -195,38 +207,24 @@ def _train_and_score_pair(
     return max(0.0, min(1.0, score)), explanation
 
 
-def _score_entity_type(
-    pairs: list[CandidatePair],
-    records: list[ResolutionInput],
-    entity_type: str,
+def _train_linker(
+    df: pd.DataFrame,
     config: types.ModuleType,
     seed: int,
-) -> list[ScoredPair]:
-    """Train a per-entity Splink model and score every candidate pair."""
+) -> Any:
+    """Build and train a Splink linker for one entity type."""
     from splink import DuckDBAPI, Linker, SettingsCreator
-
-    if not pairs:
-        return []
-
-    # Build a lookup of uid -> record dict for fast pair joining.
-    rec_by_uid: dict[str, dict[str, Any]] = {
-        _build_uid(r.source_type, r.source_id): _row_to_dict(r) for r in records
-    }
-
-    df = pd.DataFrame(list(rec_by_uid.values()))
-    if df.empty:
-        return _fallback_scored(pairs, entity_type, "no_records")
 
     settings = SettingsCreator(
         link_type="dedupe_only",
         comparisons=config.COMPARISONS,
         blocking_rules_to_generate_predictions=config.PREDICTION_BLOCKING_RULES,
         unique_id_column_name="unique_id",
+        # Bulk predict omits bf_tf_adj_* unless intermediate columns are retained.
+        retain_intermediate_calculation_columns=True,
     )
-    db_api = DuckDBAPI()
-    linker = Linker(df, settings, db_api)
+    linker = Linker(df, settings, DuckDBAPI())
 
-    # EM estimation — skip gracefully when there is not enough data.
     if len(df) >= _MIN_RECORDS_FOR_EM:
         try:
             linker.training.estimate_u_using_random_sampling(
@@ -240,28 +238,78 @@ def _score_entity_type(
         except Exception:
             LOGGER.warning(
                 "EM estimation failed for entity_type=%r; using default priors",
-                entity_type,
+                config.__name__.rsplit(".", maxsplit=1)[-1],
                 exc_info=True,
             )
+    return linker
 
-    # Score each candidate pair via compare_two_records.
+
+def _predictions_lookup(
+    pred_df: pd.DataFrame,
+    comp_meta: dict[str, list[dict[str, Any]]],
+) -> dict[tuple[str, str], tuple[float, dict[str, Any]]]:
+    """Index bulk Splink predictions by normalized ``unique_id`` pair."""
+    lookup: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
+    for _, row in pred_df.iterrows():
+        uid_l = str(row["unique_id_l"])
+        uid_r = str(row["unique_id_r"])
+        key = _normalize_pair_key(uid_l, uid_r)
+        score = float(row.get("match_probability", _FALLBACK_SCORE))
+        explanation = _build_explanation(row, comp_meta)
+        lookup[key] = (max(0.0, min(1.0, score)), explanation)
+    return lookup
+
+
+def _score_entity_type(
+    pairs: list[CandidatePair],
+    records: list[ResolutionInput],
+    entity_type: str,
+    config: types.ModuleType,
+    seed: int,
+) -> list[ScoredPair]:
+    """Train a per-entity Splink model and bulk-score candidate pairs."""
+    if not pairs:
+        return []
+
+    rec_by_uid: dict[str, dict[str, Any]] = {
+        _build_uid(r.source_type, r.source_id): _row_to_dict(r) for r in records
+    }
+
+    df = pd.DataFrame(list(rec_by_uid.values()))
+    if df.empty:
+        return _fallback_scored(pairs, entity_type, "no_records")
+
+    linker = _train_linker(df, config, seed)
+    settings_obj = _linker_settings_obj(linker)
+    comp_meta = _extract_comp_meta(settings_obj) if settings_obj is not None else {}
+
+    pred_df = linker.inference.predict(threshold_match_probability=0.0).as_pandas_dataframe()
+    lookup = _predictions_lookup(pred_df, comp_meta)
+
     scored: list[ScoredPair] = []
+    missing_pairs: list[tuple[CandidatePair, dict[str, Any], dict[str, Any]]] = []
+
     for pair in pairs:
         uid_a = _build_uid(pair.source_a_type, pair.source_a_id)
         uid_b = _build_uid(pair.source_b_type, pair.source_b_id)
-        rec_a = rec_by_uid.get(uid_a)
-        rec_b = rec_by_uid.get(uid_b)
-
-        if rec_a is None or rec_b is None:
-            LOGGER.warning(
-                "Missing resolution_input record for pair (%s, %s)",
-                uid_a,
-                uid_b,
-            )
-            score = _FALLBACK_SCORE
-            explanation: dict[str, Any] = {"note": "missing_input_record"}
+        key = _normalize_pair_key(uid_a, uid_b)
+        cached = lookup.get(key)
+        if cached is not None:
+            score, explanation = cached
         else:
-            score, explanation = _train_and_score_pair(linker, rec_a, rec_b)
+            rec_a = rec_by_uid.get(uid_a)
+            rec_b = rec_by_uid.get(uid_b)
+            if rec_a is None or rec_b is None:
+                LOGGER.warning(
+                    "Missing resolution_input record for pair (%s, %s)",
+                    uid_a,
+                    uid_b,
+                )
+                score = _FALLBACK_SCORE
+                explanation = {"note": "missing_input_record"}
+            else:
+                missing_pairs.append((pair, rec_a, rec_b))
+                continue
 
         scored.append(
             ScoredPair(
@@ -275,6 +323,28 @@ def _score_entity_type(
                 explanation_json=json.dumps(explanation),
             )
         )
+
+    if missing_pairs:
+        LOGGER.info(
+            "Bulk predict missed %s/%s pairs for entity_type=%r; falling back to compare_two_records",
+            len(missing_pairs),
+            len(pairs),
+            entity_type,
+        )
+        for pair, rec_a, rec_b in missing_pairs:
+            score, explanation = _train_and_score_pair(linker, rec_a, rec_b)
+            scored.append(
+                ScoredPair(
+                    run_id=pair.run_id,
+                    source_a_type=pair.source_a_type,
+                    source_a_id=pair.source_a_id,
+                    source_b_type=pair.source_b_type,
+                    source_b_id=pair.source_b_id,
+                    entity_type=entity_type,
+                    score=score,
+                    explanation_json=json.dumps(explanation),
+                )
+            )
 
     return scored
 
@@ -377,8 +447,8 @@ def run_score_stage(session: Session, run_id: int, config: dict) -> dict:
             type_records = inputs_by_type.get(entity_type, [])
             scored = _score_entity_type(type_pairs, type_records, entity_type, cfg, seed)
 
-        session.add_all(scored)
+        for offset in range(0, len(scored), _SCORED_PAIR_BATCH_SIZE):
+            session.add_all(scored[offset : offset + _SCORED_PAIR_BATCH_SIZE])
+            session.commit()
         total_pairs += len(type_pairs)
-
-    session.commit()
     return {"pairs_compared": total_pairs}

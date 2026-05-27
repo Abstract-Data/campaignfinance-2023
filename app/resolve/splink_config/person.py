@@ -33,11 +33,10 @@ COMPARISONS = [
 # ---------------------------------------------------------------------------
 
 # Used during EM training to estimate m-probabilities for non-blocked fields.
-TRAINING_BLOCKING_RULE = block_on("last_name")
+TRAINING_BLOCKING_RULE = block_on("last_name_phonetic", "zip3")
 
-# Used during inference; mirrors Phase-1 blocking so all candidate_pairs
-# from the blocking stage are covered in the scored output.
+# Mirrors Phase-1 default blocking rules for bulk DuckDB prediction.
 PREDICTION_BLOCKING_RULES = [
-    block_on("last_name"),
-    block_on("zip5"),
+    block_on("last_name_phonetic", "zip3"),
+    block_on("first_initial", "last_name_phonetic"),
 ]

@@ -8,6 +8,7 @@ from app.resolve.blocking import (
     CandidatePair,
     default_blocking_rules,
     generate_candidate_pairs,
+    resolve_blocking_backend,
     run_blocking_stage,
 )
 from app.resolve.standardize.staging import ResolutionInput
@@ -28,19 +29,22 @@ def _add_input_row(
     run_id: int,
     source_type: str,
     source_id: str,
+    entity_type: str = "person",
     last_name_phonetic: str | None = None,
     normalized_org: str | None = None,
     zip5: str | None = None,
     line_1: str | None = None,
+    first_name: str | None = "John",
 ) -> None:
     session.add(
         ResolutionInput(
             run_id=run_id,
             source_type=source_type,
             source_id=source_id,
-            entity_type="person",
+            entity_type=entity_type,
             raw_name=f"{source_type}-{source_id}",
             raw_address="raw address",
+            first_name=first_name,
             last_name_phonetic=last_name_phonetic,
             normalized_org=normalized_org,
             zip5=zip5,
@@ -210,3 +214,80 @@ def test_run_blocking_stage_persists_pairs_and_returns_count():
 def test_default_rules_do_not_block_on_address_alone():
     for rule in default_blocking_rules():
         assert not rule.is_address_only
+
+
+def test_default_rules_exclude_lone_phonetic_last_name():
+    rule_names = {rule.name for rule in default_blocking_rules()}
+    assert "person_last_phonetic" not in rule_names
+    assert "org_normalized" not in rule_names
+    assert "person_last_phonetic_zip3" in rule_names
+    assert "person_first_initial_last_phonetic" in rule_names
+    assert "org_normalized_zip3" in rule_names
+
+
+def test_generate_candidate_pairs_requires_zip3_for_org_blocks():
+    with _build_session() as session:
+        _add_input_row(
+            session,
+            run_id=16,
+            source_type="unified_entity",
+            source_id="O1",
+            entity_type="organization",
+            normalized_org="acme corp",
+            zip5="78701",
+            first_name=None,
+        )
+        _add_input_row(
+            session,
+            run_id=16,
+            source_type="unified_entity",
+            source_id="O2",
+            entity_type="organization",
+            normalized_org="acme corp",
+            zip5="90210",
+            first_name=None,
+        )
+        session.commit()
+
+        pairs = list(
+            generate_candidate_pairs(
+                session,
+                run_id=16,
+                rules=default_blocking_rules(),
+                max_block_size=100,
+            )
+        )
+
+        assert pairs == []
+
+
+def test_resolve_blocking_backend_defaults_to_python_on_sqlite():
+    with _build_session() as session:
+        assert resolve_blocking_backend(session, {}) == "python"
+
+
+def test_run_blocking_stage_caps_pairs_per_run(caplog):
+    with _build_session() as session:
+        for i in range(4):
+            _add_input_row(
+                session,
+                run_id=17,
+                source_type="unified_person",
+                source_id=f"P{i}",
+                last_name_phonetic="SM0",
+                zip5="78701",
+            )
+        session.commit()
+
+        result = run_blocking_stage(
+            session,
+            run_id=17,
+            config={"max_pairs_per_run": 2},
+        )
+        stored = session.exec(
+            select(CandidatePair).where(CandidatePair.run_id == 17)
+        ).all()
+
+        assert result == {"pairs_compared": 2}
+        assert len(stored) == 2
+        assert "Capping candidate pairs" in caplog.text

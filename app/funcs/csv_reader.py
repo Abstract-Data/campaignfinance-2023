@@ -4,7 +4,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, Generator
 
+import polars as pl
 from rich.progress import Progress
+
+from app.logger import Logger
+
+logger = Logger(__name__)
 
 
 def async_include_file_origin(func):
@@ -87,6 +92,19 @@ class FileReader:
                             k.replace(" ", "_"): v for k, v in _record.items() if k is not None
                         }
                     yield _record
+
+    def read_parquet(self, file: Path, **kwargs) -> Generator[Dict[int, Dict], None, None]:
+        """Read a Parquet file and yield each row as a dictionary."""
+        try:
+            df = pl.scan_parquet(file, **kwargs).collect()
+            yield from df.iter_rows(named=True)
+        except Exception as exc:
+            logger.error(f"Error reading parquet file {file}: {exc}")
+            try:
+                df = pl.read_parquet(file, **kwargs)
+                yield from df.to_dicts()
+            except Exception as fallback_exc:
+                logger.error(f"Fallback parquet read failed for {file}: {fallback_exc}")
 
     def read(self, file_path: Path, **kwargs) -> Generator[Dict[int, Dict], None, None]:
         """Dispatch to read_parquet or read_csv based on file extension."""

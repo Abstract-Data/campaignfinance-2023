@@ -30,11 +30,10 @@ COMPARISONS = [
 # Blocking rules
 # ---------------------------------------------------------------------------
 
-# Blocks on normalized org name token for EM training.
-TRAINING_BLOCKING_RULE = block_on("normalized_org")
+# Blocks on normalized org name + ZIP3 for EM training.
+TRAINING_BLOCKING_RULE = block_on("normalized_org", "zip3")
 
-# Prediction blocking mirrors Phase-1 org_normalized blocking rule.
+# Prediction blocking mirrors Phase-1 org_normalized_zip3 rule.
 PREDICTION_BLOCKING_RULES = [
-    block_on("normalized_org"),
-    block_on("zip5"),
+    block_on("normalized_org", "zip3"),
 ]

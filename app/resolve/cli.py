@@ -358,6 +358,7 @@ def _run_command(args: argparse.Namespace) -> int:
     config.setdefault("auto_threshold", 0.99)
     config.setdefault("review_threshold", 0.80)
     config.setdefault("max_cluster_size", 200)
+    config.setdefault("max_pairs_per_run", 2_000_000)
     config.setdefault("seed", 42)
 
     try:

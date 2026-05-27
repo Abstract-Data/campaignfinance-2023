@@ -1,30 +1,8 @@
 {
   "version": 1,
-<<<<<<< New base: refactor(db): collapse 10 cloned entity methods into 2 generic helpers
-  "lastRunAtMs": 1779680581651,
-  "turnsSinceLastRun": 7,
-  "lastTranscriptMtimeMs": 1779680579992,
-<<<<<<< New base: fix(ci,quality,perf,refactor): wave 1-5 remediation tasks — dependency scan, asy
-  "lastProcessedGenerationId": "309e1ed6-d420-42ed-ae5d-37c1f2de4443",
-<<<<<<< New base: refactor(db): collapse 10 cloned entity methods into 2 generic helpers
-||||||| Common ancestor
-  "lastProcessedGenerationId": "a93fe912-7d1b-4bc6-88a1-f2a5f6a45354",
-=======
-  "lastProcessedGenerationId": "a9f6f9be-9577-4974-af5e-4bb10ec912e7",
->>>>>>> Current commit: fix(ci,quality,perf,refactor): wave 1-5 remediation tasks — dependency scan, asy
-||||||| Common ancestor
-=======
-||||||| Common ancestor
-  "lastRunAtMs": 1779680581651,
-  "turnsSinceLastRun": 8,
-  "lastTranscriptMtimeMs": 1779680579992,
-  "lastProcessedGenerationId": "8ece235b-54f3-4776-a4ab-89fcf91c1fec",
-=======
-  "lastRunAtMs": 1779765051074,
-  "turnsSinceLastRun": 2,
-  "lastTranscriptMtimeMs": 1779765049706,
-  "lastProcessedGenerationId": "1aeba3c7-7e2f-4bf8-9715-a6f1bf5b1f80",
->>>>>>> Current commit: refactor(db): collapse 10 cloned entity methods into 2 generic helpers
->>>>>>> Current commit: refactor(db): collapse 10 cloned entity methods into 2 generic helpers
+  "lastRunAtMs": 1779850363796,
+  "turnsSinceLastRun": 3,
+  "lastTranscriptMtimeMs": 1779850361872,
+  "lastProcessedGenerationId": "b0d73eb5-002d-4dc1-bcb5-b076484b425a",
   "trialStartedAtMs": null
 }
