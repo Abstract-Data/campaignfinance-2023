@@ -93,34 +93,65 @@ class UnifiedSQLModelBuilder:
         transaction.filed_date = self._parse_date(self._get_field_value(raw_data, "filed_date"))
         transaction.amended = self._parse_boolean(self._get_field_value(raw_data, "amended"))
 
+        # Report linkage — TEC populates reportInfoIdent on every row; storing it
+        # here enables link_transactions_to_reports() to run without re-reading raw_data.
+        report_ident_raw = self._get_field_value(raw_data, "report_ident")
+        if report_ident_raw is not None:
+            transaction.report_ident = str(report_ident_raw).strip() or None
+
         # Map metadata fields
         transaction.download_date = raw_data.get("download_date")
 
         return transaction
 
-    def _parse_person_name(self, raw_data: dict[str, Any]) -> PersonName:
-        """Extract normalized person name parts from raw state data."""
+    def _parse_person_name(self, raw_data: dict[str, Any], field_prefix: str = "person") -> PersonName:
+        """Extract normalized person name parts from raw state data.
+
+        Args:
+            raw_data: State-specific record dict.
+            field_prefix: Unified-field prefix for name lookups.  Defaults to
+                ``"person"`` (generic path).  Pass a role-specific prefix such
+                as ``"contributor"`` or ``"payee"`` so that role-scoped column
+                mappings are used instead of the shared generic ones (Fix 1c).
+        """
         return PersonName(
-            first=self._get_field_value(raw_data, "person_first_name"),
+            first=self._get_field_value(raw_data, f"{field_prefix}_first_name"),
             middle=self._get_field_value(raw_data, "person_middle_name"),
-            last=self._get_field_value(raw_data, "person_last_name"),
+            last=self._get_field_value(raw_data, f"{field_prefix}_last_name"),
             suffix=self._get_field_value(raw_data, "person_suffix"),
-            organization=self._get_field_value(raw_data, "person_organization"),
+            organization=self._get_field_value(raw_data, f"{field_prefix}_organization"),
         )
 
-    def _parse_address_parts(self, raw_data: dict[str, Any]) -> AddressParts:
-        """Extract normalized address components from raw state data."""
+    def _parse_address_parts(self, raw_data: dict[str, Any], field_prefix: str = "address") -> AddressParts:
+        """Extract normalized address components from raw state data.
+
+        Args:
+            raw_data: State-specific record dict.
+            field_prefix: Unified-field prefix for address lookups.  Defaults
+                to ``"address"`` (used for committees / generic path).  Pass a
+                role prefix (e.g. ``"contributor"``, ``"payee"``) for
+                role-scoped column resolution (Fix 1c).
+        """
         return AddressParts(
-            street_1=self._get_field_value(raw_data, "address_street_1"),
-            street_2=self._get_field_value(raw_data, "address_street_2"),
-            city=self._get_field_value(raw_data, "address_city"),
-            state=self._get_field_value(raw_data, "address_state"),
-            zip_code=self._get_field_value(raw_data, "address_zip"),
+            street_1=self._get_field_value(raw_data, f"{field_prefix}_street_1"),
+            street_2=self._get_field_value(raw_data, f"{field_prefix}_street_2"),
+            city=self._get_field_value(raw_data, f"{field_prefix}_city"),
+            state=self._get_field_value(raw_data, f"{field_prefix}_state"),
+            zip_code=self._get_field_value(raw_data, f"{field_prefix}_zip"),
         ).normalized()
 
-    def build_person(self, raw_data: dict[str, Any], role: PersonRole) -> UnifiedPerson | None:
-        """Build a unified person from raw data"""
-        name = self._parse_person_name(raw_data)
+    def build_person(self, raw_data: dict[str, Any], role: PersonRole, field_prefix: str = "contributor") -> UnifiedPerson | None:
+        """Build a unified person from raw data.
+
+        Args:
+            raw_data: State-specific record dict.
+            role: The ``PersonRole`` this person occupies in the transaction.
+            field_prefix: Unified-field prefix for name and address lookups.
+                Defaults to ``"contributor"``.  Pass the role-specific prefix
+                from ``RECORD_TYPE_ROLE_MAP`` (e.g. ``"payee"``, ``"lender"``)
+                so that each role resolves its own TEC source columns (Fix 1c).
+        """
+        name = self._parse_person_name(raw_data, field_prefix=field_prefix)
         if not name.full_name:
             return None
 
@@ -150,7 +181,7 @@ class UnifiedSQLModelBuilder:
         elif last_name and not first_name:
             person_type = PersonType.UNKNOWN
 
-        address = self.build_address(raw_data, role.value)
+        address = self.build_address(raw_data, role.value, field_prefix=field_prefix)
 
         person = UnifiedPerson(
             **person_data, person_type=person_type, state_id=self.state_id, address=address
@@ -168,10 +199,19 @@ class UnifiedSQLModelBuilder:
 
         return person
 
-    def build_address(self, raw_data: dict[str, Any], entity_role: str) -> UnifiedAddress | None:
-        """Build a unified address from raw data"""
+    def build_address(self, raw_data: dict[str, Any], entity_role: str, field_prefix: str = "address") -> UnifiedAddress | None:
+        """Build a unified address from raw data.
+
+        Args:
+            raw_data: State-specific record dict.
+            entity_role: Unused legacy parameter kept for API compat.
+            field_prefix: Unified-field prefix for address lookups.  Defaults
+                to ``"address"`` (generic path / committees).  Pass a role
+                prefix (e.g. ``"contributor"``, ``"payee"``) when building a
+                role-scoped address (Fix 1c).
+        """
         _ = entity_role
-        parts = self._parse_address_parts(raw_data)
+        parts = self._parse_address_parts(raw_data, field_prefix=field_prefix)
         address_data: dict[str, Any] = {
             "street_1": parts.street_1,
             "street_2": parts.street_2,
@@ -380,6 +420,7 @@ class UnifiedSQLModelBuilder:
             query = select(UnifiedEntity).where(
                 UnifiedEntity.entity_type == entity_type,
                 UnifiedEntity.normalized_name == normalized_name,
+                UnifiedEntity.state_id == self.state_id,  # Fix 4: state-scope dedup
             )
             if address and getattr(address, "id", None):
                 query = query.where(UnifiedEntity.address_id == address.id)
@@ -513,29 +554,31 @@ class UnifiedSQLModelBuilder:
         if not address_data or self.session is None:
             return None
         try:
-            filter_count = 0
-            stmt = select(UnifiedAddress)
+            street_1_val = address_data.get("street_1")
+            city_val = address_data.get("city")
+            state_val = address_data.get("state")
+            zip_val = address_data.get("zip_code")
 
-            if address_data.get("street_1"):
-                stmt = stmt.where(UnifiedAddress.street_1 == address_data["street_1"])
-                filter_count += 1
+            # Require at least two non-None anchor values to avoid matching
+            # all-null rows in the database.
+            populated = sum(
+                1 for v in (street_1_val, city_val, state_val, zip_val) if v is not None
+            )
+            if populated < 2:
+                return None
 
-            if address_data.get("city"):
-                stmt = stmt.where(UnifiedAddress.city == address_data["city"])
-                filter_count += 1
+            # Fix 5: NULL-safe comparisons — plain == never matches NULL columns,
+            # so we use IS NULL when the candidate value is None.
+            def _null_safe(col: Any, val: Any) -> Any:
+                return col.is_(None) if val is None else col == val
 
-            if address_data.get("state"):
-                stmt = stmt.where(UnifiedAddress.state == address_data["state"])
-                filter_count += 1
-
-            if address_data.get("zip_code"):
-                stmt = stmt.where(UnifiedAddress.zip_code == address_data["zip_code"])
-                filter_count += 1
-
-            # Require at least two populated fields before treating a hit as a match.
-            if filter_count >= 2:
-                return self.session.exec(stmt).first()
-            return None
+            stmt = select(UnifiedAddress).where(
+                _null_safe(UnifiedAddress.street_1, street_1_val),
+                _null_safe(UnifiedAddress.city, city_val),
+                _null_safe(UnifiedAddress.state, state_val),
+                _null_safe(UnifiedAddress.zip_code, zip_val),
+            )
+            return self.session.exec(stmt).first()
         except SQLAlchemyError:
             return None
 
@@ -572,8 +615,18 @@ class UnifiedSQLModelBuilder:
 
         try:
             if isinstance(value, str):
-                # Try common date formats
-                for fmt in ["%Y-%m-%d", "%m/%d/%Y", "%m-%d-%Y", "%Y/%m/%d"]:
+                # Try common date formats.
+                # "%Y%m%d" must come BEFORE ambiguous short formats — TEC (Texas) stores
+                # dates as compact 8-digit strings like "20120702".
+                for fmt in [
+                    "%Y%m%d",             # TEC compact: "20120702"
+                    "%Y-%m-%d",           # ISO: "2012-07-02"
+                    "%m/%d/%Y",           # US: "07/02/2012"
+                    "%m-%d-%Y",           # US dashed: "07-02-2012"
+                    "%Y/%m/%d",           # ISO slashed: "2012/07/02"
+                    "%m/%d/%Y %H:%M:%S",  # US datetime: "07/02/2012 00:00:00"
+                    "%Y-%m-%dT%H:%M:%S",  # ISO datetime: "2012-07-02T00:00:00"
+                ]:
                     try:
                         return datetime.strptime(value, fmt).date()
                     except ValueError:

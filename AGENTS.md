@@ -1,6 +1,6 @@
 # AGENTS.md
-# Version: 1.2.0
-# Last Updated: 2026-05-24
+# Version: 1.3.0
+# Last Updated: 2026-05-28
 # Environment: dev
 # Model: claude-sonnet-4-6
 # Fallback Model: claude-opus-4-6
@@ -66,12 +66,17 @@ app/
 ├── ingest/                # File ingestion system
 │   └── file_reader.py     # GenericFileReader - schema-driven parsing
 ├── core/                  # Unified cross-state models and loaders
+│   ├── models/
+│   │   ├── tables.py            # All SQLModel table=True classes (incl. UnifiedExpenditure)
+│   │   └── __init__.py          # Re-exports all models
 │   ├── unified_models.py        # Unified data models
 │   ├── unified_sqlmodels.py     # SQLModel implementations
-│   ├── unified_field_library.py # Cross-state field mapping
-│   ├── unified_database.py      # Unified database operations
+│   ├── unified_field_library.py # Cross-state field mapping (role-scoped prefixes)
+│   ├── unified_database.py      # DB manager; bootstrap() creates tables + dedup indexes
+│   ├── builders.py              # UnifiedSQLModelBuilder — constructs models from raw dicts
+│   ├── processor.py             # RECORD_TYPE_ROLE_MAP + detail builders per TransactionType
 │   ├── unified_integration.py   # Integration helpers
-│   └── unified_state_loader.py  # Main loading pipeline
+│   └── unified_state_loader.py  # Main loading pipeline (NULL-safe address dedup)
 ├── states/                # State-specific implementations
 │   ├── texas/             # Texas Ethics Commission data
 │   │   ├── validators/    # Pydantic/SQLModel validators
@@ -96,7 +101,9 @@ scripts/                   # Utility and operational scripts
 ├── loaders/              # Data loading scripts
 ├── debug/                # Debug and diagnostic tools
 ├── analysis/             # Data analysis scripts
-└── db/                   # Database management
+├── db/                   # Database management
+├── reset_and_reingest.py # Truncate stale tables + bootstrap + re-ingest Texas parquet
+└── verify_ingest.py      # Post-ingest spec checklist queries (all 7 fix verifications)
 tests/                     # Integration and functional tests
 ├── conftest.py           # Shared test fixtures
 ├── test_*.py             # Integration and functional tests
@@ -173,12 +180,20 @@ uv run python scripts/loaders/production_loader.py high_performance oklahoma_202
 
 **Database Operations:**
 ```bash
-# Create/recreate tables
-uv run python recreate_tables.py
+# Bootstrap DB (create tables + apply 7 dedup unique indexes)
+cf bootstrap
 
-# Load data to PostgreSQL
+# Reset stale data and re-ingest Texas parquet files
+uv run python scripts/reset_and_reingest.py           # full reset + load
+uv run python scripts/reset_and_reingest.py --dry-run  # preview only
+uv run python scripts/reset_and_reingest.py --skip-ingest  # truncate + bootstrap only
+
+# Verify pipeline fixes after ingest (all 7 spec checklist queries)
+uv run python scripts/verify_ingest.py
+
+# Legacy (pre-cf CLI)
+uv run python recreate_tables.py
 uv run python load_to_postgres.py
-uv run python simple_postgres_load.py
 ```
 
 ## Code Style Standards
@@ -447,8 +462,8 @@ settings = Settings()
 ```
 
 ### Secrets Management
-- Use 1Password SDK for production secrets (`onepassword-sdk`)
-- Store local secrets in `.env` (gitignored)
+- **Local dev:** The `.env` file is managed by the **"Campaign Finance" 1Password environment** (account `6L2ZRMRSMFAF3IGZJYHIEZF74M`, environment `ojgs6k7robwcaldlzvddz25nmm`). Edit variables via the 1Password app or `mcp__1password__append_variables` — do not hand-edit the mounted file.
+- **Production:** Use the 1Password SDK (`onepassword-sdk`) for runtime secret resolution (`app/op.py` → `OnePasswordSettings`).
 - Never log sensitive data (API keys, credentials)
 - Logger class sends to PaperTrail for remote monitoring
 
@@ -774,6 +789,13 @@ A task is complete only when **all** of the following hold:
 
 **Rollback readiness** (risky operations) — rollback plan in the PR description; DB schema changes have a documented downgrade path.
 
+## Known Template Deviations
+
+Intentional departures from the Abstract Data project-alignment template. Do NOT "fix" these.
+
+1. **`CLAUDE.md` is not a symlink to `AGENTS.md`.** GitNexus auto-regenerates `CLAUDE.md` as a standalone file containing only the GitNexus block (between `<!-- gitnexus:start -->` and `<!-- gitnexus:end -->` markers). The CI `tool-config-verify.yml` workflow intentionally skips the CLAUDE.md symlink check. All project standards live in `AGENTS.md`; `CLAUDE.md` is GitNexus-only.
+2. **Hook immutability (`chmod 444`) not enforced via CI.** The hook scripts cannot be made read-only through the sandboxed container — run `chmod 444 .claude/hooks/*.sh` directly from a Mac terminal after stabilizing the hook set. This is an optional hardening step, not a hard requirement.
+
 ## Anti-Pattern Warnings
 
 Common failure modes on this project — check generated work against all of them:
@@ -927,10 +949,12 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 - Phase 0 (Wave 0/`0z`) code paths live under `app/core/source_models/`, `scripts/loaders/`, and `tests/resolve/`; Wave 0 agents must not create or edit `app/resolve/`; gate failures commonly involve stubbed transaction loading, incomplete DB bootstrap (`states`/`file_origins`), and missing report reconciliation; before Phase 1 run `uv run cf prepare texas` then full load via `scripts/loaders/production_loader.py`
 - Post-implementation review remediation: round 1 briefs under `prompts/review-remediation/` with plan `.cursor/plans/review_remediation_waves_1d9dad56.plan.md`; active Run 2 pack under `prompts/review-remediation-run2/` (waves 1–5 + `COMPLETION.md`) with plan `.cursor/plans/review_remediation_run_2_cfd210f4.plan.md` and phase branch `remediation-r3` (`prompts/review-remediation-round2/` is a separate earlier pack); work uses `remediation/*` GitButler branches and may not be on `gitbutler/workspace`; after Wave 3c, `app/core/unified_database.py` is a thin facade over `repository.py`, `officer_repository.py`, and `analytics.py`
 - Resolve pipeline code lives under `app/resolve/` (`models/`, `standardize/`, `stages/`, `review/`, `cli.py`, `run.py`, `reverse.py`); Phase 1 (1z) stages 1→2→3→7; Phase 2 (2z) adds 4→5→6 with survivorship (2d); Phase 3 is tasks 3a/3b/3c + 3z only (TASK-3d removed — feedback loop in 2b, verified by 3z); Phase 2 contracts: `candidate_pairs` → `scored_pairs` → `merge_edges` → `clusters`; Postgres e2e: `uv run --env-file .env python -m app.resolve run|publish --state texas` (resolve CLI does not auto-load `.env`); Texas stage 1 reads all TX entities in Postgres (~850k `resolution_input`), not just the latest load batch
-- Stage 2 default blocking: `person_last_phonetic_zip3`, `person_first_initial_last_phonetic`, `org_normalized_zip3` (lone `person_last_phonetic` / `org_normalized` dropped); current backend is in-memory single-threaded Python — bottleneck at ~850k entities; discussed next optimization is Postgres SQL set-based blocking (not yet implemented — requires explicit approval)
-- `max_pairs_per_run` defaults to `2_000_000` in resolve CLI; set `null` in run config JSON to disable cap; Stage 4 scoring uses bulk Splink `predict()` with `retain_intermediate_calculation_columns=True` for `bf_tf_adj_*` explanations, plus `compare_two_records` fallback for pairs missed by bulk blocking
+- Stage 2 default blocking: `person_last_phonetic_zip3`, `person_first_initial_last_phonetic`, `org_normalized_zip3` (lone `person_last_phonetic` / `org_normalized` dropped); Postgres defaults to `blocking_backend=sql` in `app/resolve/blocking_sql.py` (temp table + batched block-key joins; `blocking_block_key_batch_size` default 2000); rules must be whitelisted in `_RULE_BLOCK_KEY_SQL` or use `blocking_backend=python`; SQLite/tests use Python backend; zip3 keys are lowercased in both Python and SQL paths
+- `max_pairs_per_run` defaults to `2_000_000` in resolve CLI; SQL backend caps via batched DELETE (still costly if tens of millions of pairs are generated first); set `null` in run config JSON to disable cap; Stage 4 scoring uses bulk Splink `predict()` with `retain_intermediate_calculation_columns=True` for `bf_tf_adj_*` explanations, plus `compare_two_records` fallback for pairs missed by bulk blocking
+- `canonical_entity.entity_type` uses shared Postgres `entitytype` enum (uppercase labels); `CanonicalEntityTypeType` in `app/resolve/models/canonical.py` binds lowercase Python `EntityType`; `build_address_occupancy_view` must compare with `lower(ce.entity_type::text) = 'person'` on Postgres (see `docs/RUNBOOK.md`)
 - `app/resolve/standardize/phonetics.py` truncates metaphone codes to 50 chars (`_PHONETIC_MAX_LENGTH`) to fit Postgres `varchar(50)` on `resolution_input.*_phonetic`
 - Quick Texas resolve validation: use `uv run pytest tests/resolve -m "not integration"` and phase integration tests; for prepare→load smoke use `cf prepare texas --skip-download` → `cf load texas --preset development` on a clean DB (~12.5k rows, ~9 min) — not the `testing` preset for speed; full RUNBOOK release gate is hours–days
 - `_resolution_schema_models()` in `app/resolve/run.py` must register all staging models (e.g. ScoredPair, ClusterAssignment) or stages 4/6 fail on schema create; `EntityCrosswalk.match_method` must reflect merge path (`exact`, `deterministic_rule`, `probabilistic`, `approved_review`)
 - Main app test gates: `uv run pytest tests app/tests --ignore=tests/resolve`; coverage gate `uv run pytest tests/ app/tests/ --cov=app --cov-fail-under=60 --ignore=tests/resolve`; resolve fast tier `uv run pytest tests/resolve -m "not integration"` (+ full `tests/resolve/` + `uv run ruff check app/resolve/` before resolve commits); CI runs resolve via `ci.yml` job `resolve-tests` (reusable `ci-resolve-tests.yml`) plus `ci-resolve-integration.yml` (both `lfs: true`); golden-set CSVs at `tests/resolve/golden/*.csv` are Git LFS tracked — fresh clones need `git lfs pull` for `test_match_quality.py`
+- **Pipeline Fix Pack (2026-05-28, Fixes 1–7):** Fix 1 — `RECORD_TYPE_ROLE_MAP` in `processor.py` routes each TEC `record_type` to exactly one `PersonRole` + field-prefix (e.g. `RCPT → {CONTRIBUTOR: "contributor"}`, `EXPN → {PAYEE: "payee"}`); `unified_field_library.py` uses role-scoped unified names (`contributor_first_name`, `payee_first_name`, etc.) instead of the old role-blind `person_first_name`. Fix 2 — removed bad committee-as-contributor fallback in `_build_contribution_detail`. Fix 3 — `UnifiedExpenditure` table added to `tables.py`; `_build_expenditure_detail` added to `processor.py`; payer = committee entity, payee = vendor. Fix 4 — `_find_entity()` in `builders.py` now filters by `state_id`. Fix 5 — NULL-safe address dedup (`col.is_(None) if val is None else col == val`) in both `builders.py` and `unified_state_loader.py`. Fix 6 — explicit `PersonRole.RECIPIENT` guard in `_attach_transaction_persons`. Fix 7 — 7 partial unique indexes applied idempotently in `UnifiedDatabaseManager._apply_dedup_indexes()`, called from `bootstrap()`. Run `scripts/reset_and_reingest.py` to truncate stale data and re-ingest; run `scripts/verify_ingest.py` to confirm all fixes held.
 - GitButler often blocks raw `git checkout`; virtual-branch overlap can leave fixes uncommitted — stack with `but move <child> <parent>`; if `but setup` fails with conflicts returning to `gitbutler/workspace`, use `but apply <phase-branch>` instead of raw git; for commit conflicts use `but resolve <commit-id>` → edit files (no `git add`/`git commit` during resolution) → `but resolve finish`; consolidate parallel remediation on one `remediation/*` branch and verify with `git ls-tree` before opening a PR; never commit `tmp/texas/*.parquet` — untrack with `git rm --cached` if accidentally staged

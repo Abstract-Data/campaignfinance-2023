@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.resolve.blocking import (
@@ -11,6 +12,7 @@ from app.resolve.blocking import (
     resolve_blocking_backend,
     run_blocking_stage,
 )
+from app.resolve.blocking_sql import run_blocking_stage_sql
 from app.resolve.standardize.staging import ResolutionInput
 
 
@@ -291,3 +293,31 @@ def test_run_blocking_stage_caps_pairs_per_run(caplog):
         assert result == {"pairs_compared": 2}
         assert len(stored) == 2
         assert "Capping candidate pairs" in caplog.text
+
+
+def test_zip3_blocking_key_lowercases_mixed_case_zip5():
+  rule = default_blocking_rules()[0]
+  row = ResolutionInput(
+      run_id=1,
+      source_type="unified_person",
+      source_id="p1",
+      entity_type="person",
+      raw_name="n",
+      raw_address="a",
+      last_name_phonetic="SM0",
+      zip5="78A01",
+  )
+  assert rule.key_for(row) == "sm0|78a"
+
+
+def test_sql_backend_rejects_custom_blocking_rules():
+    with pytest.raises(ValueError, match="SQL blocking has no static key"):
+        run_blocking_stage_sql(
+            Session(),
+            run_id=1,
+            config={
+                "blocking_rules": [
+                    {"name": "custom_rule", "fields": ["last_name_phonetic"]}
+                ]
+            },
+        )

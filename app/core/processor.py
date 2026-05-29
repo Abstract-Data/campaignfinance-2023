@@ -15,12 +15,26 @@ from app.core.models import (
     UnifiedContribution,
     UnifiedCredit,
     UnifiedDebt,
+    UnifiedExpenditure,
     UnifiedLoan,
     UnifiedPerson,
     UnifiedTransaction,
     UnifiedTransactionPerson,
     UnifiedTravel,
 )
+
+# Fix 1a: Dispatch table mapping TEC record_type → {PersonRole: field_prefix}.
+# Only roles present in the dict are built for that record type.
+# For record types not in this map the fallback is {PersonRole.CONTRIBUTOR: "contributor"}.
+RECORD_TYPE_ROLE_MAP: dict[str, dict[PersonRole, str]] = {
+    "RCPT":   {PersonRole.CONTRIBUTOR: "contributor"},   # contributions
+    "EXPN":   {PersonRole.PAYEE: "payee"},               # expenditures
+    "LOAN":   {PersonRole.CONTRIBUTOR: "lender"},        # loans (lender acts as contributor)
+    "PLEDGE": {PersonRole.CONTRIBUTOR: "pledger"},       # pledges
+    "CREDIT": {PersonRole.CONTRIBUTOR: "payor"},         # credits/refunds
+    "TRAVEL": {PersonRole.PAYEE: "traveller"},           # travel (traveller acts as payee)
+    "ASSET":  {},                                        # assets have no external person
+}
 
 
 @dataclass
@@ -61,12 +75,13 @@ def _build_contribution_detail(
     committee = ctx["committee"]
     recipient = ctx["recipient"]
 
-    if not contributor_entity and committee and committee.entity:
-        contributor_entity = committee.entity
-    if not recipient_entity and recipient and recipient.entity:
-        recipient_entity = recipient.entity
-    if not (contributor_entity and recipient_entity):
-        return
+    # Fix 2: never fall back to committee.entity as the contributor — that makes
+    # the committee appear to donate to itself.  If the contributor is unknown,
+    # skip creating the detail record entirely.
+    if not contributor_entity:
+        return  # anonymous/unknown contributor — skip UnifiedContribution
+    if not recipient_entity:
+        return  # no committee entity — skip UnifiedContribution
 
     transaction.contribution = UnifiedContribution(
         transaction=transaction,
@@ -249,8 +264,39 @@ def _build_asset_detail(
     )
 
 
+def _build_expenditure_detail(
+    transaction: UnifiedTransaction,
+    builder: UnifiedSQLModelBuilder,
+    raw_data: dict[str, Any],
+    ctx: DetailContext,
+) -> None:
+    """Create a UnifiedExpenditure for EXPN transactions (Fix 3b).
+
+    After Fix 1 the payee person is stored in the PAYEE slot.  The committee
+    is always the payer.  ``ctx["payee_entity"]`` carries the payee entity
+    resolved by ``_entity_context``; ``ctx["committee"]`` carries the
+    committee whose entity is the payer.
+    """
+    committee = ctx["committee"]
+    payee_entity = ctx["payee_entity"]
+    payer_entity = committee.entity if committee and committee.entity else None
+    if not (payer_entity and payee_entity):
+        return
+    transaction.expenditure = UnifiedExpenditure(
+        transaction=transaction,
+        payer=payer_entity,
+        payee=payee_entity,
+        amount=transaction.amount,
+        expenditure_date=transaction.transaction_date,
+        expenditure_type=builder._get_field_value(raw_data, "expenditure_type"),
+        description=transaction.description,
+        state_id=builder.state_id,
+    )
+
+
 DETAIL_BUILDERS: dict[TransactionType, DetailBuilder] = {
     TransactionType.CONTRIBUTION: _build_contribution_detail,
+    TransactionType.EXPENDITURE: _build_expenditure_detail,
     TransactionType.LOAN: _build_loan_detail,
     TransactionType.DEBT: _build_debt_detail,
     TransactionType.CREDIT: _build_credit_detail,
@@ -262,12 +308,17 @@ DETAIL_BUILDERS: dict[TransactionType, DetailBuilder] = {
 def _build_participants(
     builder: UnifiedSQLModelBuilder, raw_data: dict[str, Any]
 ) -> dict[PersonRole, UnifiedPerson | None]:
-    return {
-        PersonRole.CONTRIBUTOR: builder.build_person(raw_data, PersonRole.CONTRIBUTOR),
-        PersonRole.RECIPIENT: builder.build_person(raw_data, PersonRole.RECIPIENT),
-        PersonRole.PAYEE: builder.build_person(raw_data, PersonRole.PAYEE),
-        PersonRole.CANDIDATE: builder.build_person(raw_data, PersonRole.CANDIDATE),
-    }
+    # Fix 1d: Use RECORD_TYPE_ROLE_MAP so only the correct role is built for
+    # each TEC record type, with the matching field prefix.  All other roles
+    # default to None, eliminating phantom RECIPIENT/PAYEE/CANDIDATE rows.
+    record_type = raw_data.get("record_type", "").upper()
+    role_map = RECORD_TYPE_ROLE_MAP.get(
+        record_type, {PersonRole.CONTRIBUTOR: "contributor"}
+    )
+    result: dict[PersonRole, UnifiedPerson | None] = {role: None for role in PersonRole}
+    for role, prefix in role_map.items():
+        result[role] = builder.build_person(raw_data, role, field_prefix=prefix)
+    return result
 
 
 def _attach_transaction_persons(
@@ -277,6 +328,10 @@ def _attach_transaction_persons(
 ) -> None:
     for role, person in participants.items():
         if not person:
+            continue
+        # Fix 6: RECIPIENT is always the committee, captured via committee_id FK.
+        # Never write a phantom RECIPIENT row into unified_transaction_persons.
+        if role == PersonRole.RECIPIENT:
             continue
         transaction.persons.append(
             UnifiedTransactionPerson(
@@ -295,7 +350,9 @@ def _entity_context(
 ) -> DetailContext:
     contributor = participants[PersonRole.CONTRIBUTOR]
     recipient = participants[PersonRole.RECIPIENT]
+    payee = participants[PersonRole.PAYEE]
     contributor_entity = contributor.entity if contributor and contributor.entity else None
+    payee_entity = payee.entity if payee and payee.entity else None
     recipient_entity = None
     if committee and committee.entity:
         recipient_entity = committee.entity
@@ -304,8 +361,10 @@ def _entity_context(
     return {
         "contributor": contributor,
         "recipient": recipient,
+        "payee": payee,
         "committee": committee,
         "contributor_entity": contributor_entity,
+        "payee_entity": payee_entity,
         "recipient_entity": recipient_entity,
     }
 

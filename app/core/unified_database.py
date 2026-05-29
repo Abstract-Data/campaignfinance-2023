@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -128,9 +128,58 @@ class UnifiedDatabaseManager:
         for name in _ANALYTICS_DELEGATES:
             setattr(self, name, getattr(self.analytics, name))
 
+    # Fix 7: partial unique indexes for dedup enforcement (no Alembic — raw DDL here).
+    _DEDUP_INDEXES: tuple[str, ...] = (
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uix_persons_name_state
+        ON unified_persons (lower(first_name), lower(last_name), state_id)
+        WHERE organization IS NULL
+          AND first_name IS NOT NULL
+          AND last_name IS NOT NULL;
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uix_persons_org_state
+        ON unified_persons (lower(organization), state_id)
+        WHERE organization IS NOT NULL;
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uix_addresses_city_state_zip_nostreet
+        ON unified_addresses (lower(city), lower(state), zip_code)
+        WHERE street_1 IS NULL;
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uix_addresses_full
+        ON unified_addresses (lower(street_1), lower(city), lower(state), zip_code)
+        WHERE street_1 IS NOT NULL;
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uix_txperson_txid_personid_role
+        ON unified_transaction_persons (transaction_id, person_id, role);
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uix_transactions_source_id
+        ON unified_transactions (transaction_id, committee_id)
+        WHERE transaction_id IS NOT NULL;
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uix_entities_type_name_state
+        ON unified_entities (entity_type, normalized_name, state_id)
+        WHERE state_id IS NOT NULL;
+        """,
+    )
+
     def bootstrap(self) -> None:
-        """Create tables via SQLModel.metadata.create_all (explicit DDL, P2-ARC-002)."""
+        """Create tables via SQLModel.metadata.create_all and apply dedup indexes (Fix 7)."""
         SQLModel.metadata.create_all(self.engine)
+        self._apply_dedup_indexes()
+
+    def _apply_dedup_indexes(self) -> None:
+        """Run Fix-7 partial unique indexes idempotently (CREATE … IF NOT EXISTS)."""
+        with self.engine.connect() as conn:
+            for ddl in self._DEDUP_INDEXES:
+                conn.execute(text(ddl))
+            conn.commit()
+        _logger.info("Dedup unique indexes applied.")
 
     def _resolve_state_record(self, session: Session, state_identifier: str) -> State | None:
         if not state_identifier:

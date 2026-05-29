@@ -267,7 +267,51 @@ class UnifiedFieldLibrary:
                 validation_rules={"max_length": 10}
             ),
         })
-        
+
+        # Role-scoped person and address fields (Fix 1b)
+        # Each role gets its own set of unified field names so that contributor,
+        # payee, lender, pledger, payor, and traveller columns resolve independently
+        # instead of all collapsing to the same generic "person_first_name" key.
+        for _prefix in ("contributor", "payee", "lender", "pledger", "payor", "traveller"):
+            self.unified_fields[f"{_prefix}_first_name"] = FieldDefinition(
+                name=f"{_prefix}_first_name",
+                category=FieldCategory.PERSON_NAME,
+                field_type=FieldType.STRING,
+                description=f"First name of the {_prefix}",
+                validation_rules={"max_length": 100},
+            )
+            self.unified_fields[f"{_prefix}_last_name"] = FieldDefinition(
+                name=f"{_prefix}_last_name",
+                category=FieldCategory.PERSON_NAME,
+                field_type=FieldType.STRING,
+                description=f"Last name of the {_prefix}",
+                validation_rules={"max_length": 100},
+            )
+            self.unified_fields[f"{_prefix}_organization"] = FieldDefinition(
+                name=f"{_prefix}_organization",
+                category=FieldCategory.PERSON_ORGANIZATION,
+                field_type=FieldType.STRING,
+                description=f"Organization name for the {_prefix}",
+                validation_rules={"max_length": 200},
+            )
+        # Address-carrying roles (payor and traveller typically have no address in TEC data)
+        for _prefix in ("contributor", "payee", "lender", "pledger"):
+            for _sfx, _desc, _cat, _maxlen in (
+                ("street_1", "Primary street address", FieldCategory.PERSON_ADDRESS, 200),
+                ("street_2", "Secondary street address", FieldCategory.PERSON_ADDRESS, 200),
+                ("city", "City", FieldCategory.PERSON_ADDRESS, 100),
+                ("state", "State code", FieldCategory.PERSON_ADDRESS, 2),
+                ("zip", "ZIP/postal code", FieldCategory.PERSON_ADDRESS, 10),
+            ):
+                _ft = FieldType.CODE if _sfx == "state" else FieldType.STRING
+                self.unified_fields[f"{_prefix}_{_sfx}"] = FieldDefinition(
+                    name=f"{_prefix}_{_sfx}",
+                    category=_cat,
+                    field_type=_ft,
+                    description=f"{_desc} of the {_prefix}",
+                    validation_rules={"max_length": _maxlen},
+                )
+
         # Committee fields
         self.unified_fields.update({
             "committee_name": FieldDefinition(
@@ -457,19 +501,19 @@ class UnifiedFieldLibrary:
             StateFieldMapping("texas", "expendDescr", "description", 1.0),
             StateFieldMapping("texas", "loanDescr", "description", 1.0),
             
-            # Person fields
-            StateFieldMapping("texas", "contributorNameFirst", "person_first_name", 1.0),
-            StateFieldMapping("texas", "contributorNameLast", "person_last_name", 1.0),
-            StateFieldMapping("texas", "contributorNameOrganization", "person_organization", 1.0),
+            # Person fields (contributor — role-scoped Fix 1b)
+            StateFieldMapping("texas", "contributorNameFirst", "contributor_first_name", 1.0),
+            StateFieldMapping("texas", "contributorNameLast", "contributor_last_name", 1.0),
+            StateFieldMapping("texas", "contributorNameOrganization", "contributor_organization", 1.0),
             StateFieldMapping("texas", "contributorEmployer", "person_employer", 1.0),
             StateFieldMapping("texas", "contributorOccupation", "person_occupation", 1.0),
-            
-            # Address fields (contributor)
-            StateFieldMapping("texas", "contributorStreetAddr1", "address_street_1", 1.0),
-            StateFieldMapping("texas", "contributorStreetAddr2", "address_street_2", 1.0),
-            StateFieldMapping("texas", "contributorStreetCity", "address_city", 1.0),
-            StateFieldMapping("texas", "contributorStreetStateCd", "address_state", 1.0),
-            StateFieldMapping("texas", "contributorStreetPostalCode", "address_zip", 1.0),
+
+            # Address fields (contributor — role-scoped Fix 1b)
+            StateFieldMapping("texas", "contributorStreetAddr1", "contributor_street_1", 1.0),
+            StateFieldMapping("texas", "contributorStreetAddr2", "contributor_street_2", 1.0),
+            StateFieldMapping("texas", "contributorStreetCity", "contributor_city", 1.0),
+            StateFieldMapping("texas", "contributorStreetStateCd", "contributor_state", 1.0),
+            StateFieldMapping("texas", "contributorStreetPostalCode", "contributor_zip", 1.0),
             
             # Address fields (filer) - for filers file
             StateFieldMapping("texas", "filerStreetAddr1", "address_street_1", 1.0),
@@ -502,9 +546,10 @@ class UnifiedFieldLibrary:
             StateFieldMapping("texas", "creditDt", "transaction_date", 1.0),
             StateFieldMapping("texas", "creditAmount", "amount", 1.0),
             StateFieldMapping("texas", "creditDescr", "description", 1.0),
-            StateFieldMapping("texas", "payorNameFirst", "person_first_name", 1.0),
-            StateFieldMapping("texas", "payorNameLast", "person_last_name", 1.0),
-            StateFieldMapping("texas", "payorNameOrganization", "person_organization", 1.0),
+            # Payor fields (role-scoped Fix 1b)
+            StateFieldMapping("texas", "payorNameFirst", "payor_first_name", 1.0),
+            StateFieldMapping("texas", "payorNameLast", "payor_last_name", 1.0),
+            StateFieldMapping("texas", "payorNameOrganization", "payor_organization", 1.0),
             
             # Travel fields
             StateFieldMapping("texas", "travelInfoId", "transaction_id", 1.0),
@@ -520,8 +565,9 @@ class UnifiedFieldLibrary:
             StateFieldMapping("texas", "departureDt", "departure_dt", 1.0),
             StateFieldMapping("texas", "arrivalDt", "arrival_dt", 1.0),
             StateFieldMapping("texas", "travelPurpose", "travel_purpose", 1.0),
-            StateFieldMapping("texas", "travellerNameFirst", "person_first_name", 0.9),
-            StateFieldMapping("texas", "travellerNameLast", "person_last_name", 0.9),
+            # Traveller fields (role-scoped Fix 1b)
+            StateFieldMapping("texas", "travellerNameFirst", "traveller_first_name", 0.9),
+            StateFieldMapping("texas", "travellerNameLast", "traveller_last_name", 0.9),
             
             # Asset fields
             StateFieldMapping("texas", "assetInfoId", "transaction_id", 1.0),
@@ -532,9 +578,51 @@ class UnifiedFieldLibrary:
             StateFieldMapping("texas", "pledgeDt", "transaction_date", 1.0),
             StateFieldMapping("texas", "pledgeAmount", "amount", 1.0),
             StateFieldMapping("texas", "pledgeDescr", "description", 1.0),
-            StateFieldMapping("texas", "pledgerNameFirst", "person_first_name", 0.9),
-            StateFieldMapping("texas", "pledgerNameLast", "person_last_name", 0.9),
-            StateFieldMapping("texas", "pledgerNameOrganization", "person_organization", 0.9),
+            # Pledger fields (role-scoped Fix 1b)
+            StateFieldMapping("texas", "pledgerNameFirst", "pledger_first_name", 0.9),
+            StateFieldMapping("texas", "pledgerNameLast", "pledger_last_name", 0.9),
+            StateFieldMapping("texas", "pledgerNameOrganization", "pledger_organization", 0.9),
+            StateFieldMapping("texas", "pledgerStreetAddr1", "pledger_street_1", 0.9),
+            StateFieldMapping("texas", "pledgerStreetAddr2", "pledger_street_2", 0.9),
+            StateFieldMapping("texas", "pledgerStreetCity", "pledger_city", 0.9),
+            StateFieldMapping("texas", "pledgerStreetStateCd", "pledger_state", 0.9),
+            StateFieldMapping("texas", "pledgerStreetPostalCode", "pledger_zip", 0.9),
+
+            # Loan / lender fields (TEC uses lender* prefix, not contributor*)
+            StateFieldMapping("texas", "loanDt", "transaction_date", 1.0),
+            StateFieldMapping("texas", "loanAmount", "amount", 1.0),
+            StateFieldMapping("texas", "loanDescr", "description", 1.0),
+            # Lender fields (role-scoped Fix 1b)
+            StateFieldMapping("texas", "lenderNameFirst", "lender_first_name", 1.0),
+            StateFieldMapping("texas", "lenderNameLast", "lender_last_name", 1.0),
+            StateFieldMapping("texas", "lenderNameOrganization", "lender_organization", 1.0),
+            StateFieldMapping("texas", "lenderStreetAddr1", "lender_street_1", 1.0),
+            StateFieldMapping("texas", "lenderStreetAddr2", "lender_street_2", 1.0),
+            StateFieldMapping("texas", "lenderStreetCity", "lender_city", 1.0),
+            StateFieldMapping("texas", "lenderStreetStateCd", "lender_state", 1.0),
+            StateFieldMapping("texas", "lenderStreetPostalCode", "lender_zip", 1.0),
+
+            # Expenditure / payee fields (role-scoped Fix 1b)
+            StateFieldMapping("texas", "payeeNameFirst", "payee_first_name", 1.0),
+            StateFieldMapping("texas", "payeeNameLast", "payee_last_name", 1.0),
+            StateFieldMapping("texas", "payeeNameOrganization", "payee_organization", 1.0),
+            StateFieldMapping("texas", "payeeStreetAddr1", "payee_street_1", 1.0),
+            StateFieldMapping("texas", "payeeStreetAddr2", "payee_street_2", 1.0),
+            StateFieldMapping("texas", "payeeStreetCity", "payee_city", 1.0),
+            StateFieldMapping("texas", "payeeStreetStateCd", "payee_state", 1.0),
+            StateFieldMapping("texas", "payeeStreetPostalCode", "payee_zip", 1.0),
+
+            # Candidate fields used in expenditure records for the recipient
+            StateFieldMapping("texas", "candidateNameFirst", "person_first_name", 0.8),
+            StateFieldMapping("texas", "candidateNameLast", "person_last_name", 0.8),
+            StateFieldMapping("texas", "candidateNameOrganization", "person_organization", 0.8),
+            StateFieldMapping("texas", "candidateHoldOfficeCd", "office_sought", 0.8),
+            StateFieldMapping("texas", "candidateSeekOfficeCd", "office_sought", 0.9),
+            StateFieldMapping("texas", "candidateHoldOfficeDistrict", "district_info", 0.8),
+            StateFieldMapping("texas", "candidateSeekOfficeDistrict", "district_info", 0.9),
+
+            # report_ident — links transactions back to their filing report
+            StateFieldMapping("texas", "reportInfoIdent", "report_ident", 1.0),
         ]
         
         # Oklahoma mappings

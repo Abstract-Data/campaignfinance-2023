@@ -184,6 +184,19 @@ def test_build_address_occupancy_view_lists_distinct_entities_with_transaction_c
         assert [row[0] for row in rows] == [101, 102, 103]
         assert {row[0]: row[1] for row in rows} == {101: 3, 102: 3, 103: 2}
 
+        roles = session.execute(
+            text(
+                """
+                SELECT canonical_entity_id, role
+                FROM address_occupancy
+                WHERE canonical_address_id = :address_id
+                ORDER BY canonical_entity_id
+                """
+            ),
+            {"address_id": address_id},
+        ).all()
+        assert roles == [(101, "resident"), (102, "registered"), (103, "registered")]
+
 
 def test_address_occupancy_supports_counting_entities_at_an_address() -> None:
     engine = create_engine("sqlite://")

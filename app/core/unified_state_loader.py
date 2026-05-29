@@ -395,6 +395,29 @@ class UnifiedStateLoader:
 
         with self._db_manager.get_session() as session:
             _committees, _persons, state_id, state_code = self._load_batch_indexes(session)
+
+            # Guard: skip entire file if already loaded to prevent duplicate rows on
+            # re-runs. FileOrigin uses a SHA-256 key of (state_id, filename) so the
+            # same file always produces the same id.
+            if file_path and state_id is not None:
+                from app.core.models import FileOrigin
+                origin_key = FileOrigin.build_key(state_id, file_name)
+                existing_origin = session.get(FileOrigin, origin_key)
+                if existing_origin is not None:
+                    # Check if there are already transactions from this file
+                    from sqlmodel import select as _select
+                    already_loaded = session.exec(
+                        _select(UnifiedTransaction.id)
+                        .where(UnifiedTransaction.file_origin_id == origin_key)
+                        .limit(1)
+                    ).first()
+                    if already_loaded is not None:
+                        logger.info(
+                            f"Skipping {file_name!r} — already loaded "
+                            f"(origin_id={origin_key[:12]}…)"
+                        )
+                        stats.skipped = len(records)
+                        return stats
             if state_id is None:
                 msg = (
                     f"State '{self.state}' is not present in the states table; "
@@ -463,23 +486,68 @@ class UnifiedStateLoader:
                 transaction.committee_id = filer_id
             else:
                 session.add(transaction.committee)
+                # Explicitly carry the FK — SQLModel does not reliably backfill
+                # the committee_id column from the relationship when both the
+                # committee and the transaction are simultaneously pending in the
+                # same session (the FK gets cleared during identity-map resolution).
+                transaction.committee_id = filer_id
 
         for tx_person in transaction.persons:
-            if tx_person.person and tx_person.person.address:
+            person = tx_person.person
+            if not person:
+                continue
+
+            # ------------------------------------------------------------------
+            # Person deduplication — reuse an existing person with the same
+            # (first_name, last_name) or organization rather than inserting a
+            # new row per transaction.  This prevents hundreds of duplicate rows
+            # for recurring contributors (e.g. Rick Perry 752×).
+            # ------------------------------------------------------------------
+            existing_person: UnifiedPerson | None = None
+            if person.first_name and person.last_name:
+                existing_person = session.exec(
+                    select(UnifiedPerson).where(
+                        UnifiedPerson.first_name == person.first_name,
+                        UnifiedPerson.last_name == person.last_name,
+                        UnifiedPerson.state_id == state_id,
+                    )
+                ).first()
+            elif person.organization:
+                existing_person = session.exec(
+                    select(UnifiedPerson).where(
+                        UnifiedPerson.organization == person.organization,
+                        UnifiedPerson.state_id == state_id,
+                    )
+                ).first()
+
+            if existing_person is not None:
+                tx_person.person = existing_person
+                tx_person.person_id = existing_person.id  # type: ignore[assignment]
+                if tx_person.entity is None and existing_person.entity:
+                    tx_person.entity = existing_person.entity
+                person = existing_person  # use existing for address dedup below
+
+            # Address deduplication (Fix 5: NULL-safe comparisons)
+            if person.address:
+                addr = person.address
+
+                def _null_safe(col: Any, val: Any) -> Any:
+                    return col.is_(None) if val is None else col == val
+
                 existing_address = session.exec(
                     select(UnifiedAddress).where(
-                        UnifiedAddress.street_1 == tx_person.person.address.street_1,
-                        UnifiedAddress.city == tx_person.person.address.city,
-                        UnifiedAddress.state == tx_person.person.address.state,
-                        UnifiedAddress.zip_code == tx_person.person.address.zip_code,
+                        _null_safe(UnifiedAddress.street_1, addr.street_1),
+                        _null_safe(UnifiedAddress.city, addr.city),
+                        _null_safe(UnifiedAddress.state, addr.state),
+                        _null_safe(UnifiedAddress.zip_code, addr.zip_code),
                     )
                 ).first()
 
                 if existing_address:
-                    tx_person.person.address_id = existing_address.id
-                    tx_person.person.address = existing_address
+                    person.address_id = existing_address.id
+                    person.address = existing_address
                 else:
-                    session.add(tx_person.person.address)
+                    session.add(addr)
                     session.flush()
 
         session.add(transaction)

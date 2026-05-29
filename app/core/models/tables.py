@@ -40,6 +40,7 @@ class State(SQLModel, table=True):
     credits: List["UnifiedCredit"] = Relationship(back_populates="state")
     travel_records: List["UnifiedTravel"] = Relationship(back_populates="state")
     assets: List["UnifiedAsset"] = Relationship(back_populates="state")
+    expenditures: List["UnifiedExpenditure"] = Relationship(back_populates="state")
     campaign_entities: List["UnifiedCampaignEntity"] = Relationship(back_populates="state")
     transaction_persons: List["UnifiedTransactionPerson"] = Relationship(back_populates="state")
     committee_persons: List["UnifiedCommitteePerson"] = Relationship(back_populates="state")
@@ -373,6 +374,9 @@ class UnifiedTransaction(SQLModel, table=True):
         back_populates="transaction", sa_relationship_kwargs={"uselist": False}
     )
     asset: Optional["UnifiedAsset"] = Relationship(
+        back_populates="transaction", sa_relationship_kwargs={"uselist": False}
+    )
+    expenditure: Optional["UnifiedExpenditure"] = Relationship(
         back_populates="transaction", sa_relationship_kwargs={"uselist": False}
     )
     state: State | None = Relationship(back_populates="transactions")
@@ -891,6 +895,43 @@ class UnifiedAsset(SQLModel, table=True):
     transaction: "UnifiedTransaction" = Relationship(back_populates="asset")
     committee: Optional["UnifiedCommittee"] = Relationship()
     state: State | None = Relationship(back_populates="assets")
+
+
+class UnifiedExpenditure(SQLModel, table=True):
+    """Normalized expenditure detail extracted from transactions.
+
+    Tracks vendor payments and other disbursements made by the committee.
+    One row per EXPN transaction — payer is always the committee entity,
+    payee is the vendor/person who received the funds.
+    """
+
+    __tablename__ = "unified_expenditures"
+
+    id: int | None = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    transaction_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("unified_transactions.id"), unique=True)
+    )
+    payer_entity_id: int = Field(foreign_key="unified_entities.id")
+    payee_entity_id: int = Field(foreign_key="unified_entities.id")
+    state_id: int | None = Field(default=None, foreign_key="states.id")
+    amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
+    expenditure_date: date | None = Field(default=None, index=True)
+    expenditure_type: str | None = Field(default=None, sa_column=Column(String(200)))
+    description: str | None = Field(default=None, sa_column=Column(Text))
+    metadata_json: str | None = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    transaction: "UnifiedTransaction" = Relationship(back_populates="expenditure")
+    payer: "UnifiedEntity" = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "UnifiedExpenditure.payer_entity_id"}
+    )
+    payee: "UnifiedEntity" = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "UnifiedExpenditure.payee_entity_id"}
+    )
+    state: State | None = Relationship(back_populates="expenditures")
 
 
 # Database indexes for performance

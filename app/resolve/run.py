@@ -221,6 +221,8 @@ class ResolutionRun:
         if self._run is None:
             raise RuntimeError("ResolutionRun.start() must be called before fail()")
 
+        session.rollback()
+
         run = session.get(MatchRun, self._run.id)
         if run is None:
             raise RuntimeError(f"MatchRun id={self._run.id} not found")
@@ -272,7 +274,14 @@ class ResolutionRun:
                 if stage_counts:
                     merged_counts.update(stage_counts)
         except Exception as exc:
-            self.fail(session, str(exc))
+            session.rollback()
+            try:
+                self.fail(session, str(exc))
+            except Exception:
+                logger.exception(
+                    "Failed to record match_run failure for id=%s",
+                    self._run.id if self._run else None,
+                )
             raise
 
         self.finish(session, merged_counts)

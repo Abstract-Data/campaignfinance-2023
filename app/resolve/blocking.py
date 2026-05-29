@@ -34,7 +34,7 @@ class BlockingRule:
                 raw_zip = (row.zip5 or "").strip()
                 if len(raw_zip) < 3:
                     return None
-                parts.append(raw_zip[:3])
+                parts.append(raw_zip[:3].lower())
                 continue
 
             if field_name == "first_initial":
