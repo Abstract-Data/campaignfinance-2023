@@ -25,46 +25,47 @@ class TECExpense(TECSettings, table=True):
     schedFormTypeCd: str = Field(..., description="TEC Schedule Used", max_length=20)
     reportInfoIdent: int = Field(..., description="Unique report #")
     receivedDt: date = Field(..., description="Date report received by TEC")
-    infoOnlyFlag: Optional[bool] = Field(..., description="Superseded by other report")
+    # Optional — some rows omit the flag; was incorrectly marked required.
+    infoOnlyFlag: Optional[bool] = Field(default=None, description="Superseded by other report")
     filerIdent: int = Field(..., description="Filer account #")
     filerTypeCd: str = Field(..., description="Type of filer")
     filerName: str = Field(..., description="Filer name")
     expendInfoId: int = Field(primary_key=True, description="Unique expenditure identifier")
     expendDt: date = Field(..., description="Expenditure date")
-    expendAmount: Optional[float] = Field(..., description="Expenditure amount")
+    # Optional — a small number of records legitimately have no amount (e.g. in-kind)
+    expendAmount: Optional[float] = Field(default=None, description="Expenditure amount")
     expendDescr: str = Field(..., description="Expenditure description")
     expendCatCd: Optional[str] = Field(default=None, description="Expenditure category code")
     expendCatDescr: Optional[str] = Field(
         default=None, description="Expenditure category description"
     )
+    # Boolean flags — truly optional; absent on some older records
     itemizeFlag: Optional[bool] = Field(
-        ..., description="Y indicates that the expenditure is itemized"
+        default=None, description="Y indicates that the expenditure is itemized"
     )
     travelFlag: Optional[bool] = Field(
-        ..., description="Y indicates that the expenditure is for travel"
+        default=None, description="Y indicates that the expenditure is for travel"
     )
     politicalExpendCd: Optional[bool] = Field(
-        ...,
-        description="Political expenditure indicator",
+        default=None, description="Political expenditure indicator"
     )
     reimburseIntendedFlag: Optional[bool] = Field(
-        ...,
-        description="Reimbursement intended indicator",
+        default=None, description="Reimbursement intended indicator"
     )
     srcCorpContribFlag: Optional[bool] = Field(
-        ...,
-        description="Corporate contribution indicator",
+        default=None, description="Corporate contribution indicator"
     )
     capitalLivingexpFlag: Optional[bool] = Field(
-        default=None,
-        description="Austin living expense indicator",
+        default=None, description="Austin living expense indicator"
     )
     payeePersentTypeCd: str = Field(
         ..., description="Type of payee name data - INDIVIDUAL or ENTITY"
     )
+    # ENTITY only
     payeeNameOrganization: Optional[str] = Field(
-        ..., description="For ENTITY, the payee organization name"
+        default=None, description="For ENTITY, the payee organization name"
     )
+    # INDIVIDUAL only
     payeeNameLast: Optional[str] = Field(
         default=None, description="For INDIVIDUAL, the payee last name"
     )
@@ -83,13 +84,24 @@ class TECExpense(TECSettings, table=True):
     payeeNameFull: Optional[str] = Field(
         default=None, description="For INDIVIDUAL, the payee full name"
     )
-    payeeStreetAddr1: Optional[str] = Field(..., description="Payee street address line 1")
-    payeeStreetAddr2: Optional[str] = Field(default=None, description="Payee street address line 2")
-    payeeStreetCity: Optional[str] = Field(..., description="Payee street address city")
+    # Address — city/state/country are expected; addr1 and county are often blank
+    payeeStreetAddr1: Optional[str] = Field(
+        default=None, description="Payee street address line 1"
+    )
+    payeeStreetAddr2: Optional[str] = Field(
+        default=None, description="Payee street address line 2"
+    )
+    payeeStreetCity: Optional[str] = Field(
+        default=None, description="Payee street address city"
+    )
     payeeStreetStateCd: str = Field(..., description="Payee street address state code")
-    payeeStreetCountyCd: Optional[str] = Field(..., description="Payee street address Texas county")
+    payeeStreetCountyCd: Optional[str] = Field(
+        default=None, description="Payee street address Texas county"
+    )
     payeeStreetCountryCd: Optional[str] = Field(
-        ..., description="Payee street address - country (e.g. USA, UMI, MEX, CAN)", max_length=3
+        default=None,
+        description="Payee street address - country (e.g. USA, UMI, MEX, CAN)",
+        max_length=3,
     )
     payeeStreetPostalCode: Optional[str] = Field(
         default=None, description="Payee street address - postal code - for USA addresses only"
@@ -101,7 +113,7 @@ class TECExpense(TECSettings, table=True):
         default=None, description="Financial institution issuing credit card"
     )
     repaymentDt: Optional[date] = Field(default=None, description="Repayment date")
-    file_origin: str = Field(..., description="File origin")
+    file_origin: str = Field(..., description="File origin", max_length=64)
     download_date: date = Field(..., description="Download date")
 
     address_formatting = model_validator(mode="before")(tx_funcs.address_formatting)

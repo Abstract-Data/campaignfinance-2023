@@ -48,6 +48,9 @@ def clear_blank_strings(cls, values):
 
 def validate_phone_number(column: str, phone_number: str | int) -> Optional[str]:
     if phone_number:
+        # The signature accepts int (some sources deliver numeric phone columns);
+        # normalize to str so .isdigit()/phonenumbers.parse never hit a non-str.
+        phone_number = str(phone_number)
         # If sum of digits is 0, then it's not a phone number
         if phone_number.isdigit():
             if sum(map(int, phone_number)) == 0:
