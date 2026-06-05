@@ -28,6 +28,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.resolve.models.canonical import (
     CanonicalAddress,
+    CanonicalCampaign,
     CanonicalEntity,
     CanonicalNameHistory,
     NameHistorySubjectType,
@@ -63,6 +64,7 @@ _TABLES = [
     MatchRun.__table__,
     CanonicalAddress.__table__,  # FK target for CanonicalEntity
     CanonicalEntity.__table__,
+    CanonicalCampaign.__table__,  # cleared by _clear_live_canonical_snapshot (FK → canonical_entity)
     CanonicalNameHistory.__table__,
     EntityCrosswalk.__table__,
     MatchDecision.__table__,     # Queried by _build_node_crosswalk_attrs

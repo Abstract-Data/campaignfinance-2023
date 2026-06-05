@@ -33,6 +33,7 @@ from sqlmodel import Session, select
 
 from app.core.constants import DEFAULT_STATE
 from app.resolve.models.canonical import (
+    CanonicalCampaign,
     CanonicalEntity,
     CanonicalNameHistory,
     EntityType,
@@ -544,8 +545,14 @@ def _clear_live_canonical_snapshot(session: Session) -> None:
     Each successful survivorship stage replaces the full live canonical layer
     so reruns do not accumulate duplicate golden records.  Historical per-run
     mappings remain in ``entity_crosswalk`` keyed by ``run_id``.
+
+    CanonicalCampaign is cleared first: its committee_entity_id/candidate_entity_id
+    FKs reference canonical_entity, so a stale campaign row from a prior campaign
+    pass would otherwise block ``DELETE FROM canonical_entity`` on a rerun.  The
+    campaign pass (run after entity) repopulates it.
     """
     session.exec(delete(CanonicalNameHistory))
+    session.exec(delete(CanonicalCampaign))
     session.exec(delete(CanonicalEntity))
     session.flush()
 
