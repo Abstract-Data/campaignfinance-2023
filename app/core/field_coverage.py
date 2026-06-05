@@ -65,6 +65,9 @@ _HANDLED_PREFIXES: dict[str, tuple[str, ...]] = {
         "total", "unitemized", "loanBalance", "contribsMaintained",
         "cashOnHand", "period", "filedDt",
     ),
+    # _build_guarantors extracts guarantor 1–5 name/address into loan_guarantors.
+    "LOAN": ("guarantor",),
+    "DEBT": ("guarantor",),
 }
 
 
