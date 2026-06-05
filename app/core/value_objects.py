@@ -2,7 +2,25 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+
+
+def normalize_entity_name(value: str | None) -> str:
+    """Canonical entity-name normalization shared across the ingest layer.
+
+    Every code path that creates ``UnifiedEntity`` rows (the builder, and
+    ``filer_ingest`` for committee officers) MUST use this so their entities
+    dedupe against each other via the ``uix_entities_type_name_state`` unique
+    index.  Lives here (a dependency-free module) to avoid an import cycle with
+    ``builders`` / ``models``.
+    """
+    if not value:
+        return ""
+    normalized = value.strip().lower()
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
 
 
 def _strip(value: str | None) -> str | None:
