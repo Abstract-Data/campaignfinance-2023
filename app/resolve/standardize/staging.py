@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Column, Date, String
+from sqlalchemy import Column, Date, Integer, String
 from sqlmodel import Field, SQLModel
 
 from app.resolve.models.canonical import map_unified_to_canonical_entity_type
@@ -37,6 +37,13 @@ class ResolutionInput(SQLModel, table=True):
         sa_column=Column(String(SOURCE_ID_MAX_LENGTH), nullable=False, index=True)
     )
     entity_type: str = Field(sa_column=Column(String(64), nullable=False, index=True))
+
+    # Deterministic 1:1 link carried from unified_entities so the fast path can merge a
+    # unified_entity with the source unified_person / unified_committee it represents
+    # (they are the same real-world entity). Null for unified_person / unified_committee
+    # source rows themselves.
+    linked_person_id: int | None = Field(default=None, sa_column=Column(Integer))
+    linked_committee_id: str | None = Field(default=None, sa_column=Column(String(128)))
 
     first_name: str | None = Field(default=None, sa_column=Column(String(200)))
     middle_name: str | None = Field(default=None, sa_column=Column(String(200)))

@@ -180,6 +180,48 @@ def _collect_name_address_candidates(
     return candidates
 
 
+def _collect_entity_to_source_candidates(
+    rows: list[ResolutionInput],
+) -> list[_MergeCandidate]:
+    """Merge a ``unified_entity`` with the source record it 1:1-links to.
+
+    ``unified_entities.person_id`` / ``committee_id`` are unique FKs: an entity of
+    type 'person' IS the same real-world entity as the ``unified_person`` it points
+    to (same for committees).  Blocking cannot reliably pair them (the entity's name
+    is the full normalized name while the person's is first/last, so they often land
+    in different blocks), so this deterministic edge guarantees co-clustering — the
+    fix for near-zero cross-source dedup.
+    """
+    persons_by_id = {
+        row.source_id: row for row in rows if row.source_type == "unified_person"
+    }
+    committees_by_filer = {
+        row.source_id: row for row in rows if row.source_type == "unified_committee"
+    }
+    candidates: list[_MergeCandidate] = []
+    for row in rows:
+        if row.source_type != "unified_entity":
+            continue
+        target: ResolutionInput | None = None
+        rule = ""
+        if row.linked_person_id is not None:
+            target = persons_by_id.get(str(row.linked_person_id))
+            rule = "unified_entity_to_person_link"
+        elif row.linked_committee_id is not None:
+            target = committees_by_filer.get(str(row.linked_committee_id))
+            rule = "unified_entity_to_committee_link"
+        if target is not None:
+            candidates.append(
+                _MergeCandidate(
+                    left=_record_ref(row),
+                    right=_record_ref(target),
+                    method=MatchMethod.exact,
+                    rule=rule,
+                )
+            )
+    return candidates
+
+
 def _dedupe_candidates(candidates: list[_MergeCandidate]) -> list[_MergeCandidate]:
     seen_pairs: set[tuple[str, str, str, str]] = set()
     deduped: list[_MergeCandidate] = []
@@ -195,6 +237,7 @@ def _dedupe_candidates(candidates: list[_MergeCandidate]) -> list[_MergeCandidat
 
 def _collect_merge_candidates(rows: list[ResolutionInput]) -> list[_MergeCandidate]:
     ordered_rules = (
+        _collect_entity_to_source_candidates,  # deterministic 1:1 FK link — runs first
         _collect_filer_id_candidates,
         _collect_name_address_candidates,
     )
