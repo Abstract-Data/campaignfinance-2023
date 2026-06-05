@@ -118,34 +118,21 @@ def validate_database_connection(db_url: str) -> None:
 
 
 def resolve_engine_url(*, use_sqlite: bool = False) -> str:
-    """Resolve and validate the database URL for the CLI.
+    """Resolve the database URL for the CLI (shared loader/resolve policy).
+
+    Default target is Postgres.  ``--sqlite`` forces an in-memory smoke DB; an
+    unreachable Postgres prompts an interactive user (set it up, or create a local
+    SQLite file) and raises in a non-interactive session — never a silent SQLite
+    fallback.  See :mod:`app.core.db_resolve`.
 
     Raises
     ------
     RuntimeError
-        When Postgres is configured but the connection cannot be opened.
+        Postgres is unreachable and the session is non-interactive.
     """
-    db_url = resolve_database_url(use_sqlite=use_sqlite)
-    if db_url.startswith("postgresql"):
-        try:
-            validate_database_connection(db_url)
-        except Exception as exc:
-            raise RuntimeError(
-                "PostgreSQL is configured but the connection failed. "
-                "Refusing to fall back to SQLite (data loss risk). "
-                f"Original error: {exc}"
-            ) from exc
-    elif not use_sqlite:
-        # Implicit SQLite fallback: no --sqlite flag and no Postgres env. The loader
-        # defaults to Postgres (PostgresConfig), so this is almost always a mistake —
-        # the run targets an empty in-memory DB and silently sees none of the loaded
-        # data. Warn loudly; pass --sqlite to opt in, or set DATABASE_URL/POSTGRES_*.
-        logger.warning(
-            "No Postgres configured (no DATABASE_URL / POSTGRES_* env) and --sqlite "
-            "was not passed — using an EMPTY in-memory SQLite DB. This will not see "
-            "data loaded into Postgres. Set DATABASE_URL=postgresql://… to target it."
-        )
-    return db_url
+    from app.core.db_resolve import resolve_runtime_database_url
+
+    return resolve_runtime_database_url(force_sqlite=use_sqlite)
 
 
 # ---------------------------------------------------------------------------

@@ -825,9 +825,12 @@ if __name__ == "__main__":
     preset = args[0] if len(args) > 0 else "production"
     state = args[1] if len(args) > 1 else "texas"
 
-    # Default target is PostgreSQL (via PostgresConfig); --sqlite is a local
-    # smoke-test escape hatch.
-    db_url = "sqlite:///campaignfinance_dev.db" if use_sqlite else None
+    # Default target is PostgreSQL.  SQLite is opt-in only: --sqlite forces it,
+    # otherwise an unreachable Postgres prompts the user (interactive) or errors
+    # (non-interactive) — never a silent SQLite fallback.
+    from app.core.db_resolve import resolve_runtime_database_url
+
+    db_url = resolve_runtime_database_url(force_sqlite=use_sqlite)
 
     cfg = get_config(preset)
     results = discover_and_load(state, cfg, dry_run=dry, db_url=db_url)
