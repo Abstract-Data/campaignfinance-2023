@@ -311,11 +311,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _run_address_stage(session, run_id, config):
-    """Address pass: deterministically build canonical_address + crosswalk."""
-    from app.resolve.publish.addresses import build_canonical_addresses
+    """Address pass: build canonical_address + crosswalk, then link entities to addresses."""
+    from app.resolve.publish.addresses import (
+        backfill_entity_addresses,
+        build_canonical_addresses,
+    )
 
     n = build_canonical_addresses(session, run_id=run_id)
-    return {"canonical_out": n}
+    linked = backfill_entity_addresses(session)
+    return {"canonical_out": n, "entities_linked": linked}
 
 
 def _run_campaign_stage(session, run_id, config):

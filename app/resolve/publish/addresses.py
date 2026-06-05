@@ -9,10 +9,10 @@ builder.  Run as the ``--pass-type address`` pass.
 
 from __future__ import annotations
 
-from sqlalchemy import text
+from sqlalchemy import text, update
 from sqlmodel import Session, select
 
-from app.resolve.models.canonical import CanonicalAddress, ParseStatus
+from app.resolve.models.canonical import CanonicalAddress, CanonicalEntity, ParseStatus
 from app.resolve.models.resolution import (
     AddressCrosswalk,
     ConfidenceBand,
@@ -137,6 +137,63 @@ def build_canonical_addresses(session: Session, run_id: int | None = None) -> in
 
     session.commit()
     return len(by_key)
+
+
+def backfill_entity_addresses(session: Session) -> int:
+    """Link each ``canonical_entity`` to a representative ``canonical_address``.
+
+    Nothing else populates ``canonical_entity.canonical_address_id``, so the
+    ``address_occupancy`` view and entity co-location are empty until this runs.
+    Resolves the path ``canonical_entity ← entity_crosswalk(unified_entity) →
+    unified_entities.address_id → address_crosswalk → canonical_address`` and, when
+    a deduped entity maps to several source addresses, picks the most frequent one
+    (deterministic tie-break: lowest ``canonical_address_id``).  Both crosswalks are
+    scoped to their latest ``run_id`` (mirroring publish/views.py).
+
+    Idempotent: clears every prior link first, then reapplies.  Returns the number
+    of entities linked.  Run at the end of the address pass, after both the entity
+    and address canonical layers exist.
+    """
+    rows = session.execute(
+        text(
+            "SELECT ec.canonical_entity_id AS ceid, "
+            "       ac.canonical_address_id AS caid, "
+            "       COUNT(*) AS cnt "
+            "FROM entity_crosswalk ec "
+            "JOIN unified_entities ue "
+            "  ON ec.source_type = 'unified_entity' "
+            "  AND ec.source_id = CAST(ue.id AS VARCHAR) "
+            "JOIN address_crosswalk ac "
+            "  ON ac.source_id = CAST(ue.address_id AS VARCHAR) "
+            "  AND ac.run_id = (SELECT MAX(run_id) FROM address_crosswalk) "
+            "WHERE ec.run_id = (SELECT MAX(run_id) FROM entity_crosswalk) "
+            "  AND ue.address_id IS NOT NULL "
+            "GROUP BY ec.canonical_entity_id, ac.canonical_address_id"
+        )
+    ).fetchall()
+
+    # Pick the representative address per entity: highest count, then lowest id.
+    best: dict[int, tuple[int, int]] = {}  # ceid -> (count, caid)
+    for ceid, caid, cnt in rows:
+        current = best.get(ceid)
+        if current is None or cnt > current[0] or (cnt == current[0] and caid < current[1]):
+            best[ceid] = (cnt, caid)
+
+    # Clear prior links first so the rebuild is idempotent (drops stale entities
+    # whose address no longer resolves), then bulk-apply by primary key.
+    session.execute(
+        text(
+            "UPDATE canonical_entity SET canonical_address_id = NULL "
+            "WHERE canonical_address_id IS NOT NULL"
+        )
+    )
+    if best:
+        session.execute(
+            update(CanonicalEntity),
+            [{"id": ceid, "canonical_address_id": caid} for ceid, (_, caid) in best.items()],
+        )
+    session.commit()
+    return len(best)
 
 
 def canonical_address_count(session: Session) -> int:
