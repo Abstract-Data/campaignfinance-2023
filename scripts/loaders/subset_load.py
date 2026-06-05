@@ -38,7 +38,11 @@ logger = Logger(__name__)
 
 # Per-record-type row caps (None = uncapped for that file).
 SOURCE_CAPS: dict[str, int | None] = {
-    "FILER": 8000,   # committees + officer committee_persons
+    # Load every committee: transactions reference a committee by filer_id and the
+    # loader rejects any row whose committee is absent.  The filers file holds
+    # ~20.7k committees but a single transaction file references ~17k distinct ones,
+    # so capping FILER (was 8000) dropped ~12k transactions to FK-violation rejects.
+    "FILER": None,   # committees + officer committee_persons — all of them
     "CVR1": 80000,   # reports — fuller so transactions can link
     "FINL": 8000,
     "CVR2": 5000,
