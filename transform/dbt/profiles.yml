@@ -1,0 +1,22 @@
+# dbt profile for the ELT unify spike.
+#
+# Targets a DEDICATED local Postgres database (campaignfinance_elt_spike) on the
+# already-running localhost:5432 server — NOT the docker-compose `db` and NOT the
+# user's real `campaign_finance` DB. This keeps the spike's TRUNCATE/rebuild cycle
+# from ever touching production data while still letting the dbt path and the
+# production_loader baseline write the SAME physical unified_* tables for an
+# apples-to-apples reconciliation (see transform/reconcile.py).
+#
+# Override any field with PG* env vars; trust auth means an empty password is fine.
+cf_elt:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('PGHOST', 'localhost') }}"
+      port: "{{ (env_var('PGPORT', '5432')) | int }}"
+      user: "{{ env_var('PGUSER', 'johneakin') }}"
+      password: "{{ env_var('PGPASSWORD', '') }}"
+      dbname: "{{ env_var('ELT_SPIKE_DB', 'campaignfinance_elt_spike') }}"
+      schema: gold
+      threads: 4

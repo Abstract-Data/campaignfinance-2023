@@ -1,0 +1,4 @@
+# dbt build artifacts
+target/
+dbt_packages/
+logs/

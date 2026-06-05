@@ -1,0 +1,35 @@
+{#  ASSET → committee property; NO external party (role null). Only flows into
+    int_transactions + unified_assets, never into the party/person dimensions. #}
+with src as (select * from {{ source('silver', 'tx_assets') }})
+select
+    'ASSET'                                     as record_type,
+    'ASSET'                                     as transaction_type,
+    cast(null as text)                          as role,
+    {{ var('state_id') }}                       as state_id,
+    assetInfoId::text                           as source_transaction_id,
+    cast(null as numeric)                       as amount,
+    cast(null as date)                          as transaction_date,
+    {{ cf_clean('assetDescr') }}                as description,
+    reportInfoIdent::text                       as report_ident,
+    lpad(filerIdent::text, 8, '0')              as committee_filer_id,
+    {{ cf_clean('filerName') }}                 as committee_name,
+    cast(null as boolean)                       as is_org,
+    cast(null as text)                          as first_name,
+    cast(null as text)                          as middle_name,
+    cast(null as text)                          as last_name,
+    cast(null as text)                          as suffix,
+    cast(null as text)                          as organization,
+    cast(null as text)                          as employer,
+    cast(null as text)                          as occupation,
+    cast(null as text)                          as job_title,
+    cast(null as text)                          as street_1,
+    cast(null as text)                          as street_2,
+    cast(null as text)                          as city,
+    cast(null as text)                          as state,
+    cast(null as text)                          as zip_code,
+    cast(null as text)                          as country,
+    cast(null as text)                          as county,
+    cast(null as text)                          as parent_transaction_type,
+    cast(null as text)                          as parent_transaction_id,
+    cast(null as numeric)                       as parent_amount
+from src

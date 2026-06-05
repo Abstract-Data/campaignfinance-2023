@@ -1,0 +1,72 @@
+version: 2
+
+# Regression lock for PIPELINE_REVIEW Fix 1 (role-blind person extraction). Because
+# each staging model names only its OWN role's source columns, an expenditure row
+# can only ever yield a PAYEE and a contribution row only a CONTRIBUTOR — the
+# phantom-role bug is unexpressible. These unit tests assert exactly that.
+#
+# dbt mocks only the columns listed here, so every source column the staging model
+# references must appear (unused ones null). Silver columns are lower-cased by the
+# loader; ID fields are bigint so fixtures use integers.
+
+unit_tests:
+  - name: expenditure_row_yields_only_payee
+    description: An EXPN row produces exactly one PAYEE person from payee* columns; no CONTRIBUTOR.
+    model: stg_tx_expenditures
+    given:
+      - input: source('silver', 'tx_expenditures')
+        rows:
+          - expendinfoid: 1
+            expendamount: '100.00'
+            expenddt: '2024-01-15'
+            expenddescr: 'yard signs'
+            reportinfoident: 5
+            filerident: 7
+            filername: 'Smith Campaign'
+            payeepersenttypecd: 'ENTITY'
+            payeenamefirst: null
+            payeenamelast: null
+            payeenamesuffixcd: null
+            payeenameorganization: 'Acme Signs'
+            payeestreetaddr1: '1 Main'
+            payeestreetaddr2: null
+            payeestreetcity: 'Austin'
+            payeestreetstatecd: 'TX'
+            payeestreetpostalcode: '78701'
+            payeestreetcountrycd: null
+            payeestreetcountycd: null
+    expect:
+      rows:
+        - {source_transaction_id: '1', role: 'PAYEE', transaction_type: 'EXPENDITURE',
+           organization: 'Acme Signs', committee_filer_id: '00000007', is_org: true}
+
+  - name: contribution_row_yields_only_contributor
+    description: An RCPT row produces exactly one CONTRIBUTOR person from contributor* columns; no PAYEE.
+    model: stg_tx_contributions
+    given:
+      - input: source('silver', 'tx_contributions')
+        rows:
+          - contributioninfoid: 2
+            contributionamount: '50.00'
+            contributiondt: '2024-02-01'
+            contributiondescr: 'donation'
+            reportinfoident: 6
+            filerident: 9
+            filername: 'PAC Of Texas'
+            contributorpersenttypecd: 'INDIVIDUAL'
+            contributornamefirst: 'Jane'
+            contributornamelast: 'Doe'
+            contributornamesuffixcd: null
+            contributornameorganization: null
+            contributoremployer: null
+            contributoroccupation: null
+            contributorjobtitle: null
+            contributorstreetcity: 'Dallas'
+            contributorstreetstatecd: 'TX'
+            contributorstreetpostalcode: '75001'
+            contributorstreetcountrycd: null
+            contributorstreetcountycd: null
+    expect:
+      rows:
+        - {source_transaction_id: '2', role: 'CONTRIBUTOR', transaction_type: 'CONTRIBUTION',
+           first_name: 'Jane', last_name: 'Doe', committee_filer_id: '00000009', is_org: false}

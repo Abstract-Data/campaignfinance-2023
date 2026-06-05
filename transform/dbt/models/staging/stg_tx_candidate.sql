@@ -1,0 +1,35 @@
+{#  CAND → direct expenditure to a candidate. PAYEE = candidate; payer = committee.
+    Modeled as an EXPENDITURE (reuses the expenditure detail). No candidate address. #}
+with src as (select * from {{ source('silver', 'tx_candidate') }})
+select
+    'CAND'                                          as record_type,
+    'EXPENDITURE'                                   as transaction_type,
+    'PAYEE'                                         as role,
+    {{ var('state_id') }}                           as state_id,
+    expendInfoId::text                              as source_transaction_id,
+    {{ cf_safe_numeric('expendAmount') }}           as amount,
+    {{ cf_safe_date('expendDt') }}                  as transaction_date,
+    {{ cf_clean('expendDescr') }}                   as description,
+    reportInfoIdent::text                           as report_ident,
+    lpad(filerIdent::text, 8, '0')                  as committee_filer_id,
+    {{ cf_clean('filerName') }}                     as committee_name,
+    (candidatePersentTypeCd = 'ENTITY')             as is_org,
+    {{ cf_clean('candidateNameFirst') }}            as first_name,
+    cast(null as text)                              as middle_name,
+    {{ cf_clean('candidateNameLast') }}             as last_name,
+    {{ cf_clean('candidateNameSuffixCd') }}         as suffix,
+    {{ cf_clean('candidateNameOrganization') }}     as organization,
+    cast(null as text)                              as employer,
+    cast(null as text)                              as occupation,
+    cast(null as text)                              as job_title,
+    cast(null as text)                              as street_1,
+    cast(null as text)                              as street_2,
+    cast(null as text)                              as city,
+    cast(null as text)                              as state,
+    cast(null as text)                              as zip_code,
+    cast(null as text)                              as country,
+    cast(null as text)                              as county,
+    cast(null as text)                              as parent_transaction_type,
+    cast(null as text)                              as parent_transaction_id,
+    cast(null as numeric)                           as parent_amount
+from src

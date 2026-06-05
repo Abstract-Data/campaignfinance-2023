@@ -57,14 +57,20 @@ members = ["packages/*"]
 [tool.abstract-data]
 # Used by the project-alignment skill to detect project type on future runs.
 project_type = "pipeline"
-template_version = "1.9.0"
-aligned = "2026-05-28"
+template_version = "2.1.0"
+aligned = "2026-06-05"
 
 [dependency-groups]
 dev = [
     "hypothesis>=6.152.9",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
+]
+# ELT unify spike (transform/dbt). Kept in its own group so the dbt toolchain is
+# opt-in (`uv sync --group elt`) and never required by the core pipeline.
+elt = [
+    "dbt-core>=1.8",
+    "dbt-postgres>=1.8",
 ]
 # Ruff configuration lives in .ruff.toml.
 
