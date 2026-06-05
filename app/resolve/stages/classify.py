@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, delete, select
 
 from app.resolve.models.resolution import (
@@ -18,6 +19,27 @@ from app.resolve.models.resolution import (
 )
 from app.resolve.stages.fastpath import MergeEdge
 from app.resolve.stages.score import ScoredPair
+from app.resolve.standardize.staging import ResolutionInput
+
+
+def _first_name_conflict(first_a: str | None, first_b: str | None) -> bool:
+    """True when two first names are both present and clearly different.
+
+    Holds a high-scoring *person* pair back from AUTO-merge (routing it to
+    review instead).  The undertrained Splink model saturates a pair's score
+    from a shared last name + address even when first names differ — the classic
+    household over-merge (e.g. two siblings at one address).  Conservative:
+    initials and prefixes (``jon``/``jonathan``) are NOT treated as conflicts, so
+    legitimate matches and nickname variants are at worst sent to review, never
+    rejected.
+    """
+    a = (first_a or "").strip().lower()
+    b = (first_b or "").strip().lower()
+    if len(a) < 2 or len(b) < 2:
+        return False
+    if a == b or a.startswith(b) or b.startswith(a):
+        return False
+    return a[0] != b[0]
 
 
 @dataclass(frozen=True)
@@ -98,6 +120,25 @@ def run_classify_stage(
     config: dict[str, Any],
 ) -> dict[str, int]:
     """Classify scored pairs and persist decisions + downstream queue/edges."""
+    # First names by (source_type, source_id) — used to hold household-style
+    # person over-merges back from auto-merge.  Done first (before the deletes
+    # below) so a rollback when resolution_input is absent (e.g. classify-only
+    # fixtures) undoes nothing important; the guard just never fires.
+    try:
+        first_name_by_key: dict[tuple[str, str], str | None] = {
+            (st, sid): fn
+            for st, sid, fn in session.exec(
+                select(
+                    ResolutionInput.source_type,
+                    ResolutionInput.source_id,
+                    ResolutionInput.first_name,
+                ).where(ResolutionInput.run_id == run_id)
+            ).all()
+        }
+    except SQLAlchemyError:
+        session.rollback()
+        first_name_by_key = {}
+
     session.exec(
         delete(MatchDecision).where(
             MatchDecision.run_id == run_id,
@@ -163,12 +204,18 @@ def run_classify_stage(
             auto_merges += 1
         else:
             thresholds = _thresholds_for_entity(config, pair.entity_type)
-            if pair.score >= thresholds.auto_threshold:
+            first_conflict = pair.entity_type == "person" and _first_name_conflict(
+                first_name_by_key.get((pair.source_a_type, pair.source_a_id)),
+                first_name_by_key.get((pair.source_b_type, pair.source_b_id)),
+            )
+            if pair.score >= thresholds.auto_threshold and not first_conflict:
                 band = DecisionBand.auto
                 outcome = DecisionOutcome.merged
                 edge_source = "probabilistic"
                 auto_merges += 1
-            elif pair.score >= thresholds.review_threshold:
+            elif pair.score >= thresholds.review_threshold or (
+                first_conflict and pair.score >= thresholds.auto_threshold
+            ):
                 band = DecisionBand.review
                 outcome = DecisionOutcome.queued
                 queued += 1

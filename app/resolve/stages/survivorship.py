@@ -259,9 +259,17 @@ def build_golden_record(
     except Exception:
         entity_type = EntityType.organization
 
-    dates = [r.created_at.date() for r in cluster_rows]
-    first_seen = min(dates)
-    last_seen = max(dates)
+    # Prefer real filing/activity dates (min/max across the cluster's source
+    # records); fall back to ETL ``created_at`` only when no activity dates exist.
+    firsts = [r.first_activity_date for r in cluster_rows if r.first_activity_date is not None]
+    lasts = [r.last_activity_date for r in cluster_rows if r.last_activity_date is not None]
+    if firsts or lasts:
+        first_seen = min(firsts) if firsts else min(lasts)
+        last_seen = max(lasts) if lasts else max(firsts)
+    else:
+        created_dates = [r.created_at.date() for r in cluster_rows]
+        first_seen = min(created_dates)
+        last_seen = max(created_dates)
 
     first_seen_row = min(cluster_rows, key=lambda r: r.created_at)
     last_seen_row = max(cluster_rows, key=lambda r: r.created_at)
@@ -317,7 +325,18 @@ def _build_name_history_rows(
 
     history_rows: list[CanonicalNameHistory] = []
     for norm_name, rows in name_to_rows.items():
-        dates = [r.created_at.date() for r in rows]
+        # Real activity window for *this name* — the period the entity actually
+        # filed under it — so name-as-of-date lookups are accurate.  Fall back to
+        # ETL created_at only when a name's rows carry no activity dates.
+        firsts = [r.first_activity_date for r in rows if r.first_activity_date is not None]
+        lasts = [r.last_activity_date for r in rows if r.last_activity_date is not None]
+        if firsts or lasts:
+            first_seen = min(firsts) if firsts else min(lasts)
+            last_seen = max(lasts) if lasts else max(firsts)
+        else:
+            created_dates = [r.created_at.date() for r in rows]
+            first_seen = min(created_dates)
+            last_seen = max(created_dates)
         display_name = _canonical_name_for(rows[0])
         history_rows.append(
             CanonicalNameHistory(
@@ -325,8 +344,8 @@ def _build_name_history_rows(
                 subject_id=canonical_entity_id,
                 name=display_name,
                 normalized_name=norm_name,
-                first_seen_date=min(dates),
-                last_seen_date=max(dates),
+                first_seen_date=first_seen,
+                last_seen_date=last_seen,
                 occurrence_count=len(rows),
             )
         )

@@ -164,7 +164,7 @@ class ResolutionRun:
         """
         run = MatchRun(
             state_code=self.state_code,
-            pass_type=PassType.entity,
+            pass_type=PassType(self.config.get("pass_type") or PassType.entity.value),
             engine_version=_ENGINE_VERSION,
             config_json=json.dumps(self.config, sort_keys=True),
             started_at=datetime.now(timezone.utc),

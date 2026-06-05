@@ -24,6 +24,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.engine import URL
 
+from app.core.constants import DEFAULT_STATE
 from app.logger import Logger
 
 logger = Logger(__name__)
@@ -309,8 +310,39 @@ def _build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 
 
-def _get_run_stages():
-    """Return the full Phase 2 stage callables for ``run`` (stages 1→7)."""
+def _run_address_stage(session, run_id, config):
+    """Address pass: deterministically build canonical_address + crosswalk."""
+    from app.resolve.publish.addresses import build_canonical_addresses
+
+    n = build_canonical_addresses(session, run_id=run_id)
+    return {"canonical_out": n}
+
+
+def _run_campaign_stage(session, run_id, config):
+    """Campaign pass: deterministically build canonical_campaign + crosswalk.
+
+    Requires the entity pass to have populated entity_crosswalk first (committee
+    + candidate canonical ids).
+    """
+    from app.resolve.publish.campaigns import build_canonical_campaigns
+
+    state_code = config.get("state_code", DEFAULT_STATE)
+    n = build_canonical_campaigns(session, state_code=state_code, run_id=run_id)
+    return {"canonical_out": n}
+
+
+def _get_run_stages(pass_type: str = "entity"):
+    """Return the stage callables for ``run``, dispatched by *pass_type*.
+
+    - ``entity``   — the full Phase 2 entity-resolution pipeline (stages 1→7).
+    - ``address``  — a single deterministic canonical-address build.
+    - ``campaign`` — a single deterministic canonical-campaign build.
+    """
+    if pass_type == "address":
+        return [_run_address_stage]
+    if pass_type == "campaign":
+        return [_run_campaign_stage]
+
     from app.resolve.stages import (
         run_blocking_stage,
         run_classify_stage,
@@ -375,7 +407,7 @@ def _run_command(args: argparse.Namespace) -> int:
     engine = create_engine(db_url)
     ensure_resolution_schema(engine)
 
-    stages = _get_run_stages()
+    stages = _get_run_stages(config["pass_type"])
 
     resolution_run = ResolutionRun(state_code=state_code, config=config)
 

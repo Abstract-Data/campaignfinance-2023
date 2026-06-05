@@ -45,6 +45,9 @@ class SourceType(str, Enum):
     unified_person = "unified_person"
     unified_committee = "unified_committee"
     unified_entity = "unified_entity"
+    # Address + campaign passes crosswalk their own source tables.
+    unified_address = "unified_address"
+    unified_campaign = "unified_campaign"
 
 
 class MatchMethod(str, Enum):

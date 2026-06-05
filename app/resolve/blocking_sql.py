@@ -28,22 +28,30 @@ _PAIR_CAP_DELETE_BATCH = 500_000
 _BLOCK_KEY_PLACEHOLDER = "__BLOCK_KEY_EXPR__"
 
 # Static SQL fragments per default rule (no runtime SQL string assembly).
+# Each rule is scoped to its entity_type.  Org names are sometimes mis-parsed by
+# probablepeople into person name parts (so an organization can carry a
+# last_name_phonetic); without the entity_type guard the person rules generated
+# organization candidate pairs that the per-entity-type Splink scorer could not
+# reproduce in bulk predict, forcing a slow per-pair fallback.
 _RULE_BLOCK_KEY_SQL: dict[str, str] = {
     "person_last_phonetic_zip3": (
-        "CASE WHEN ri.last_name_phonetic IS NOT NULL "
+        "CASE WHEN ri.entity_type = 'person' "
+        "AND ri.last_name_phonetic IS NOT NULL "
         "AND trim(ri.last_name_phonetic) <> '' "
         "AND ri.zip5 IS NOT NULL AND length(trim(ri.zip5)) >= 3 "
         "THEN lower(trim(ri.last_name_phonetic)) || '|' || "
         "lower(substr(trim(ri.zip5), 1, 3)) END"
     ),
     "person_first_initial_last_phonetic": (
-        "CASE WHEN ri.first_name IS NOT NULL AND trim(ri.first_name) <> '' "
+        "CASE WHEN ri.entity_type = 'person' "
+        "AND ri.first_name IS NOT NULL AND trim(ri.first_name) <> '' "
         "AND ri.last_name_phonetic IS NOT NULL AND trim(ri.last_name_phonetic) <> '' "
         "THEN lower(substr(trim(ri.first_name), 1, 1)) || '|' || "
         "lower(trim(ri.last_name_phonetic)) END"
     ),
     "org_normalized_zip3": (
-        "CASE WHEN ri.normalized_org IS NOT NULL AND trim(ri.normalized_org) <> '' "
+        "CASE WHEN ri.entity_type IN ('organization', 'committee') "
+        "AND ri.normalized_org IS NOT NULL AND trim(ri.normalized_org) <> '' "
         "AND ri.zip5 IS NOT NULL AND length(trim(ri.zip5)) >= 3 "
         "THEN lower(trim(ri.normalized_org)) || '|' || "
         "lower(substr(trim(ri.zip5), 1, 3)) END"
@@ -56,15 +64,17 @@ _CREATE_TEMP_SQL = """
 CREATE TEMP TABLE blocking_keyed_stage (
     source_type varchar(64) NOT NULL,
     source_id varchar(128) NOT NULL,
+    entity_type varchar(64) NOT NULL,
     block_key text NOT NULL
 ) ON COMMIT PRESERVE ROWS
 """
 
 _MATERIALIZE_KEYED_SQL = """
-INSERT INTO blocking_keyed_stage (source_type, source_id, block_key)
+INSERT INTO blocking_keyed_stage (source_type, source_id, entity_type, block_key)
 SELECT
     ri.source_type,
     ri.source_id,
+    ri.entity_type,
     __BLOCK_KEY_EXPR__ AS block_key
 FROM resolution_input ri
 WHERE ri.run_id = :run_id
@@ -110,6 +120,7 @@ SELECT
 FROM blocking_keyed_stage a
 INNER JOIN blocking_keyed_stage b
     ON a.block_key = b.block_key
+    AND a.entity_type = b.entity_type
     AND (a.source_type, a.source_id) < (b.source_type, b.source_id)
 WHERE a.block_key = ANY(:batch_keys)
 ON CONFLICT (

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import Column, String
+from sqlalchemy import Column, Date, String
 from sqlmodel import Field, SQLModel
 
 from app.resolve.models.canonical import map_unified_to_canonical_entity_type
@@ -59,5 +59,12 @@ class ResolutionInput(SQLModel, table=True):
 
     raw_name: str | None = Field(default=None, sa_column=Column(String(500)))
     raw_address: str | None = Field(default=None, sa_column=Column(String(1000)))
+
+    # Real activity window for this source record, derived from the transaction
+    # dates that reference it (NOT the ETL load time).  Survivorship uses these
+    # for canonical_entity / canonical_name_history first/last-seen so name
+    # windows reflect actual filing periods.
+    first_activity_date: date | None = Field(default=None, sa_column=Column(Date))
+    last_activity_date: date | None = Field(default=None, sa_column=Column(Date))
 
     created_at: datetime = Field(default_factory=_utc_now)
