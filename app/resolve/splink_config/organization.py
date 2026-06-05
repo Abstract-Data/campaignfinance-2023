@@ -33,7 +33,10 @@ COMPARISONS = [
 # Blocks on normalized org name + ZIP3 for EM training.
 TRAINING_BLOCKING_RULE = block_on("normalized_org", "zip3")
 
-# Prediction blocking mirrors Phase-1 org_normalized_zip3 rule.
+# Prediction blocking mirrors Phase-1 org_normalized_zip3 rule.  The SQL blocking
+# now scopes each rule by entity_type (see blocking_sql._RULE_BLOCK_KEY_SQL), so
+# organization candidate pairs come only from this rule and Splink's bulk predict
+# reproduces them — no per-pair fallback.
 PREDICTION_BLOCKING_RULES = [
     block_on("normalized_org", "zip3"),
 ]

@@ -75,5 +75,37 @@ uv run pytest tests/resolve/test_phase0_integration.py tests/resolve/test_phase1
 
 ## Common issues and fixes
 
-_Add recurring operational issues here as they are validated (see `AGENTS.md` →
-Updating the Runbook)._
+### Issue: Resolve publish fails on `invalid input value for enum entitytype`
+
+**Symptoms:**
+- Survivorship crashes inserting `canonical_entity` with `entity_type='committee'`
+- Postgres error: `invalid input value for enum entitytype: "committee"`
+
+**Fix:**
+- Ensure `app/resolve/models/canonical.py` uses `CanonicalEntityTypeType` (uppercase
+  bind to shared `entitytype` enum).
+- Re-run stage 7 only if stages 1–6 completed: survivorship publish for the
+  existing `match_run` id.
+
+### Issue: SQL blocking with custom `blocking_rules` in config
+
+**Symptoms:**
+- `ValueError: SQL blocking has no static key expression for rule '...'`
+
+**Fix:**
+- Default Postgres runs use whitelisted SQL rules only. For custom rules set
+  `blocking_backend: python` in the resolve config JSON, or add the rule to
+  `_RULE_BLOCK_KEY_SQL` in `app/resolve/blocking_sql.py`.
+
+### Issue: Resolve CLI cannot see Postgres (`match_run` stuck, no pairs)
+
+**Symptoms:**
+- `uv run python -m app.resolve run` uses SQLite when env vars are missing
+
+**Fix:**
+```bash
+uv run --env-file .env python -m app.resolve run --state texas -v
+```
+
+_Add other recurring operational issues here as they are validated (see
+`AGENTS.md` → Updating the Runbook)._

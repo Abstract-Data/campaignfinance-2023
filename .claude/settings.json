@@ -1,4 +1,7 @@
 {
+  "enabledMcpjsonServers": [
+    "context7"
+  ],
   "permissions": {
     "deny": [
       "Bash(rm -rf*)",

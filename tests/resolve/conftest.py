@@ -93,11 +93,16 @@ def create_app_tables(
     engine: Engine,
     tables: Sequence[Table] | None = None,
 ) -> None:
-    """Create application tables registered on ``SQLModel.metadata``."""
+    """Create application tables registered on ``SQLModel.metadata``.
+
+    When no explicit table list is given, skip state-namespaced source tables
+    (``schema="texas"`` etc.): SQLite has no schema support and raises
+    ``unknown database <schema>`` when ``create_all`` tries to build them.  The
+    resolve/app layer only needs the schema-less unified tables.
+    """
     if tables is None:
-        SQLModel.metadata.create_all(engine)
-    else:
-        SQLModel.metadata.create_all(engine, tables=list(tables))
+        tables = [t for t in SQLModel.metadata.tables.values() if t.schema is None]
+    SQLModel.metadata.create_all(engine, tables=list(tables))
 
 
 def create_resolve_tables(

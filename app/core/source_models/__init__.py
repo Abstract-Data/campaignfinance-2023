@@ -19,6 +19,7 @@ Usage
 
 from __future__ import annotations
 
+from app.core.source_models.filer_ingest import build_filer_committee
 from app.core.source_models.lookups import CommitteePurpose, ExpenditureCategory
 from app.core.source_models.lookups_ingest import (
     build_committee_purpose,
@@ -30,6 +31,7 @@ from app.core.source_models.pledges import UnifiedPledge
 from app.core.source_models.pledges_ingest import build_pledge
 from app.core.source_models.reports import UnifiedReport
 from app.core.source_models.reports_ingest import (
+    build_final_report,
     build_report,
     link_transactions_to_reports,
     reconcile_report_totals,
@@ -53,6 +55,13 @@ RECORD_TYPE_BUILDERS: dict[str, object] = {
     "CVR3": build_committee_purpose,
     "EXCAT": build_expenditure_category,
     "SPAC": build_spac_link,
+    # FINL — marks the matching UnifiedReport.is_final = True; no new row created.
+    # Requires a session; the loader passes one.
+    "FINL": build_final_report,
+    # FILER — canonical committee registry with full address and officer data.
+    # Upserts UnifiedCommittee and creates UnifiedCommitteePerson rows.
+    # Requires a session; the loader passes one.
+    "FILER": build_filer_committee,
 }
 
 __all__ = [
@@ -64,6 +73,8 @@ __all__ = [
     "SpacLink",
     "build_committee_purpose",
     "build_expenditure_category",
+    "build_filer_committee",
+    "build_final_report",
     "build_notice",
     "build_pledge",
     "build_report",

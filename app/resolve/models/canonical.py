@@ -14,7 +14,9 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import VARCHAR, Column, UniqueConstraint
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
+from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
 
 if TYPE_CHECKING:
@@ -37,11 +39,49 @@ class EntityType(str, Enum):
     counting values — ``person``, ``organization``, ``committee``, ``campaign``,
     ``vendor``, and ``other``.  Only the first three are canonical types; see
     :func:`map_unified_to_canonical_entity_type` for the full mapping.
+
+    Python values stay lowercase; Postgres ``entitytype`` labels are uppercase
+    (``PERSON``, ``ORGANIZATION``, ``COMMITTEE``) — see
+    :class:`CanonicalEntityTypeType`.
     """
 
     person = "person"
     organization = "organization"
     committee = "committee"
+
+
+class CanonicalEntityTypeType(TypeDecorator):
+    """Bind :class:`EntityType` to the shared Postgres ``entitytype`` enum."""
+
+    impl = VARCHAR(12)
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(
+                PG_ENUM(
+                    "PERSON",
+                    "ORGANIZATION",
+                    "COMMITTEE",
+                    name="entitytype",
+                    create_type=False,
+                )
+            )
+        return dialect.type_descriptor(VARCHAR(12))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, EntityType):
+            raw = value.value
+        else:
+            raw = str(value)
+        return raw.upper()
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return EntityType(str(value).lower())
 
 
 class UnmappedEntityTypeError(ValueError):
@@ -150,7 +190,9 @@ class CanonicalEntity(SQLModel, table=True):
         max_length=36,
     )
 
-    entity_type: EntityType = Field(max_length=12)
+    entity_type: EntityType = Field(
+        sa_column=Column(CanonicalEntityTypeType(), nullable=False),
+    )
     canonical_name: str = Field(max_length=500)
     normalized_name: str = Field(max_length=500, index=True)
 

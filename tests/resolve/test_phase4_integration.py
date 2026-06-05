@@ -66,7 +66,8 @@ def _create_minimum_schema(session: Session) -> None:
             id INTEGER PRIMARY KEY,
             source_type TEXT NOT NULL,
             source_id TEXT NOT NULL,
-            canonical_entity_id INTEGER NOT NULL
+            canonical_entity_id INTEGER NOT NULL,
+            run_id INTEGER
         )
         """,
         """
@@ -150,10 +151,10 @@ def _seed_contribution_with_entities(session: Session) -> None:
     session.execute(
         text(
             """
-            INSERT INTO entity_crosswalk (source_type, source_id, canonical_entity_id)
+            INSERT INTO entity_crosswalk (source_type, source_id, canonical_entity_id, run_id)
             VALUES
-                ('unified_entity', '201', 101),
-                ('unified_entity', '202', 102)
+                ('unified_entity', '201', 101, 1),
+                ('unified_entity', '202', 102, 1)
             """
         )
     )
@@ -258,6 +259,7 @@ class TestResolvedViewsIntegration:
             "resolved_transactions",
             "resolved_contributions",
             "resolved_expenditures",
+            "resolved_reports",
         }
 
     def test_resolved_contributions_joins_canonical_entities(self, session):
@@ -403,6 +405,7 @@ class TestPublishAll:
             "resolved_transactions",
             "resolved_contributions",
             "resolved_expenditures",
+            "resolved_reports",
             "address_occupancy",
         }
 

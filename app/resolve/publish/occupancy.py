@@ -7,7 +7,12 @@ from sqlmodel import Session
 
 ADDRESS_OCCUPANCY_VIEW_NAME = "address_occupancy"
 
-_ADDRESS_OCCUPANCY_SELECT = """
+_ROLE_WHEN_PERSON_SQLITE = "WHEN lower(ce.entity_type) = 'person' THEN 'resident'"
+_ROLE_WHEN_PERSON_POSTGRES = (
+    "WHEN lower(ce.entity_type::text) = 'person' THEN 'resident'"
+)
+
+_ADDRESS_OCCUPANCY_SELECT_BODY = """
 WITH entity_transactions AS (
     SELECT
         ec.canonical_entity_id,
@@ -106,7 +111,7 @@ SELECT
     ce.canonical_name AS entity_name,
     ce.entity_type,
     CASE
-        WHEN ce.entity_type = 'person' THEN 'resident'
+        __ROLE_WHEN_PERSON__
         ELSE 'registered'
     END AS role,
     COALESCE(etr.transaction_count, 0) AS transaction_count,
@@ -119,15 +124,16 @@ LEFT JOIN entity_transaction_rollup AS etr
   ON etr.canonical_entity_id = ce.id
 """
 
+def _occupancy_select_sql(dialect_name: str) -> str:
+    role_case = (
+        _ROLE_WHEN_PERSON_POSTGRES
+        if dialect_name == "postgresql"
+        else _ROLE_WHEN_PERSON_SQLITE
+    )
+    return _ADDRESS_OCCUPANCY_SELECT_BODY.replace("__ROLE_WHEN_PERSON__", role_case)
+
+
 _DROP_SQLITE_VIEW_SQL = "DROP VIEW IF EXISTS address_occupancy"
-
-_CREATE_SQLITE_VIEW_SQL = (
-    "CREATE VIEW address_occupancy AS " + _ADDRESS_OCCUPANCY_SELECT
-)
-
-_CREATE_POSTGRES_VIEW_SQL = (
-    "CREATE OR REPLACE VIEW address_occupancy AS " + _ADDRESS_OCCUPANCY_SELECT
-)
 
 
 def build_address_occupancy_view(session: Session) -> str:
@@ -139,11 +145,15 @@ def build_address_occupancy_view(session: Session) -> str:
     if bind is None:
         raise RuntimeError("Session is not bound to an engine/connection.")
 
-    if bind.dialect.name == "postgresql":
-        session.execute(text(_CREATE_POSTGRES_VIEW_SQL))
+    dialect_name = bind.dialect.name
+    select_sql = _occupancy_select_sql(dialect_name)
+    if dialect_name == "postgresql":
+        session.execute(
+            text("CREATE OR REPLACE VIEW address_occupancy AS " + select_sql)
+        )
     else:
         session.execute(text(_DROP_SQLITE_VIEW_SQL))
-        session.execute(text(_CREATE_SQLITE_VIEW_SQL))
+        session.execute(text("CREATE VIEW address_occupancy AS " + select_sql))
 
     session.commit()
     return ADDRESS_OCCUPANCY_VIEW_NAME

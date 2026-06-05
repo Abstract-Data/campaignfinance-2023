@@ -8,16 +8,19 @@ TDD step 5: additional structural assertions from the interface contract.
 
 from __future__ import annotations
 
-import pytest
-from sqlalchemy import UniqueConstraint, create_engine, inspect
-from sqlmodel import SQLModel
+import os
 
-from app.core.source_models.reports import UnifiedReport  # noqa: F401
+import pytest
+from sqlalchemy import UniqueConstraint, create_engine, inspect, text
+from sqlmodel import Session, SQLModel
+
 from app.core.enums import EntityType as UnifiedEntityType
+from app.core.source_models.reports import UnifiedReport  # noqa: F401
 from app.resolve.models.canonical import (
     CanonicalAddress,
     CanonicalCampaign,
     CanonicalEntity,
+    CanonicalEntityTypeType,
     CanonicalNameHistory,
     EntityType,
     UnmappedEntityTypeError,
@@ -223,6 +226,43 @@ class TestUnifiedEntityTypeMapping:
     def test_unknown_type_raises(self):
         with pytest.raises(UnmappedEntityTypeError):
             map_unified_to_canonical_entity_type("unknown_type")
+
+
+@pytest.mark.integration
+def test_canonical_entity_committee_round_trip_on_postgres():
+    url = os.environ.get("DATABASE_URL") or os.environ.get("TEST_DATABASE_URL")
+    if not url or not url.startswith("postgresql"):
+        pytest.skip("DATABASE_URL postgresql not set")
+
+    engine = create_engine(url)
+    SQLModel.metadata.create_all(engine, tables=[CanonicalEntity.__table__])
+    with Session(engine) as session:
+        entity = CanonicalEntity(
+            entity_type=EntityType.committee,
+            canonical_name="test pac",
+            normalized_name="test pac",
+            state_code="TX",
+        )
+        session.add(entity)
+        session.flush()
+        stored = session.execute(
+            text("SELECT entity_type::text FROM canonical_entity WHERE id = :id"),
+            {"id": entity.id},
+        ).scalar_one()
+        session.rollback()
+        assert stored == "COMMITTEE"
+
+
+class TestCanonicalEntityTypePostgresBinding:
+    def test_bind_param_uppercases_for_entitytype_enum(self):
+        col_type = CanonicalEntityTypeType()
+        assert col_type.process_bind_param(EntityType.committee, None) == "COMMITTEE"
+        assert col_type.process_bind_param(EntityType.person, None) == "PERSON"
+
+    def test_result_value_lowercases_to_python_enum(self):
+        col_type = CanonicalEntityTypeType()
+        assert col_type.process_result_value("COMMITTEE", None) == EntityType.committee
+        assert col_type.process_result_value("ORGANIZATION", None) == EntityType.organization
 
 
 def test_app_resolve_package_imports():

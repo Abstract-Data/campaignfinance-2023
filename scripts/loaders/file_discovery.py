@@ -13,6 +13,17 @@ from app.logger import Logger
 
 logger = Logger(__name__)
 
+# Repo root (campaignfinance/), not the process cwd — cf load must work from app/.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _resolve_base_dir(base_dir: Path) -> Path:
+    """Resolve *base_dir* against the repo root when it is relative."""
+    path = base_dir.expanduser()
+    if path.is_absolute():
+        return path.resolve()
+    return (_REPO_ROOT / path).resolve()
+
 # Filename prefix → TEC record type (confirmed against tmp/texas/CFS-ReadMe.txt).
 FILENAME_RECORD_TYPES: dict[str, str] = {
     "contribs": "RCPT",
@@ -81,9 +92,9 @@ def discover_state_files(
     ``record_type="UNKNOWN"`` and logged — never silently dropped.
     """
     if base_dir is None:
-        base_dir = Path("tmp") / state
+        base_dir = _REPO_ROOT / "tmp" / state
     else:
-        base_dir = base_dir.expanduser().resolve()
+        base_dir = _resolve_base_dir(base_dir)
 
     if not base_dir.is_dir():
         return []

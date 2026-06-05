@@ -4,23 +4,49 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlmodel import Session
 
 from app.core.builders import UnifiedSQLModelBuilder
+
+if TYPE_CHECKING:
+    from app.core.load_cache import BuilderCache
 from app.core.enums import PersonRole, TransactionType
 from app.core.models import (
     UnifiedAsset,
     UnifiedContribution,
     UnifiedCredit,
     UnifiedDebt,
+    UnifiedExpenditure,
     UnifiedLoan,
     UnifiedPerson,
     UnifiedTransaction,
     UnifiedTransactionPerson,
     UnifiedTravel,
 )
+
+# Fix 1a: Dispatch table mapping TEC record_type → {PersonRole: field_prefix}.
+# Only roles present in the dict are built for that record type.
+# For record types not in this map the fallback is {PersonRole.CONTRIBUTOR: "contributor"}.
+# Keys are TEC ``recordType`` codes (as discovered by file_discovery and threaded
+# from the loader), NOT transaction-type names.  Mixing the two spellings was a
+# latent bug: PLDG/CRED/TRVL records never matched the old PLEDGE/CREDIT/TRAVEL
+# keys and silently fell back to the contributor mapping.
+RECORD_TYPE_ROLE_MAP: dict[str, dict[PersonRole, str]] = {
+    "RCPT":  {PersonRole.CONTRIBUTOR: "contributor"},   # contributions
+    "EXPN":  {PersonRole.PAYEE: "payee"},               # expenditures
+    "LOAN":  {PersonRole.CONTRIBUTOR: "lender"},        # loans (lender acts as contributor)
+    "DEBT":  {PersonRole.CONTRIBUTOR: "lender"},        # debts (creditor via lenderName* cols)
+    "PLDG":  {PersonRole.CONTRIBUTOR: "pledger"},       # pledges
+    "CRED":  {PersonRole.CONTRIBUTOR: "payor"},         # credits/refunds
+    "TRVL":  {PersonRole.PAYEE: "traveller"},           # travel (traveller acts as payee)
+    # CAND — direct expenditure to a candidate.  The candidate is the PAYEE;
+    # the field prefix is "candidate" (candidateNameFirst/Last/Organization etc.)
+    # matching the TEC cand_*.csv column naming convention.
+    "CAND":  {PersonRole.PAYEE: "candidate"},
+    "ASSET": {},                                        # assets have no external person
+}
 
 
 @dataclass
@@ -58,15 +84,14 @@ def _build_contribution_detail(
 ) -> None:
     contributor_entity = ctx["contributor_entity"]
     recipient_entity = ctx["recipient_entity"]
-    committee = ctx["committee"]
-    recipient = ctx["recipient"]
 
-    if not contributor_entity and committee and committee.entity:
-        contributor_entity = committee.entity
-    if not recipient_entity and recipient and recipient.entity:
-        recipient_entity = recipient.entity
-    if not (contributor_entity and recipient_entity):
-        return
+    # Fix 2: never fall back to committee.entity as the contributor — that makes
+    # the committee appear to donate to itself.  If the contributor is unknown,
+    # skip creating the detail record entirely.
+    if not contributor_entity:
+        return  # anonymous/unknown contributor — skip UnifiedContribution
+    if not recipient_entity:
+        return  # no committee entity — skip UnifiedContribution
 
     transaction.contribution = UnifiedContribution(
         transaction=transaction,
@@ -86,17 +111,20 @@ def _build_loan_detail(
     raw_data: dict[str, Any],
     ctx: DetailContext,
 ) -> None:
-    contributor_entity = ctx["contributor_entity"]
-    recipient_entity = ctx["recipient_entity"]
-    if not contributor_entity and recipient_entity:
-        contributor_entity = recipient_entity
-    if not (contributor_entity and recipient_entity):
+    # The lender is the contributor (built from the ``lender`` field prefix);
+    # the borrower is the committee (recipient).  Do NOT fall back to the
+    # committee entity as the lender — that produced bogus self-loans where
+    # lender == borrower == committee.  A loan with no identifiable lender is
+    # skipped, consistent with the contribution path.
+    lender_entity = ctx["contributor_entity"]
+    borrower_entity = ctx["recipient_entity"]
+    if not (lender_entity and borrower_entity):
         return
 
     transaction.loan = UnifiedLoan(
         transaction=transaction,
-        lender=contributor_entity,
-        borrower=recipient_entity,
+        lender=lender_entity,
+        borrower=borrower_entity,
         amount=transaction.amount,
         loan_date=transaction.transaction_date,
         due_date=builder._parse_date(builder._get_field_value(raw_data, "loan_due_date")),
@@ -249,8 +277,39 @@ def _build_asset_detail(
     )
 
 
+def _build_expenditure_detail(
+    transaction: UnifiedTransaction,
+    builder: UnifiedSQLModelBuilder,
+    raw_data: dict[str, Any],
+    ctx: DetailContext,
+) -> None:
+    """Create a UnifiedExpenditure for EXPN transactions (Fix 3b).
+
+    After Fix 1 the payee person is stored in the PAYEE slot.  The committee
+    is always the payer.  ``ctx["payee_entity"]`` carries the payee entity
+    resolved by ``_entity_context``; ``ctx["committee"]`` carries the
+    committee whose entity is the payer.
+    """
+    committee = ctx["committee"]
+    payee_entity = ctx["payee_entity"]
+    payer_entity = committee.entity if committee and committee.entity else None
+    if not (payer_entity and payee_entity):
+        return
+    transaction.expenditure = UnifiedExpenditure(
+        transaction=transaction,
+        payer=payer_entity,
+        payee=payee_entity,
+        amount=transaction.amount,
+        expenditure_date=transaction.transaction_date,
+        expenditure_type=builder._get_field_value(raw_data, "expenditure_type"),
+        description=transaction.description,
+        state_id=builder.state_id,
+    )
+
+
 DETAIL_BUILDERS: dict[TransactionType, DetailBuilder] = {
     TransactionType.CONTRIBUTION: _build_contribution_detail,
+    TransactionType.EXPENDITURE: _build_expenditure_detail,
     TransactionType.LOAN: _build_loan_detail,
     TransactionType.DEBT: _build_debt_detail,
     TransactionType.CREDIT: _build_credit_detail,
@@ -259,15 +318,36 @@ DETAIL_BUILDERS: dict[TransactionType, DetailBuilder] = {
 }
 
 
+def _resolve_record_type(
+    raw_data: dict[str, Any], record_type: str | None = None
+) -> str:
+    """Return the upper-cased TEC record type for *raw_data*.
+
+    Prefers the authoritative *record_type* threaded by the loader.  Falls back
+    to the raw record, accepting both the snake_case ``record_type`` and the TEC
+    camelCase ``recordType`` column (the parquet source uses the latter — reading
+    only ``record_type`` silently dropped every non-contributor role).
+    """
+    value = record_type or raw_data.get("record_type") or raw_data.get("recordType") or ""
+    return str(value).upper()
+
+
 def _build_participants(
-    builder: UnifiedSQLModelBuilder, raw_data: dict[str, Any]
+    builder: UnifiedSQLModelBuilder,
+    raw_data: dict[str, Any],
+    record_type: str | None = None,
 ) -> dict[PersonRole, UnifiedPerson | None]:
-    return {
-        PersonRole.CONTRIBUTOR: builder.build_person(raw_data, PersonRole.CONTRIBUTOR),
-        PersonRole.RECIPIENT: builder.build_person(raw_data, PersonRole.RECIPIENT),
-        PersonRole.PAYEE: builder.build_person(raw_data, PersonRole.PAYEE),
-        PersonRole.CANDIDATE: builder.build_person(raw_data, PersonRole.CANDIDATE),
-    }
+    # Fix 1d: Use RECORD_TYPE_ROLE_MAP so only the correct role is built for
+    # each TEC record type, with the matching field prefix.  All other roles
+    # default to None, eliminating phantom RECIPIENT/PAYEE/CANDIDATE rows.
+    resolved_type = _resolve_record_type(raw_data, record_type)
+    role_map = RECORD_TYPE_ROLE_MAP.get(
+        resolved_type, {PersonRole.CONTRIBUTOR: "contributor"}
+    )
+    result: dict[PersonRole, UnifiedPerson | None] = {role: None for role in PersonRole}
+    for role, prefix in role_map.items():
+        result[role] = builder.build_person(raw_data, role, field_prefix=prefix)
+    return result
 
 
 def _attach_transaction_persons(
@@ -277,6 +357,10 @@ def _attach_transaction_persons(
 ) -> None:
     for role, person in participants.items():
         if not person:
+            continue
+        # Fix 6: RECIPIENT is always the committee, captured via committee_id FK.
+        # Never write a phantom RECIPIENT row into unified_transaction_persons.
+        if role == PersonRole.RECIPIENT:
             continue
         transaction.persons.append(
             UnifiedTransactionPerson(
@@ -295,7 +379,9 @@ def _entity_context(
 ) -> DetailContext:
     contributor = participants[PersonRole.CONTRIBUTOR]
     recipient = participants[PersonRole.RECIPIENT]
+    payee = participants[PersonRole.PAYEE]
     contributor_entity = contributor.entity if contributor and contributor.entity else None
+    payee_entity = payee.entity if payee and payee.entity else None
     recipient_entity = None
     if committee and committee.entity:
         recipient_entity = committee.entity
@@ -304,8 +390,10 @@ def _entity_context(
     return {
         "contributor": contributor,
         "recipient": recipient,
+        "payee": payee,
         "committee": committee,
         "contributor_entity": contributor_entity,
+        "payee_entity": payee_entity,
         "recipient_entity": recipient_entity,
     }
 
@@ -331,14 +419,35 @@ class UnifiedSQLDataProcessor:
         state_code: str | None = None,
         *,
         session: Session | None = None,
+        cache: "BuilderCache | None" = None,
     ) -> UnifiedSQLModelBuilder:
-        """Return a fresh builder per call (no shared mutable cache)."""
-        return UnifiedSQLModelBuilder(
+        """Return a builder, reusing one per load run when a cache is supplied.
+
+        Building a fresh ``UnifiedSQLModelBuilder`` per row rebuilds the field
+        mapping table each time.  During a load the loader passes a per-run
+        ``cache``; we memoize the builder *on that cache* so its lifetime matches
+        the run's session and never leaks into an unrelated caller (object-id
+        reuse across sessions would otherwise hand back a builder bound to a
+        disposed engine).  With no cache (ad-hoc / tests) we return a fresh
+        builder every call, preserving the original contract.
+        """
+        if cache is None:
+            return UnifiedSQLModelBuilder(
+                state, state_id, state_code, session=session
+            )
+        memo_key = (state, state_id, state_code, id(session))
+        if cache.builder is not None and cache.builder_key == memo_key:
+            return cache.builder
+        builder = UnifiedSQLModelBuilder(
             state,
             state_id,
             state_code,
             session=session,
+            cache=cache,
         )
+        cache.builder = builder
+        cache.builder_key = memo_key
+        return builder
 
     def process_record(
         self,
@@ -348,15 +457,28 @@ class UnifiedSQLDataProcessor:
         state_code: str | None = None,
         *,
         session: Session | None = None,
+        record_type: str | None = None,
+        cache: "BuilderCache | None" = None,
     ) -> UnifiedTransaction:
-        """Process a single record from any state into a unified transaction."""
+        """Process a single record from any state into a unified transaction.
+
+        ``record_type`` is the authoritative TEC record type supplied by the
+        loader (e.g. ``"EXPN"``).  When omitted it is sniffed from *raw_data*.
+        ``cache`` is a shared :class:`BuilderCache` that turns repeated dedup
+        lookups into dict hits across a load run.
+        """
         builder = self.get_builder(
-            state, state_id=state_id, state_code=state_code, session=session
+            state, state_id=state_id, state_code=state_code, session=session, cache=cache
         )
-        participants = _build_participants(builder, raw_data)
+        participants = _build_participants(builder, raw_data, record_type)
         committee = builder.build_committee(raw_data)
         transaction = builder.build_transaction(raw_data)
         candidate = participants[PersonRole.CANDIDATE]
+        # CAND records carry the candidate in the PAYEE slot (it's a direct
+        # expenditure *to* the candidate); reuse that person as the campaign's
+        # candidate so `candidate_person_id` / canonical_campaign.candidate link.
+        if candidate is None and _resolve_record_type(raw_data, record_type) == "CAND":
+            candidate = participants[PersonRole.PAYEE]
 
         campaign = builder.build_campaign(raw_data, committee, candidate, transaction)
         if campaign:
@@ -379,6 +501,8 @@ class UnifiedSQLDataProcessor:
         state_code: str | None = None,
         *,
         session: Session | None = None,
+        record_type: str | None = None,
+        cache: "BuilderCache | None" = None,
     ) -> Iterator[UnifiedTransaction]:
         """Yield unified transactions one record at a time (P2-PERF-002)."""
         for record in records:
@@ -388,6 +512,8 @@ class UnifiedSQLDataProcessor:
                 state_id=state_id,
                 state_code=state_code,
                 session=session,
+                record_type=record_type,
+                cache=cache,
             )
 
     def process_records(
@@ -398,6 +524,8 @@ class UnifiedSQLDataProcessor:
         state_code: str | None = None,
         *,
         session: Session | None = None,
+        record_type: str | None = None,
+        cache: "BuilderCache | None" = None,
     ) -> list[UnifiedTransaction]:
         """Process multiple records; thin wrapper over ``process_record_stream``."""
         return list(
@@ -407,6 +535,8 @@ class UnifiedSQLDataProcessor:
                 state_id=state_id,
                 state_code=state_code,
                 session=session,
+                record_type=record_type,
+                cache=cache,
             )
         )
 

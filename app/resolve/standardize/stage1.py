@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 import polars as pl
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, delete, select
 
 import app.resolve.models  # noqa: F401 — registers UnifiedReport before ORM use
@@ -33,7 +35,133 @@ def _compose_raw_address(
     return ", ".join(part.strip() for part in parts if part and part.strip())
 
 
+def _entity_activity_dates(
+    session: Session, state_id: int
+) -> dict[int, list[Any]]:
+    """Return ``{entity_id: [first_date, last_date]}`` from the transactions that
+    reference each entity.
+
+    Person/organization entities are dated via ``unified_transaction_persons``
+    (contributor / payee / lender roles); committee entities via the
+    ``committee_id`` they own.  These are the real filing dates the canonical
+    name-history windows should use (not the ETL ``created_at``).
+    """
+    dates: dict[int, list[Any]] = {}
+
+    def merge(eid: int | None, lo: Any, hi: Any) -> None:
+        if eid is None:
+            return
+        cur = dates.get(eid)
+        if cur is None:
+            dates[eid] = [lo, hi]
+            return
+        if lo is not None and (cur[0] is None or lo < cur[0]):
+            cur[0] = lo
+        if hi is not None and (cur[1] is None or hi > cur[1]):
+            cur[1] = hi
+
+    person_sql = text(
+        """
+        SELECT tp.entity_id, MIN(t.transaction_date), MAX(t.transaction_date)
+        FROM unified_transaction_persons tp
+        JOIN unified_transactions t ON t.id = tp.transaction_id
+        WHERE tp.entity_id IS NOT NULL
+          AND t.state_id = :sid
+          AND t.transaction_date IS NOT NULL
+        GROUP BY tp.entity_id
+        """
+    )
+    committee_sql = text(
+        """
+        SELECT e.id, MIN(t.transaction_date), MAX(t.transaction_date)
+        FROM unified_entities e
+        JOIN unified_transactions t ON t.committee_id = e.committee_id
+        WHERE e.committee_id IS NOT NULL
+          AND t.state_id = :sid
+          AND t.transaction_date IS NOT NULL
+        GROUP BY e.id
+        """
+    )
+    # Degrade gracefully: the transaction tables may be absent (e.g. resolve-only
+    # test fixtures).  Without activity dates, survivorship falls back to
+    # ``created_at`` rather than failing the whole stage.
+    for stmt in (person_sql, committee_sql):
+        try:
+            results = session.execute(stmt, {"sid": state_id}).fetchall()
+        except SQLAlchemyError:
+            session.rollback()
+            continue
+        for eid, lo, hi in results:
+            merge(eid, lo, hi)
+    return dates
+
+
+def _activity_dates_by_key(session: Session, sql: Any, state_id: int) -> dict[Any, list[Any]]:
+    """Run *sql* (returns ``key, min_date, max_date`` per row) → ``{key: [lo, hi]}``.
+
+    Degrades to ``{}`` if the transaction tables are absent (resolve-only test
+    fixtures) so a missing table never fails the stage.
+    """
+    out: dict[Any, list[Any]] = {}
+    try:
+        results = session.execute(sql, {"sid": state_id}).fetchall()
+    except SQLAlchemyError:
+        session.rollback()
+        return out
+    for key, lo, hi in results:
+        if key is not None:
+            out[key] = [lo, hi]
+    return out
+
+
+def _person_activity_dates(session: Session, state_id: int) -> dict[int, list[Any]]:
+    """``{person_id: [first_date, last_date]}`` from the transactions each person
+    participated in (so name variants sourced from a person row get real windows)."""
+    return _activity_dates_by_key(
+        session,
+        text(
+            """
+            SELECT tp.person_id, MIN(t.transaction_date), MAX(t.transaction_date)
+            FROM unified_transaction_persons tp
+            JOIN unified_transactions t ON t.id = tp.transaction_id
+            WHERE tp.person_id IS NOT NULL
+              AND t.state_id = :sid
+              AND t.transaction_date IS NOT NULL
+            GROUP BY tp.person_id
+            """
+        ),
+        state_id,
+    )
+
+
+def _committee_activity_dates(session: Session, state_id: int) -> dict[str, list[Any]]:
+    """``{filer_id: [first_date, last_date]}`` from the transactions each committee
+    filed (so committee-sourced name variants get real windows)."""
+    return _activity_dates_by_key(
+        session,
+        text(
+            """
+            SELECT t.committee_id, MIN(t.transaction_date), MAX(t.transaction_date)
+            FROM unified_transactions t
+            WHERE t.committee_id IS NOT NULL
+              AND t.state_id = :sid
+              AND t.transaction_date IS NOT NULL
+            GROUP BY t.committee_id
+            """
+        ),
+        state_id,
+    )
+
+
 def _collect_source_rows(session: Session, state_id: int) -> list[dict[str, Any]]:
+    """Stage person, committee, and entity source records.
+
+    Cross-entity_type self-matches (the bug that stalled the scorer) are now
+    prevented in blocking, which requires both sides of a pair to share an
+    ``entity_type`` (see ``blocking_sql``).  Activity dates are attached to the
+    ``unified_entity`` rows; because a person/committee and its entity cluster
+    together, the cluster's date window is sourced from the entity row.
+    """
     person_rows = session.exec(
         select(
             UnifiedPerson.id,
@@ -81,6 +209,9 @@ def _collect_source_rows(session: Session, state_id: int) -> list[dict[str, Any]
         .where(UnifiedEntity.state_id == state_id)
     ).all()
 
+    activity = _entity_activity_dates(session, state_id)
+    person_activity = _person_activity_dates(session, state_id)
+    committee_activity = _committee_activity_dates(session, state_id)
     output: list[dict[str, Any]] = []
     for row in person_rows:
         raw_name = " ".join(
@@ -88,6 +219,8 @@ def _collect_source_rows(session: Session, state_id: int) -> list[dict[str, Any]
         ).strip()
         if not raw_name:
             raw_name = row.organization or ""
+        p_window = person_activity.get(row.id)
+        p_first, p_last = (p_window[0], p_window[1]) if p_window else (None, None)
         output.append(
             {
                 "source_type": "unified_person",
@@ -95,16 +228,16 @@ def _collect_source_rows(session: Session, state_id: int) -> list[dict[str, Any]
                 "entity_type": "person",
                 "raw_name": raw_name,
                 "raw_address": _compose_raw_address(
-                    row.street_1,
-                    row.street_2,
-                    row.city,
-                    row.state,
-                    row.zip_code,
+                    row.street_1, row.street_2, row.city, row.state, row.zip_code
                 ),
+                "first_activity_date": p_first,
+                "last_activity_date": p_last,
             }
         )
 
     for row in committee_rows:
+        c_window = committee_activity.get(row.filer_id)
+        c_first, c_last = (c_window[0], c_window[1]) if c_window else (None, None)
         output.append(
             {
                 "source_type": "unified_committee",
@@ -112,16 +245,16 @@ def _collect_source_rows(session: Session, state_id: int) -> list[dict[str, Any]
                 "entity_type": "committee",
                 "raw_name": row.name or "",
                 "raw_address": _compose_raw_address(
-                    row.street_1,
-                    row.street_2,
-                    row.city,
-                    row.state,
-                    row.zip_code,
+                    row.street_1, row.street_2, row.city, row.state, row.zip_code
                 ),
+                "first_activity_date": c_first,
+                "last_activity_date": c_last,
             }
         )
 
     for row in entity_rows:
+        window = activity.get(row.id)
+        first_date, last_date = (window[0], window[1]) if window else (None, None)
         output.append(
             {
                 "source_type": "unified_entity",
@@ -129,12 +262,10 @@ def _collect_source_rows(session: Session, state_id: int) -> list[dict[str, Any]
                 "entity_type": row.entity_type.value,
                 "raw_name": row.name or "",
                 "raw_address": _compose_raw_address(
-                    row.street_1,
-                    row.street_2,
-                    row.city,
-                    row.state,
-                    row.zip_code,
+                    row.street_1, row.street_2, row.city, row.state, row.zip_code
                 ),
+                "first_activity_date": first_date,
+                "last_activity_date": last_date,
             }
         )
 
@@ -193,7 +324,19 @@ def _compute_features(rows: list[dict[str, Any]], run_id: int) -> list[Resolutio
     if not rows:
         return []
 
-    frame = pl.DataFrame(rows)
+    # Keep the activity-date columns OUT of the Polars frame: they are a mix of
+    # None (person/committee rows) and dates (entity rows), which breaks Polars
+    # schema inference ("could not append value ... of type date").  Polars is
+    # only used for name/address standardization; dates are reattached by row
+    # index below (iter_rows preserves input order).
+    activity_dates = [
+        (r.get("first_activity_date"), r.get("last_activity_date")) for r in rows
+    ]
+    frame_rows = [
+        {k: v for k, v in r.items() if k not in ("first_activity_date", "last_activity_date")}
+        for r in rows
+    ]
+    frame = pl.DataFrame(frame_rows)
     # map_elements required here: standardize_name/standardize_address wrap
     # probablepeople, usaddress, and scourgify — no native Polars equivalent.
     enriched = frame.with_columns(
@@ -218,7 +361,8 @@ def _compute_features(rows: list[dict[str, Any]], run_id: int) -> list[Resolutio
     )
 
     staged: list[ResolutionInput] = []
-    for row in enriched.iter_rows(named=True):
+    for idx, row in enumerate(enriched.iter_rows(named=True)):
+        first_activity_date, last_activity_date = activity_dates[idx]
         name_values = _name_fields(row["std_name"])
         address_values = _address_fields(row["std_address"])
         normalized_org = row["normalized_org"] or ""
@@ -234,6 +378,8 @@ def _compute_features(rows: list[dict[str, Any]], run_id: int) -> list[Resolutio
                 else "",
                 raw_name=row["raw_name"],
                 raw_address=row["raw_address"],
+                first_activity_date=first_activity_date,
+                last_activity_date=last_activity_date,
                 **name_values,
                 **address_values,
             )

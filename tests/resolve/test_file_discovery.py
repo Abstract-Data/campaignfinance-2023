@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from scripts.loaders.file_discovery import (
+    _REPO_ROOT,
     FILENAME_RECORD_TYPES,
     discover_state_files,
 )
@@ -82,11 +83,31 @@ def test_filename_record_types_includes_ss_and_t_variants() -> None:
 
 def test_discover_real_texas_directory_when_present() -> None:
     """Integration smoke test against tmp/texas when data is present locally."""
-    real_dir = Path("tmp/texas")
+    real_dir = _REPO_ROOT / "tmp" / "texas"
     if not real_dir.is_dir():
         pytest.skip("tmp/texas not present")
 
-    discovered = discover_state_files("texas", base_dir=real_dir)
+    discovered = discover_state_files("texas", base_dir=Path("tmp/texas"))
     names = {d.path.name for d in discovered}
     assert "cont_ss_20260524.csv" in names or any("cont_ss" in n for n in names)
     assert "cover_t_20260524.csv" in names or any("cover_t" in n for n in names)
+
+
+def test_discover_state_files_ignores_process_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Relative tmp/<state> paths resolve from repo root, not cwd."""
+    data_dir = tmp_path / "tmp" / "texas"
+    data_dir.mkdir(parents=True)
+    (data_dir / "contribs_01.parquet").write_bytes(b"fake")
+
+    other_cwd = tmp_path / "app"
+    other_cwd.mkdir()
+    monkeypatch.chdir(other_cwd)
+    monkeypatch.setattr(
+        "scripts.loaders.file_discovery._REPO_ROOT",
+        tmp_path,
+    )
+
+    discovered = discover_state_files("texas", base_dir=Path("tmp/texas"))
+    assert [d.path.name for d in discovered] == ["contribs_01.parquet"]

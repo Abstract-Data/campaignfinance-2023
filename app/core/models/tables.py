@@ -4,7 +4,7 @@ import hashlib
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import Column, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlmodel import Field, Relationship, SQLModel
@@ -19,6 +19,32 @@ from app.core.enums import (
     PersonType,
     TransactionType,
 )
+
+if TYPE_CHECKING:
+    # Imported for the ``UnifiedTransaction.report`` relationship annotation only.
+    # UnifiedReport lives in app.core.source_models.reports and registers itself
+    # in the shared SQLModel registry; SQLModel resolves the relationship by name
+    # at mapper-configuration time, so no runtime import is needed here.
+    from app.core.source_models.reports import UnifiedReport
+
+
+class CommitteeType(SQLModel, table=True):
+    """Reference table for committee/filer type codes.
+
+    The ``code`` is the short acronym used by state systems (e.g. TEC's
+    ``filerTypeCd``).  It doubles as the primary key and is the value stored
+    as a foreign key on ``UnifiedCommittee.committee_type``.
+
+    Seed data lives in ``app/core/seeds/committee_types.py``.
+    """
+
+    __tablename__ = "committee_types"
+
+    code: str = Field(sa_column=Column(String(30), primary_key=True))
+    full_title: str = Field(sa_column=Column(String(200), nullable=False))
+    description: str = Field(sa_column=Column(Text, nullable=False))
+
+    committees: List["UnifiedCommittee"] = Relationship(back_populates="committee_type_ref")
 
 class State(SQLModel, table=True):
     """Reference table containing US states."""
@@ -40,6 +66,7 @@ class State(SQLModel, table=True):
     credits: List["UnifiedCredit"] = Relationship(back_populates="state")
     travel_records: List["UnifiedTravel"] = Relationship(back_populates="state")
     assets: List["UnifiedAsset"] = Relationship(back_populates="state")
+    expenditures: List["UnifiedExpenditure"] = Relationship(back_populates="state")
     campaign_entities: List["UnifiedCampaignEntity"] = Relationship(back_populates="state")
     transaction_persons: List["UnifiedTransactionPerson"] = Relationship(back_populates="state")
     committee_persons: List["UnifiedCommitteePerson"] = Relationship(back_populates="state")
@@ -208,7 +235,16 @@ class UnifiedCommittee(SQLModel, table=True):
 
     # Committee fields
     name: str | None = Field(default=None, sa_column=Column(String(500)))
-    committee_type: str | None = Field(default=None, sa_column=Column(String(200)))
+    # FK → committee_types.code.  Stores the raw acronym (e.g. "COH", "GPAC").
+    # Nullable because some legacy/out-of-state records may carry an unknown code.
+    committee_type: str | None = Field(
+        default=None,
+        sa_column=Column(String(30), ForeignKey("committee_types.code"), nullable=True),
+    )
+    # Status from TEC committeeStatusCd (e.g. "ACTIVE", "DISSOLVED", "EXEMPT").
+    # Populated when a FILER record is loaded; null for committees known only
+    # from inline transaction data.
+    filer_status: str | None = Field(default=None, sa_column=Column(String(30), nullable=True))
 
     # Foreign keys
     address_id: int | None = Field(default=None, foreign_key="unified_addresses.id")
@@ -220,6 +256,7 @@ class UnifiedCommittee(SQLModel, table=True):
 
     # Relationships
     address: UnifiedAddress | None = Relationship()
+    committee_type_ref: CommitteeType | None = Relationship(back_populates="committees")
     transactions: List["UnifiedTransaction"] = Relationship(back_populates="committee")
     entity: Optional["UnifiedEntity"] = Relationship(back_populates="committee")
     campaigns: List["UnifiedCampaign"] = Relationship(back_populates="primary_committee")
@@ -254,7 +291,6 @@ class UnifiedEntity(SQLModel, table=True):
     address_id: int | None = Field(default=None, foreign_key="unified_addresses.id")
     state_id: int | None = Field(default=None, foreign_key="states.id")
     notes: str | None = Field(default=None, sa_column=Column(Text))
-    metadata_json: str | None = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -373,6 +409,9 @@ class UnifiedTransaction(SQLModel, table=True):
         back_populates="transaction", sa_relationship_kwargs={"uselist": False}
     )
     asset: Optional["UnifiedAsset"] = Relationship(
+        back_populates="transaction", sa_relationship_kwargs={"uselist": False}
+    )
+    expenditure: Optional["UnifiedExpenditure"] = Relationship(
         back_populates="transaction", sa_relationship_kwargs={"uselist": False}
     )
     state: State | None = Relationship(back_populates="transactions")
@@ -588,7 +627,6 @@ class UnifiedCampaign(SQLModel, table=True):
         default=None, foreign_key="unified_committees.filer_id"
     )
     state_id: int | None = Field(default=None, foreign_key="states.id")
-    metadata_json: str | None = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -615,7 +653,6 @@ class UnifiedCampaignEntity(SQLModel, table=True):
     start_date: date | None = Field(default=None, index=True)
     end_date: date | None = Field(default=None, index=True)
     notes: str | None = Field(default=None, sa_column=Column(Text))
-    metadata_json: str | None = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -643,7 +680,6 @@ class UnifiedContribution(SQLModel, table=True):
     contribution_type: str | None = Field(default=None, sa_column=Column(String(200)))
     is_anonymous: bool = Field(default=False, index=True)
     description: str | None = Field(default=None, sa_column=Column(Text))
-    metadata_json: str | None = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -678,8 +714,20 @@ class UnifiedLoan(SQLModel, table=True):
     due_date: date | None = Field(default=None, index=True)
     interest_rate: Decimal | None = Field(default=None, sa_column=Column(Numeric(9, 4)))
     is_forgiven: bool = Field(default=False, index=True)
+
+    # Collateral
+    collateral_flag: bool = Field(default=False)
     collateral: str | None = Field(default=None, sa_column=Column(Text))
-    metadata_json: str | None = Field(default=None, sa_column=Column(Text))
+
+    # Loan lifecycle — from TEC loanStatusCd (1STRPT, RPTUNPAID, RPTPAID, UNKNOWN)
+    loan_status: str | None = Field(default=None, sa_column=Column(String(30), index=True))
+    financial_institution: bool = Field(default=False)
+
+    # Payment tracking (populated when loanStatusCd = RPTPAID)
+    payment_made: bool = Field(default=False, index=True)
+    payment_amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
+    payment_source: str | None = Field(default=None, sa_column=Column(String(200)))
+
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -694,6 +742,57 @@ class UnifiedLoan(SQLModel, table=True):
         sa_relationship_kwargs={"foreign_keys": "UnifiedLoan.borrower_entity_id"},
     )
     state: State | None = Relationship(back_populates="loans")
+    guarantors: List["LoanGuarantor"] = Relationship(back_populates="loan")
+
+
+class LoanGuarantor(SQLModel, table=True):
+    """Individual guarantors on a loan or debt.
+
+    TEC provides up to 5 guarantors per loan row and up to 5 per debt row.
+    Rather than embedding all guarantor slots as nullable columns on the parent
+    table, we normalise them into this child table (one row per guarantor).
+
+    ``parent_type`` distinguishes whether the parent is a loan or a debt so
+    we can use a single table for both.
+    """
+
+    __tablename__ = "loan_guarantors"
+
+    id: int | None = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+
+    # Parent reference — use FK to the loan; debts link via debt_id
+    loan_id: int | None = Field(default=None, foreign_key="unified_loans.id", index=True)
+    debt_id: int | None = Field(default=None, foreign_key="unified_debts.id", index=True)
+
+    # Position (1-5) within the source record
+    position: int = Field(default=1)
+
+    # Identity
+    person_type: str | None = Field(
+        default=None,
+        sa_column=Column(String(30)),
+        description="INDIVIDUAL or ENTITY",
+    )
+    organization: str | None = Field(default=None, sa_column=Column(String(200)))
+    last_name: str | None = Field(default=None, sa_column=Column(String(100)))
+    first_name: str | None = Field(default=None, sa_column=Column(String(100)))
+    suffix: str | None = Field(default=None, sa_column=Column(String(30)))
+    prefix: str | None = Field(default=None, sa_column=Column(String(30)))
+
+    # Address
+    city: str | None = Field(default=None, sa_column=Column(String(100)))
+    state_code: str | None = Field(default=None, sa_column=Column(String(2)))
+    county: str | None = Field(default=None, sa_column=Column(String(10)))
+    country: str | None = Field(default=None, sa_column=Column(String(3)))
+    postal_code: str | None = Field(default=None, sa_column=Column(String(20)))
+    region: str | None = Field(default=None, sa_column=Column(String(50)))
+
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    loan: UnifiedLoan | None = Relationship(back_populates="guarantors")
+    debt: Optional["UnifiedDebt"] = Relationship(back_populates="guarantors")
 
 
 class UnifiedDebt(SQLModel, table=True):
@@ -731,7 +830,6 @@ class UnifiedDebt(SQLModel, table=True):
     payment_amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
     payment_date: date | None = Field(default=None)
 
-    metadata_json: str | None = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -746,6 +844,7 @@ class UnifiedDebt(SQLModel, table=True):
         sa_relationship_kwargs={"foreign_keys": "UnifiedDebt.debtor_entity_id"},
     )
     state: State | None = Relationship(back_populates="debts")
+    guarantors: List["LoanGuarantor"] = Relationship(back_populates="debt")
 
 
 class UnifiedCredit(SQLModel, table=True):
@@ -776,7 +875,6 @@ class UnifiedCredit(SQLModel, table=True):
     # Related transaction (what was the credit for)
     related_transaction_id: str | None = Field(default=None, sa_column=Column(String(500)))
 
-    metadata_json: str | None = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -839,7 +937,6 @@ class UnifiedTravel(SQLModel, table=True):
     # Traveler info (denormalized for quick access)
     traveler_name: str | None = Field(default=None, sa_column=Column(String(200)))
 
-    metadata_json: str | None = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -854,6 +951,21 @@ class UnifiedAsset(SQLModel, table=True):
 
     Tracks campaign assets such as equipment, property, and other
     items of value owned by the campaign/committee.
+
+    Field availability by source
+    ─────────────────────────────
+    Texas TEC (ASSET record)
+        The TEC asset file only carries a free-text description (``assetDescr``).
+        It does **not** include asset_type, acquisition_date/cost, current_value,
+        valuation_date, disposition_date, or disposition_amount.  Those columns
+        will be NULL for every TEC-sourced row — this is expected, not a bug.
+        The only reliably populated fields are:
+            • description  (from assetDescr)
+            • committee_id (from filerIdent)
+            • state_id
+            • transaction_id (from assetInfoId, used as the source record key)
+        When other states are added, map their asset-detail columns to the
+        appropriate fields here via the unified field library.
     """
 
     __tablename__ = "unified_assets"
@@ -883,7 +995,6 @@ class UnifiedAsset(SQLModel, table=True):
     disposition_amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
     is_disposed: bool = Field(default=False, index=True)
 
-    metadata_json: str | None = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -891,6 +1002,94 @@ class UnifiedAsset(SQLModel, table=True):
     transaction: "UnifiedTransaction" = Relationship(back_populates="asset")
     committee: Optional["UnifiedCommittee"] = Relationship()
     state: State | None = Relationship(back_populates="assets")
+
+
+class UnifiedExpenditure(SQLModel, table=True):
+    """Normalized expenditure detail extracted from transactions.
+
+    Tracks vendor payments and other disbursements made by the committee.
+    One row per EXPN transaction — payer is always the committee entity,
+    payee is the vendor/person who received the funds.
+    """
+
+    __tablename__ = "unified_expenditures"
+
+    id: int | None = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    transaction_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("unified_transactions.id"), unique=True)
+    )
+    payer_entity_id: int = Field(foreign_key="unified_entities.id")
+    payee_entity_id: int = Field(foreign_key="unified_entities.id")
+    state_id: int | None = Field(default=None, foreign_key="states.id")
+    amount: Decimal | None = Field(default=None, sa_column=Column(MONEY_TYPE))
+    expenditure_date: date | None = Field(default=None, index=True)
+    expenditure_type: str | None = Field(default=None, sa_column=Column(String(200)))
+    description: str | None = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    transaction: "UnifiedTransaction" = Relationship(back_populates="expenditure")
+    payer: "UnifiedEntity" = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "UnifiedExpenditure.payer_entity_id"}
+    )
+    payee: "UnifiedEntity" = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "UnifiedExpenditure.payee_entity_id"}
+    )
+    state: State | None = Relationship(back_populates="expenditures")
+
+
+class IngestError(SQLModel, table=True):
+    """Rows rejected during validation or DB insert, kept for auditing and replay.
+
+    One row per failed source record.  The ``raw_data`` column stores the
+    original CSV/parquet row as a JSON string so the record can be inspected
+    or replayed after fixing the upstream issue.
+    """
+
+    __tablename__ = "ingest_errors"
+
+    id: int | None = Field(default=None, primary_key=True)
+    state_id: int | None = Field(default=None, foreign_key="states.id", index=True)
+    file_origin_id: str | None = Field(default=None, foreign_key="file_origins.id", index=True)
+
+    # Source classification
+    record_type: str | None = Field(
+        default=None,
+        sa_column=Column(String(50), nullable=True, index=True),
+        description="The source record type (e.g. RCPT, EXPN, ASSET).",
+    )
+    source_file: str | None = Field(
+        default=None,
+        sa_column=Column(String(500), nullable=True),
+        description="The filename or path of the file that produced this row.",
+    )
+
+    # Error detail
+    error_type: str | None = Field(
+        default=None,
+        sa_column=Column(String(100), nullable=True, index=True),
+        description="Short error classifier (e.g. 'ValidationError', 'IntegrityError').",
+    )
+    error_message: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+        description="Full error message or traceback excerpt.",
+    )
+
+    # The raw source row
+    raw_data: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+        description="Original source row serialised as JSON.",
+    )
+
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
+
+    # Relationships
+    state: State | None = Relationship()
+    file_origin: FileOrigin | None = Relationship()
 
 
 # Database indexes for performance
@@ -933,6 +1132,7 @@ class UnifiedTransactionIndexes:
     # Committee indexes
     idx_committees_name = Index("idx_committees_name", UnifiedCommittee.name)
     idx_committees_type = Index("idx_committees_type", UnifiedCommittee.committee_type)
+    # Note: committee_type is now a FK to committee_types.code — index is still useful for joins.
     # Note: filer_id is already indexed as primary key
 
     # Entity indexes

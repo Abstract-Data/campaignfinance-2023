@@ -5,15 +5,17 @@ from __future__ import annotations
 import json
 import re
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql.expression import func as sa_func
 from sqlmodel import Session, select
 
 from app.core.constants import PLACEHOLDER_NAMES, RECORD_TYPE_TO_TRANSACTION
 from app.core.enums import CampaignRole, EntityType, PersonRole, PersonType, TransactionType
+from app.core.load_cache import BuilderCache
 from app.core.models import (
     UnifiedAddress,
     UnifiedCampaign,
@@ -24,7 +26,7 @@ from app.core.models import (
     UnifiedTransaction,
 )
 from app.core.unified_field_library import field_library
-from app.core.value_objects import AddressParts, PersonName
+from app.core.value_objects import AddressParts, PersonName, normalize_entity_name
 from app.logger import Logger
 
 
@@ -53,12 +55,14 @@ class UnifiedSQLModelBuilder:
         *,
         session: Session | None = None,
         strict_field_resolution: bool = False,
+        cache: "BuilderCache | None" = None,
     ):
         self.state_slug = state
         self.state_id = state_id
         self.state_code = state_code
         self.session = session
         self.strict_field_resolution = strict_field_resolution
+        self._cache = cache
         self.logger = Logger(self.__class__.__name__)
         self.field_mappings = {
             mapping.state_field: mapping.unified_field
@@ -83,9 +87,20 @@ class UnifiedSQLModelBuilder:
         # Map core transaction fields
         transaction.transaction_id = self._get_field_value(raw_data, "transaction_id")
         transaction.amount = self._parse_amount(self._get_field_value(raw_data, "amount"))
+        if transaction.amount is None:
+            # Travel (TRVL) rows carry the value on parentAmount → parent_amount;
+            # use it as the base-transaction amount when no direct amount exists.
+            transaction.amount = self._parse_amount(
+                self._get_field_value(raw_data, "parent_amount")
+            )
         transaction.transaction_date = self._parse_date(
             self._get_field_value(raw_data, "transaction_date")
         )
+        if transaction.transaction_date is None:
+            # Fallback to the filing's received date for record types that carry
+            # no transaction-specific date (TEC debt/asset rows only have
+            # receivedDt) — better than a null date for downstream date logic.
+            transaction.transaction_date = self._parse_date(raw_data.get("receivedDt"))
         transaction.description = self._get_field_value(raw_data, "description")
         transaction.transaction_type = self._determine_transaction_type(raw_data)
 
@@ -93,36 +108,118 @@ class UnifiedSQLModelBuilder:
         transaction.filed_date = self._parse_date(self._get_field_value(raw_data, "filed_date"))
         transaction.amended = self._parse_boolean(self._get_field_value(raw_data, "amended"))
 
+        # Report linkage — TEC populates reportInfoIdent on every row; storing it
+        # here enables link_transactions_to_reports() to run without re-reading raw_data.
+        report_ident_raw = self._get_field_value(raw_data, "report_ident")
+        if report_ident_raw is not None:
+            transaction.report_ident = str(report_ident_raw).strip() or None
+
         # Map metadata fields
         transaction.download_date = raw_data.get("download_date")
 
         return transaction
 
-    def _parse_person_name(self, raw_data: dict[str, Any]) -> PersonName:
-        """Extract normalized person name parts from raw state data."""
+    def _parse_person_name(self, raw_data: dict[str, Any], field_prefix: str = "person") -> PersonName:
+        """Extract normalized person name parts from raw state data.
+
+        Args:
+            raw_data: State-specific record dict.
+            field_prefix: Unified-field prefix for name lookups.  Defaults to
+                ``"person"`` (generic path).  Pass a role-specific prefix such
+                as ``"contributor"`` or ``"payee"`` so that role-scoped column
+                mappings are used instead of the shared generic ones (Fix 1c).
+        """
+        # Role-scoped key first (contributor_first_name, payee_first_name, …)
+        # with a fallback to the generic person_* key.  The fallback keeps the
+        # committee/officer path and generically-normalized inputs working even
+        # when a role prefix is supplied (Fix 1c).  When field_prefix is already
+        # "person" the two keys coincide and the fallback is a no-op.
+        def _scoped(suffix: str) -> Any:
+            return self._get_field_value(
+                raw_data, f"{field_prefix}_{suffix}"
+            ) or self._get_field_value(raw_data, f"person_{suffix}")
+
         return PersonName(
-            first=self._get_field_value(raw_data, "person_first_name"),
+            first=_scoped("first_name"),
             middle=self._get_field_value(raw_data, "person_middle_name"),
-            last=self._get_field_value(raw_data, "person_last_name"),
-            suffix=self._get_field_value(raw_data, "person_suffix"),
-            organization=self._get_field_value(raw_data, "person_organization"),
+            last=_scoped("last_name"),
+            suffix=_scoped("suffix"),
+            organization=_scoped("organization"),
         )
 
-    def _parse_address_parts(self, raw_data: dict[str, Any]) -> AddressParts:
-        """Extract normalized address components from raw state data."""
+    def _parse_address_parts(self, raw_data: dict[str, Any], field_prefix: str = "address") -> AddressParts:
+        """Extract normalized address components from raw state data.
+
+        Args:
+            raw_data: State-specific record dict.
+            field_prefix: Unified-field prefix for address lookups.  Defaults
+                to ``"address"`` (used for committees / generic path).  Pass a
+                role prefix (e.g. ``"contributor"``, ``"payee"``) for
+                role-scoped column resolution (Fix 1c).
+        """
+        # Role-scoped key first, falling back to the generic address_* key
+        # (mirrors _parse_person_name) so generically-normalized inputs and the
+        # committee/officer path still resolve under a role prefix (Fix 1c).
+        def _scoped(suffix: str) -> Any:
+            return self._get_field_value(
+                raw_data, f"{field_prefix}_{suffix}"
+            ) or self._get_field_value(raw_data, f"address_{suffix}")
+
         return AddressParts(
-            street_1=self._get_field_value(raw_data, "address_street_1"),
-            street_2=self._get_field_value(raw_data, "address_street_2"),
-            city=self._get_field_value(raw_data, "address_city"),
-            state=self._get_field_value(raw_data, "address_state"),
-            zip_code=self._get_field_value(raw_data, "address_zip"),
+            street_1=_scoped("street_1"),
+            street_2=_scoped("street_2"),
+            city=_scoped("city"),
+            state=_scoped("state"),
+            zip_code=_scoped("zip"),
         ).normalized()
 
-    def build_person(self, raw_data: dict[str, Any], role: PersonRole) -> UnifiedPerson | None:
-        """Build a unified person from raw data"""
-        name = self._parse_person_name(raw_data)
+    def build_person(self, raw_data: dict[str, Any], role: PersonRole, field_prefix: str = "contributor") -> UnifiedPerson | None:
+        """Build a unified person from raw data.
+
+        Args:
+            raw_data: State-specific record dict.
+            role: The ``PersonRole`` this person occupies in the transaction.
+            field_prefix: Unified-field prefix for name and address lookups.
+                Defaults to ``"contributor"``.  Pass the role-specific prefix
+                from ``RECORD_TYPE_ROLE_MAP`` (e.g. ``"payee"``, ``"lender"``)
+                so that each role resolves its own TEC source columns (Fix 1c).
+        """
+        name = self._parse_person_name(raw_data, field_prefix=field_prefix)
         if not name.full_name:
             return None
+
+        # ── Find-or-create: check the DB before building a new row ────────────
+        # The DB enforces case-insensitive unique indexes on
+        # (lower(first_name), lower(last_name), state_id) and
+        # (lower(organization), state_id).  Without this check every second
+        # occurrence of the same person across multiple contribution files
+        # raises a UniqueViolation.
+        existing_person = self._find_person_by_name_state(
+            first_name=name.first,
+            last_name=name.last,
+            organization=name.organization,
+        )
+
+        # Per-occurrence fields that may be absent on the first time a person is
+        # seen (e.g. first as a committee officer / payee, later as a contributor
+        # carrying employer + occupation).  Collected here so they can backfill
+        # an existing (deduped) person as well as populate a new one — otherwise
+        # the first-occurrence-wins dedup silently drops them.
+        extra_values: dict[str, Any] = {}
+        for extra_field in ("employer", "occupation"):
+            value = self._get_field_value(raw_data, f"person_{extra_field}")
+            if value:
+                extra_values[extra_field] = value
+        if name.middle:
+            extra_values["middle_name"] = name.middle
+        if name.suffix:
+            extra_values["suffix"] = name.suffix
+
+        if existing_person is not None:
+            for field_name, field_value in extra_values.items():
+                if not getattr(existing_person, field_name, None):
+                    setattr(existing_person, field_name, field_value)
+            return existing_person
 
         person_data: dict[str, Any] = {
             "first_name": name.first,
@@ -132,9 +229,8 @@ class UnifiedSQLModelBuilder:
             "organization": name.organization,
         }
         for extra_field in ("employer", "occupation"):
-            value = self._get_field_value(raw_data, f"person_{extra_field}")
-            if value:
-                person_data[extra_field] = value
+            if extra_field in extra_values:
+                person_data[extra_field] = extra_values[extra_field]
 
         # Determine person type
         person_type = PersonType.UNKNOWN
@@ -150,11 +246,21 @@ class UnifiedSQLModelBuilder:
         elif last_name and not first_name:
             person_type = PersonType.UNKNOWN
 
-        address = self.build_address(raw_data, role.value)
+        address = self.build_address(raw_data, role.value, field_prefix=field_prefix)
 
         person = UnifiedPerson(
             **person_data, person_type=person_type, state_id=self.state_id, address=address
         )
+
+        # Write-through: subsequent rows naming the same person reuse this object
+        # instead of re-querying (or creating a duplicate that violates the
+        # uix_persons_* unique indexes).
+        if self._cache is not None:
+            key = BuilderCache.person_key(
+                name.first, name.last, name.organization, self.state_id
+            )
+            if key is not None:
+                self._cache.persons[key] = person
 
         entity_type = (
             EntityType.ORGANIZATION if person_type == PersonType.ORGANIZATION else EntityType.PERSON
@@ -168,10 +274,19 @@ class UnifiedSQLModelBuilder:
 
         return person
 
-    def build_address(self, raw_data: dict[str, Any], entity_role: str) -> UnifiedAddress | None:
-        """Build a unified address from raw data"""
+    def build_address(self, raw_data: dict[str, Any], entity_role: str, field_prefix: str = "address") -> UnifiedAddress | None:
+        """Build a unified address from raw data.
+
+        Args:
+            raw_data: State-specific record dict.
+            entity_role: Unused legacy parameter kept for API compat.
+            field_prefix: Unified-field prefix for address lookups.  Defaults
+                to ``"address"`` (generic path / committees).  Pass a role
+                prefix (e.g. ``"contributor"``, ``"payee"``) when building a
+                role-scoped address (Fix 1c).
+        """
         _ = entity_role
-        parts = self._parse_address_parts(raw_data)
+        parts = self._parse_address_parts(raw_data, field_prefix=field_prefix)
         address_data: dict[str, Any] = {
             "street_1": parts.street_1,
             "street_2": parts.street_2,
@@ -193,8 +308,13 @@ class UnifiedSQLModelBuilder:
             if existing_address:
                 return existing_address
 
-            # Create new address
-            return UnifiedAddress(**address_data)
+            # Create new address (write-through so repeat addresses reuse it).
+            new_address = UnifiedAddress(**address_data)
+            if self._cache is not None:
+                key = BuilderCache.address_key(address_data)
+                if key is not None:
+                    self._cache.addresses[key] = new_address
+            return new_address
 
         return None
 
@@ -251,6 +371,8 @@ class UnifiedSQLModelBuilder:
 
             committee = UnifiedCommittee(**committee_data)
             committee.state_id = self.state_id
+            if committee.filer_id and self._cache is not None:
+                self._cache.committees[committee.filer_id] = committee
             if committee_address:
                 committee.address = committee_address
             entity = self._get_or_create_entity(
@@ -261,6 +383,16 @@ class UnifiedSQLModelBuilder:
             )
             if entity:
                 committee.entity = entity
+
+            # Persist the new committee independently of the transaction.  The
+            # loader severs ``transaction.committee`` (keeping the committee_id
+            # FK) to dodge a relationship→FK sync race, which would otherwise
+            # leave a freshly-built committee uninserted and break the
+            # transaction's committee_id foreign key.  Adding it here lets
+            # SQLAlchemy insert it (and its address/entity, via cascade) ahead of
+            # the referring transaction.
+            if self.session is not None:
+                self.session.add(committee)
 
             return committee
 
@@ -342,7 +474,14 @@ class UnifiedSQLModelBuilder:
         or if the query raises :class:`SQLAlchemyError`.  Other exceptions
         propagate so genuine bugs are not swallowed (P2-MNT-001).
         """
-        if not filer_id or self.session is None:
+        if not filer_id:
+            return None
+        if self._cache is not None and filer_id in self._cache.committees:
+            return self._cache.committees[filer_id]
+        # Committees are always read-through (never authoritative-skip): filer_ingest
+        # creates committee rows the builder cache does not author, so the DB is the
+        # source of truth on a miss.
+        if self.session is None:
             return None
         try:
             stmt = (
@@ -353,17 +492,15 @@ class UnifiedSQLModelBuilder:
                 )
                 .where(UnifiedCommittee.filer_id == filer_id)
             )
-            return self.session.exec(stmt).first()
+            found = self.session.exec(stmt).first()
         except SQLAlchemyError:
             return None
+        if found is not None and self._cache is not None:
+            self._cache.committees[filer_id] = found
+        return found
 
     def _normalize_entity_name(self, value: str | None) -> str:
-        if not value:
-            return ""
-        normalized = value.strip().lower()
-        normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
-        normalized = re.sub(r"\s+", " ", normalized)
-        return normalized.strip()
+        return normalize_entity_name(value)
 
     def _find_entity(
         self, entity_type: EntityType, normalized_name: str, address: UnifiedAddress | None
@@ -374,18 +511,33 @@ class UnifiedSQLModelBuilder:
         SQLAlchemy error.  See :meth:`_find_committee_by_filer_id` for the
         rationale (RF-SMELL-005, P2-MNT-001).
         """
-        if not normalized_name or self.session is None:
+        if not normalized_name:
+            return None
+        key = BuilderCache.entity_key(entity_type, normalized_name, self.state_id)
+        if self._cache is not None and key is not None:
+            if key in self._cache.entities:
+                return self._cache.entities[key]
+            if self._cache.authoritative:
+                return None
+        if self.session is None:
             return None
         try:
+            # Key MUST match the uix_entities_type_name_state unique index exactly
+            # — (entity_type, normalized_name, state_id), no address.  Narrowing by
+            # address_id here caused the lookup to miss an existing same-name entity
+            # with a different address (e.g. one created by filer_ingest for an
+            # officer), then insert a duplicate that violates the index.
             query = select(UnifiedEntity).where(
                 UnifiedEntity.entity_type == entity_type,
                 UnifiedEntity.normalized_name == normalized_name,
+                UnifiedEntity.state_id == self.state_id,  # Fix 4: state-scope dedup
             )
-            if address and getattr(address, "id", None):
-                query = query.where(UnifiedEntity.address_id == address.id)
-            return self.session.exec(query).first()
+            found = self.session.exec(query).first()
         except SQLAlchemyError:
             return None
+        if found is not None and self._cache is not None and key is not None:
+            self._cache.entities[key] = found
+        return found
 
     def _get_or_create_entity(
         self,
@@ -418,6 +570,10 @@ class UnifiedSQLModelBuilder:
             committee=committee,
             state_id=self.state_id,
         )
+        if self._cache is not None:
+            key = BuilderCache.entity_key(entity_type, normalized_name, self.state_id)
+            if key is not None:
+                self._cache.entities[key] = entity
         return entity
 
     def _find_campaign(
@@ -433,21 +589,39 @@ class UnifiedSQLModelBuilder:
         SQLAlchemy error.  See :meth:`_find_committee_by_filer_id` for the
         rationale (RF-SMELL-005, P2-MNT-001).
         """
-        if not normalized_name or self.session is None:
+        if not normalized_name:
+            return None
+        committee_filer_id = committee.filer_id if committee else None
+        candidate_id = getattr(candidate, "id", None) if candidate else None
+        key = BuilderCache.campaign_key(
+            normalized_name, committee_filer_id, candidate_id, election_year
+        )
+        if self._cache is not None and key is not None:
+            if key in self._cache.campaigns:
+                return self._cache.campaigns[key]
+            if self._cache.authoritative:
+                return None
+        if self.session is None:
             return None
         try:
+            # Identify a campaign by (normalized_name, committee, election_year)
+            # only — NOT by candidate.  A committee runs one campaign per cycle;
+            # filtering on candidate_person_id would miss a campaign first created
+            # by a non-CAND transaction (candidate NULL) and spawn a duplicate.
+            # build_campaign backfills the candidate onto the reused campaign.
             query = select(UnifiedCampaign).where(
                 UnifiedCampaign.normalized_name == normalized_name
             )
             if committee and committee.filer_id:
                 query = query.where(UnifiedCampaign.primary_committee_id == committee.filer_id)
-            if candidate and getattr(candidate, "id", None):
-                query = query.where(UnifiedCampaign.candidate_person_id == candidate.id)
             if election_year:
                 query = query.where(UnifiedCampaign.election_year == election_year)
-            return self.session.exec(query).first()
+            found = self.session.exec(query).first()
         except SQLAlchemyError:
             return None
+        if found is not None and self._cache is not None and key is not None:
+            self._cache.campaigns[key] = found
+        return found
 
     def build_campaign(
         self,
@@ -470,6 +644,25 @@ class UnifiedSQLModelBuilder:
         election_year = transaction_date.year if isinstance(transaction_date, date) else None
         campaign = self._find_campaign(normalized_name, committee, candidate, election_year)
         if campaign:
+            # Backfill the candidate when this record carries one but the existing
+            # campaign (often first created by a non-CAND transaction) has none —
+            # so the campaign, and downstream canonical_campaign, gets a candidate.
+            if (
+                candidate is not None
+                and campaign.candidate_person_id is None
+                and campaign.candidate is None
+            ):
+                campaign.candidate = candidate
+                if candidate.entity is not None:
+                    campaign.entities.append(
+                        UnifiedCampaignEntity(
+                            campaign=campaign,
+                            entity=candidate.entity,
+                            state_id=self.state_id,
+                            role=CampaignRole.CANDIDATE,
+                            is_primary=True,
+                        )
+                    )
             return campaign
         campaign = UnifiedCampaign(
             name=campaign_name,
@@ -481,6 +674,15 @@ class UnifiedSQLModelBuilder:
             primary_committee=committee,
             state_id=self.state_id,
         )
+        if self._cache is not None:
+            key = BuilderCache.campaign_key(
+                normalized_name,
+                committee.filer_id if committee else None,
+                getattr(candidate, "id", None) if candidate else None,
+                election_year,
+            )
+            if key is not None:
+                self._cache.campaigns[key] = campaign
         if candidate and candidate.entity:
             campaign.entities.append(
                 UnifiedCampaignEntity(
@@ -503,6 +705,57 @@ class UnifiedSQLModelBuilder:
             )
         return campaign
 
+    def _find_person_by_name_state(
+        self,
+        first_name: str | None,
+        last_name: str | None,
+        organization: str | None,
+    ) -> UnifiedPerson | None:
+        """Find an existing person using the same key as the DB unique indexes.
+
+        Mirrors ``uix_persons_name_state`` (individual) and
+        ``uix_persons_org_state`` (organization) — both use ``lower()`` so the
+        lookup must also be case-insensitive.
+
+        Returns ``None`` if no session is available or no anchor values exist.
+        """
+        key = BuilderCache.person_key(first_name, last_name, organization, self.state_id)
+        if self._cache is not None and key is not None:
+            if key in self._cache.persons:
+                return self._cache.persons[key]
+            if self._cache.authoritative:
+                return None
+        if self.session is None:
+            return None
+        try:
+            if organization:
+                stmt = (
+                    select(UnifiedPerson)
+                    .where(
+                        sa_func.lower(UnifiedPerson.organization) == organization.lower(),
+                        UnifiedPerson.state_id == self.state_id,
+                        UnifiedPerson.organization.is_not(None),
+                    )
+                )
+            elif first_name and last_name:
+                stmt = (
+                    select(UnifiedPerson)
+                    .where(
+                        sa_func.lower(UnifiedPerson.first_name) == first_name.lower(),
+                        sa_func.lower(UnifiedPerson.last_name) == last_name.lower(),
+                        UnifiedPerson.state_id == self.state_id,
+                        UnifiedPerson.organization.is_(None),
+                    )
+                )
+            else:
+                return None
+            found = self.session.exec(stmt).first()
+        except SQLAlchemyError:
+            return None
+        if found is not None and self._cache is not None and key is not None:
+            self._cache.persons[key] = found
+        return found
+
     def _find_address_by_fields(self, address_data: dict[str, Any]) -> UnifiedAddress | None:
         """Find an existing address by key fields using the injected session.
 
@@ -510,34 +763,53 @@ class UnifiedSQLModelBuilder:
         too few fields are populated to identify a row, or the query raises a
         SQLAlchemy error (RF-SMELL-005, P2-MNT-001).
         """
-        if not address_data or self.session is None:
+        if not address_data:
+            return None
+        key = BuilderCache.address_key(address_data)
+        if self._cache is not None and key is not None:
+            if key in self._cache.addresses:
+                return self._cache.addresses[key]
+            if self._cache.authoritative:
+                return None
+        if self.session is None:
             return None
         try:
-            filter_count = 0
-            stmt = select(UnifiedAddress)
+            street_1_val = address_data.get("street_1")
+            city_val = address_data.get("city")
+            state_val = address_data.get("state")
+            zip_val = address_data.get("zip_code")
 
-            if address_data.get("street_1"):
-                stmt = stmt.where(UnifiedAddress.street_1 == address_data["street_1"])
-                filter_count += 1
+            # Require at least two non-None anchor values to avoid matching
+            # all-null rows in the database.
+            populated = sum(
+                1 for v in (street_1_val, city_val, state_val, zip_val) if v is not None
+            )
+            if populated < 2:
+                return None
 
-            if address_data.get("city"):
-                stmt = stmt.where(UnifiedAddress.city == address_data["city"])
-                filter_count += 1
+            # Case-insensitive match on the fields we actually have.  Absent
+            # (None) fields are left unconstrained — a partial lookup (e.g.
+            # street+city+state, no zip) should still resolve a fuller stored
+            # address rather than forcing those columns to be NULL, which would
+            # never match a populated row.  city/state/street_1 use lower() to
+            # mirror the DB unique indexes; zip is stored as-is.
+            conditions = []
+            if street_1_val is not None:
+                conditions.append(sa_func.lower(UnifiedAddress.street_1) == street_1_val.lower())
+            if city_val is not None:
+                conditions.append(sa_func.lower(UnifiedAddress.city) == city_val.lower())
+            if state_val is not None:
+                conditions.append(sa_func.lower(UnifiedAddress.state) == state_val.lower())
+            if zip_val is not None:
+                conditions.append(UnifiedAddress.zip_code == zip_val)
 
-            if address_data.get("state"):
-                stmt = stmt.where(UnifiedAddress.state == address_data["state"])
-                filter_count += 1
-
-            if address_data.get("zip_code"):
-                stmt = stmt.where(UnifiedAddress.zip_code == address_data["zip_code"])
-                filter_count += 1
-
-            # Require at least two populated fields before treating a hit as a match.
-            if filter_count >= 2:
-                return self.session.exec(stmt).first()
-            return None
+            stmt = select(UnifiedAddress).where(*conditions)
+            found = self.session.exec(stmt).first()
         except SQLAlchemyError:
             return None
+        if found is not None and self._cache is not None and key is not None:
+            self._cache.addresses[key] = found
+        return found
 
     def _normalize_field_name(self, field_name: str) -> str:
         """Normalize a field name for comparison"""
@@ -552,38 +824,59 @@ class UnifiedSQLModelBuilder:
             return ""
 
     def _parse_amount(self, value: Any) -> Decimal | None:
-        """Parse an amount value to Decimal"""
+        """Parse an amount value to Decimal, tolerating non-numeric input.
+
+        Strips currency/percent symbols; returns None (rather than raising) for
+        values that don't reduce to a number — e.g. an ``interestRate`` of
+        ``"Prime Rate"`` or ``"NONE"`` — so one bad row never fails a whole file.
+        """
         if value is None:
             return None
 
         try:
-            # Remove currency symbols and commas
             if isinstance(value, str):
                 value = re.sub(r"[^\d.-]", "", value)
-
+                if value in ("", ".", "-", "-.", "."):
+                    return None
             return Decimal(str(value))
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, InvalidOperation):
             return None
 
     def _parse_date(self, value: Any) -> date | None:
-        """Parse a date value"""
+        """Parse a date value, rejecting implausible years."""
         if value is None:
             return None
 
+        parsed: date | None = None
         try:
             if isinstance(value, str):
-                # Try common date formats
-                for fmt in ["%Y-%m-%d", "%m/%d/%Y", "%m-%d-%Y", "%Y/%m/%d"]:
+                # Try common date formats.
+                # "%Y%m%d" must come BEFORE ambiguous short formats — TEC (Texas) stores
+                # dates as compact 8-digit strings like "20120702".
+                for fmt in [
+                    "%Y%m%d",             # TEC compact: "20120702"
+                    "%Y-%m-%d",           # ISO: "2012-07-02"
+                    "%m/%d/%Y",           # US: "07/02/2012"
+                    "%m-%d-%Y",           # US dashed: "07-02-2012"
+                    "%Y/%m/%d",           # ISO slashed: "2012/07/02"
+                    "%m/%d/%Y %H:%M:%S",  # US datetime: "07/02/2012 00:00:00"
+                    "%Y-%m-%dT%H:%M:%S",  # ISO datetime: "2012-07-02T00:00:00"
+                ]:
                     try:
-                        return datetime.strptime(value, fmt).date()
+                        parsed = datetime.strptime(value, fmt).date()
+                        break
                     except ValueError:
                         continue
             elif isinstance(value, (date, datetime)):
-                return value.date() if isinstance(value, datetime) else value
-
-            return None
+                parsed = value.date() if isinstance(value, datetime) else value
         except (ValueError, TypeError):
             return None
+
+        # Guard against malformed source dates (e.g. a stray "00041110" parsing
+        # to year 4) — they corrupt min/max date windows downstream.
+        if parsed is not None and not (1900 <= parsed.year <= 2100):
+            return None
+        return parsed
 
     def _parse_boolean(self, value: Any) -> bool:
         """Parse a boolean value"""
@@ -633,8 +926,11 @@ class UnifiedSQLModelBuilder:
                 if transaction_type.value in type_str:
                     return transaction_type
 
-        # Check for explicit record_type field (Texas uses this)
-        record_type = raw_data.get("record_type", "").upper()
+        # Check for explicit record_type field (Texas uses this).  TEC parquet
+        # sources expose it as camelCase ``recordType``; accept both spellings.
+        record_type = (
+            raw_data.get("record_type") or raw_data.get("recordType") or ""
+        ).upper()
         if record_type in RECORD_TYPE_TO_TRANSACTION:
             return RECORD_TYPE_TO_TRANSACTION[record_type]
 

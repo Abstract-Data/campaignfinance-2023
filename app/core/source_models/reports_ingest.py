@@ -1,4 +1,4 @@
-"""Ingest builders for TEC CVR1 (CoverSheet1Data) report records."""
+"""Ingest builders for TEC CVR1 (CoverSheet1Data) and FINL report records."""
 
 from __future__ import annotations
 
@@ -241,3 +241,45 @@ def reconcile_report_totals(
         "mismatched": mismatched,
         "skipped": skipped,
     }
+
+
+def build_final_report(
+    raw: dict,
+    *,
+    state_id: int,
+    session: Session | None = None,
+    file_origin_id: str | None = None,
+) -> UnifiedReport | None:
+    """Handle a TEC FINL record by marking the matching UnifiedReport.is_final = True.
+
+    FINL rows do not create a new row — they mutate the existing CVR1 report.
+    Returns the updated UnifiedReport if found, or ``None`` if the report does
+    not yet exist (e.g. CVR1 was not loaded or the ident is unknown).
+
+    Columns present in TEC finals_*.csv:
+        recordType, formTypeCd, reportInfoIdent, receivedDt, infoOnlyFlag,
+        filerIdent, filerTypeCd, filerName,
+        finalUnexpendContribFlag, finalRetainedAssetsFlag, finalOfficeholderAckFlag
+    """
+    if session is None:
+        return None
+
+    report_ident_raw = raw.get("reportInfoIdent")
+    if report_ident_raw is None:
+        return None
+    report_ident = str(report_ident_raw).strip()
+    if not report_ident:
+        return None
+
+    stmt = select(UnifiedReport).where(UnifiedReport.report_ident == report_ident)
+    report = session.exec(stmt).first()
+    if report is None:
+        _logger.debug(
+            f"[build_final_report] no UnifiedReport found for ident={report_ident!r} — "
+            "FINL record skipped (CVR1 may not have been loaded yet)"
+        )
+        return None
+
+    report.is_final = True
+    session.add(report)
+    return report

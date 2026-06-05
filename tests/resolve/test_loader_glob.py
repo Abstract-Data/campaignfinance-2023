@@ -141,17 +141,21 @@ def test_persist_pldg_row_rolls_back_transaction_on_pledge_failure(monkeypatch) 
     """PLDG parent transaction and pledge detail share one savepoint (M-2)."""
     from sqlmodel import Session, SQLModel, create_engine, select
 
-    from app.core.source_models.pledges import UnifiedPledge
     from app.core.models import UnifiedTransaction
+    from app.core.source_models.pledges import UnifiedPledge
     from scripts.loaders.production_loader import _persist_pldg_row
 
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
     )
+    # The PLDG path now links/creates a UnifiedCommittee from filerIdent before
+    # build_pledge runs, so the parent flush needs the full unified schema — not
+    # just the two transaction tables.  Exclude state-namespaced source tables
+    # (schema="texas" etc.) which SQLite cannot create.
     SQLModel.metadata.create_all(
         engine,
-        tables=[UnifiedTransaction.__table__, UnifiedPledge.__table__],
+        tables=[t for t in SQLModel.metadata.tables.values() if t.schema is None],
     )
 
     raw = {
