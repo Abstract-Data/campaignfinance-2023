@@ -115,7 +115,7 @@ class TestDatabaseUrlResolution:
         )
         monkeypatch.setattr(
             "app.resolve.cli._get_run_stages",
-            lambda: [lambda session, run_id, config: {}],
+            lambda *args, **kwargs: [lambda session, run_id, config: {}],
         )
         code = main(["run", "--state", "texas", "--sqlite"])
         assert code == 0
@@ -274,7 +274,7 @@ class TestMainSmoke:
     def _noop_stages(self, monkeypatch):
         monkeypatch.setattr(
             "app.resolve.cli._get_run_stages",
-            lambda: [lambda session, run_id, config: {}],
+            lambda *args, **kwargs: [lambda session, run_id, config: {}],
         )
 
     def test_run_texas_no_stages_returns_0(self):

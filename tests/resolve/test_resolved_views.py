@@ -36,7 +36,8 @@ def _create_base_tables(session: Session) -> None:
                 id INTEGER PRIMARY KEY,
                 source_type TEXT NOT NULL,
                 source_id TEXT NOT NULL,
-                canonical_entity_id INTEGER NOT NULL
+                canonical_entity_id INTEGER NOT NULL,
+                run_id INTEGER
             )
             """
         )
@@ -49,8 +50,63 @@ def _create_base_tables(session: Session) -> None:
                 transaction_id TEXT,
                 amount NUMERIC,
                 transaction_type TEXT,
+                transaction_date DATE,
+                campaign_id INTEGER,
                 report_id INTEGER,
                 report_ident TEXT
+            )
+            """
+        )
+    )
+    session.execute(
+        text(
+            """
+            CREATE TABLE unified_campaigns (
+                id INTEGER PRIMARY KEY,
+                primary_committee_id TEXT,
+                election_year INTEGER,
+                office_sought TEXT
+            )
+            """
+        )
+    )
+    session.execute(
+        text(
+            """
+            CREATE TABLE unified_reports (
+                id INTEGER PRIMARY KEY,
+                committee_id TEXT,
+                period_end DATE
+            )
+            """
+        )
+    )
+    session.execute(
+        text(
+            """
+            CREATE TABLE canonical_campaign (
+                id INTEGER PRIMARY KEY,
+                committee_entity_id INTEGER,
+                office_normalized TEXT,
+                election_cycle INTEGER,
+                candidate_entity_id INTEGER,
+                canonical_name TEXT
+            )
+            """
+        )
+    )
+    session.execute(
+        text(
+            """
+            CREATE TABLE canonical_name_history (
+                id INTEGER PRIMARY KEY,
+                subject_type TEXT NOT NULL,
+                subject_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                normalized_name TEXT,
+                first_seen_date DATE,
+                last_seen_date DATE,
+                occurrence_count INTEGER
             )
             """
         )
@@ -97,10 +153,10 @@ def _seed_resolved_contribution(session: Session) -> None:
     session.execute(
         text(
             """
-            INSERT INTO entity_crosswalk (source_type, source_id, canonical_entity_id)
+            INSERT INTO entity_crosswalk (source_type, source_id, canonical_entity_id, run_id)
             VALUES
-                ('unified_entity', '201', 101),
-                ('unified_entity', '202', 102)
+                ('unified_entity', '201', 101, 1),
+                ('unified_entity', '202', 102, 1)
             """
         )
     )
@@ -148,6 +204,7 @@ def test_build_resolved_views_creates_views_and_resolves_contributions(session: 
         "resolved_transactions",
         "resolved_contributions",
         "resolved_expenditures",
+        "resolved_reports",
     }
 
     row = session.execute(
