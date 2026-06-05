@@ -84,10 +84,52 @@ def resolution_schema_table_names() -> frozenset[str]:
     return frozenset(model.__tablename__ for model in _resolution_schema_models())  # type: ignore[attr-defined]
 
 
+# Additive columns that ``create_all`` cannot add to a PRE-EXISTING table (no Alembic
+# in this project — idempotent DDL, mirroring unified_database's dedup-index approach).
+# Each entry is (table, column, full CREATE-safe ALTER statement). The statements are
+# constants (never interpolated) and INTEGER / VARCHAR are valid on both Postgres and
+# SQLite, so this is dialect-safe.
+_ADDITIVE_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    (
+        "resolution_input",
+        "linked_person_id",
+        "ALTER TABLE resolution_input ADD COLUMN linked_person_id INTEGER",
+    ),
+    (
+        "resolution_input",
+        "linked_committee_id",
+        "ALTER TABLE resolution_input ADD COLUMN linked_committee_id VARCHAR(128)",
+    ),
+)
+
+
+def _ensure_additive_columns(engine: Engine) -> None:
+    """Add columns that exist on the model but not yet on a pre-existing table.
+
+    Guarded by reflection so it is a no-op on a freshly ``create_all``-ed schema
+    (where the column already exists) — only an older table missing the column is
+    altered. Runs the same on Postgres and SQLite.
+    """
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text
+
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    for table, column, ddl in _ADDITIVE_COLUMNS:
+        if table not in existing_tables:
+            continue
+        if column in {col["name"] for col in inspector.get_columns(table)}:
+            continue
+        with engine.begin() as conn:
+            conn.execute(text(ddl))
+        logger.info("ensure_resolution_schema: added missing column %s.%s", table, column)
+
+
 def ensure_resolution_schema(engine: Engine) -> None:
     """Create only resolve-layer tables; never the full unified schema."""
     tables = [model.__table__ for model in _resolution_schema_models()]
     SQLModel.metadata.create_all(engine, tables=tables)
+    _ensure_additive_columns(engine)
 
 
 # Counter keys written to ``match_run`` by ``ResolutionRun.finish()``.
