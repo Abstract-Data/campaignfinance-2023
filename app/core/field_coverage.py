@@ -105,9 +105,17 @@ def audit_field_coverage(
     *,
     base_dir: Path | None = None,
     sample_rows: int = 5000,
-    populated_threshold: float = 1.0,
+    populated_threshold_pct: float = 1.0,
 ) -> int:
-    """Rebuild the ``field_coverage`` rows for *state*.  Returns rows written."""
+    """Rebuild the ``field_coverage`` rows for *state*.  Returns rows written.
+
+    ``populated_threshold_pct`` is a **percentage on a 0–100 scale** (matching
+    ``_fill_pct`` and the stored ``source_fill_pct``), NOT a 0–1 fraction.  An
+    unmapped column whose sampled fill is ``>=`` this percentage is classified
+    ``UNMAPPED_POPULATED`` (real data we drop); below it, ``UNMAPPED_EMPTY``.  The
+    default ``1.0`` means "at least 1% of sampled rows carry a value" — a low bar
+    on purpose, so the audit surfaces any unmapped column carrying real data.
+    """
     from app.core.unified_field_library import field_library
 
     state_code = _STATE_CODES.get(state.lower(), state[:2].upper())
@@ -142,7 +150,7 @@ def audit_field_coverage(
                 status = "STRUCTURAL"
             elif _is_handled(record_type, column):
                 status = "HANDLED"
-            elif fill >= populated_threshold:
+            elif fill >= populated_threshold_pct:
                 status = "UNMAPPED_POPULATED"
             else:
                 status = "UNMAPPED_EMPTY"

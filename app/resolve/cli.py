@@ -135,6 +135,16 @@ def resolve_engine_url(*, use_sqlite: bool = False) -> str:
                 "Refusing to fall back to SQLite (data loss risk). "
                 f"Original error: {exc}"
             ) from exc
+    elif not use_sqlite:
+        # Implicit SQLite fallback: no --sqlite flag and no Postgres env. The loader
+        # defaults to Postgres (PostgresConfig), so this is almost always a mistake —
+        # the run targets an empty in-memory DB and silently sees none of the loaded
+        # data. Warn loudly; pass --sqlite to opt in, or set DATABASE_URL/POSTGRES_*.
+        logger.warning(
+            "No Postgres configured (no DATABASE_URL / POSTGRES_* env) and --sqlite "
+            "was not passed — using an EMPTY in-memory SQLite DB. This will not see "
+            "data loaded into Postgres. Set DATABASE_URL=postgresql://… to target it."
+        )
     return db_url
 
 
