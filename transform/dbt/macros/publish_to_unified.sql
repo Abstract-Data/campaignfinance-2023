@@ -21,7 +21,7 @@
     {% set gold = target.schema %}
 
     {% set delete_order = [
-        'loan_guarantors',
+        'loan_guarantors', 'unified_entity_associations', 'unified_committee_persons',
         'unified_contributions', 'unified_expenditures', 'unified_loans', 'unified_debts',
         'unified_credits', 'unified_pledges', 'unified_travel', 'unified_assets',
         'unified_transaction_persons', 'unified_transactions', 'unified_entities',
@@ -154,7 +154,20 @@
              suffix, prefix, city, state_code, county, country, postal_code, region, created_at)
          SELECT id, gen_random_uuid()::text, loan_id, debt_id, position, entity_id, person_type, organization,
              last_name, first_name, suffix, prefix, city, state_code, county, country, postal_code, region, now()
-         FROM " ~ gold ~ ".unified_loan_guarantors"
+         FROM " ~ gold ~ ".unified_loan_guarantors",
+
+        "INSERT INTO public.unified_entity_associations
+            (id, uuid, source_entity_id, target_entity_id, association_type, created_at, updated_at)
+         SELECT id, gen_random_uuid()::text, source_entity_id, target_entity_id,
+             association_type::associationtype, now(), now()
+         FROM " ~ gold ~ ".unified_entity_associations",
+
+        "INSERT INTO public.unified_committee_persons
+            (id, uuid, committee_id, person_id, entity_id, state_id, role, is_active,
+             last_modified_at, created_at, updated_at)
+         SELECT id, gen_random_uuid()::text, committee_id, person_id, entity_id, state_id,
+             role::committeerole, is_active, now(), now(), now()
+         FROM " ~ gold ~ ".unified_committee_persons"
     ] %}
 
     {% if execute %}

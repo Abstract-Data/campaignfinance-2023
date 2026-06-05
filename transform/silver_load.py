@@ -200,7 +200,13 @@ def load_raw_type(
 # Committee master columns we keep from the FILER file (raw — no validation; the
 # TECFiler validator is nested/address-required and rejects most rows, and committee
 # reference data does not need row validation). filerIdent stays the raw 8-char id.
-_FILER_COLS = ["filerIdent", "filerName", "filerTypeCd", "committeeStatusCd", "filerNameOrganization"]
+# treas* columns drive officer (TREASURER_OF) extraction in the association layer.
+_FILER_COLS = [
+    "filerIdent", "filerName", "filerTypeCd", "committeeStatusCd", "filerNameOrganization",
+    "treasPersentTypeCd", "treasNameOrganization", "treasNameLast", "treasNameFirst",
+    "treasNameSuffixCd", "treasStreetAddr1", "treasStreetCity", "treasStreetStateCd",
+    "treasStreetPostalCode",
+]
 
 
 def load_filers(engine, *, max_files: int | None = None) -> int:

@@ -182,3 +182,25 @@ models:
         data_tests: [unique, not_null]
       - name: entity_id
         data_tests: [{relationships: {to: ref('unified_entities'), field: id}}]
+
+  - name: unified_entity_associations
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: source_entity_id
+        data_tests: [not_null, {relationships: {to: ref('unified_entities'), field: id}}]
+      - name: target_entity_id
+        data_tests: [not_null, {relationships: {to: ref('unified_entities'), field: id}}]
+      - name: association_type
+        data_tests:
+          - accepted_values: {values: ['DONOR_TO', 'VENDOR_FOR', 'EMPLOYED_BY', 'TREASURER_OF']}
+  - name: unified_committee_persons
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: committee_id
+        data_tests: [not_null, {relationships: {to: ref('unified_committees'), field: filer_id}}]
+      - name: person_id
+        data_tests: [not_null, {relationships: {to: ref('unified_persons'), field: id}}]
+      - name: entity_id
+        data_tests: [{relationships: {to: ref('unified_entities'), field: id}}]
