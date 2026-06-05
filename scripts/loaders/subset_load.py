@@ -54,23 +54,37 @@ TXN_CAP = 4000          # rows per transaction file
 MAX_CONTRIBS_FILES = 2  # only the first N contribs_* files (each ~170k rows)
 
 
-def main(state: str = "texas") -> None:
+def main(
+    state: str = "texas",
+    *,
+    max_contribs_files: int | None = MAX_CONTRIBS_FILES,
+    txn_cap: int | None = TXN_CAP,
+) -> dict[str, object]:
+    """Load a capped slice of the state's files.
+
+    Defaults reproduce the representative subset (a couple of contribs files,
+    capped transactions).  Pass ``max_contribs_files=None`` and a small
+    ``txn_cap`` for the every-file validation pass (touch all 134 files cheaply
+    to confirm each one's rows parse/validate/load before a full run).
+
+    Returns a summary dict: ``{loaded, rejected, failed_files}``.
+    """
     glob_cfg = STATE_GLOB_CONFIGS[state]
     discovered = sorted(
         ((d.path, d.record_type) for d in discover_state_files(state, base_dir=glob_cfg.base_dir)),
         key=lambda p_rt: (_FILE_PRIORITY.get(p_rt[1] or "", 50), str(p_rt[0])),
     )
 
-    # Thin the huge contribs set down to a couple of files.
+    # Thin the huge contribs set (None = keep all of them).
     contribs_seen = 0
     plan: list[tuple[Path, str, int | None]] = []
     for path, rtype in discovered:
         if path.name.startswith("contribs_"):
             contribs_seen += 1
-            if contribs_seen > MAX_CONTRIBS_FILES:
+            if max_contribs_files is not None and contribs_seen > max_contribs_files:
                 continue
         if rtype in TRANSACTION_RECORD_TYPES:
-            cap = TXN_CAP
+            cap = txn_cap
         else:
             cap = SOURCE_CAPS.get(rtype or "", 5000)
         plan.append((path, rtype, cap))
@@ -82,6 +96,7 @@ def main(state: str = "texas") -> None:
     session = _get_session(None)
     cache = BuilderCache()
     loaded = 0
+    failed_files: list[tuple[str, str]] = []
     t0 = time.time()
     try:
         _ensure_committee_types(session)
@@ -102,15 +117,29 @@ def main(state: str = "texas") -> None:
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.error(f"[subset] ERROR {path.name}: {exc}")
+                failed_files.append((path.name, str(exc)[:120]))
                 session.rollback()
                 cache = BuilderCache()
         _link_after_load(session)
     finally:
         session.close()
     logger.info(
-        f"[subset] done: loaded={loaded} rejected={rejected} in {time.time()-t0:.0f}s"
+        f"[subset] done: loaded={loaded} rejected={rejected} "
+        f"failed_files={len(failed_files)} in {time.time()-t0:.0f}s"
     )
+    if failed_files:
+        for name, err in failed_files:
+            logger.error(f"[subset] FAILED FILE {name}: {err}")
+    return {"loaded": loaded, "rejected": rejected, "failed_files": failed_files}
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "texas")
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    flags = {a for a in sys.argv[1:] if a.startswith("-")}
+    state_arg = args[0] if args else "texas"
+    if "--all-files" in flags:
+        # Every-file validation pass: touch all 134 files with a small per-file
+        # cap so each one's rows are exercised through parse/validate/build/load.
+        main(state_arg, max_contribs_files=None, txn_cap=500)
+    else:
+        main(state_arg)

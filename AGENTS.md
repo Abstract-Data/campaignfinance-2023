@@ -153,7 +153,7 @@ uv run pytest                        # Run all tests
 uv run pytest -v --tb=short          # Run with verbose output
 uv run pytest -k "test_name"         # Run specific test
 uv run python scripts/loaders/production_loader.py   # Run production loader
-uv run python app/main.py            # Run main analysis script
+cf                                   # CLI entry point (app/entrypoint.py; `cf --help`)
 ```
 
 **Testing Strategy:**
@@ -190,10 +190,6 @@ uv run python scripts/reset_and_reingest.py --skip-ingest  # truncate + bootstra
 
 # Verify pipeline fixes after ingest (all 7 spec checklist queries)
 uv run python scripts/verify_ingest.py
-
-# Legacy (pre-cf CLI)
-uv run python recreate_tables.py
-uv run python load_to_postgres.py
 ```
 
 ## Code Style Standards
@@ -777,6 +773,23 @@ Agents may **propose** a goal-driven work session but may not self-activate one.
 - Write `HANDOFF.md` before clearing context, ending a session, or handing off. Use the `session-closer` subagent.
 - Archive consumed handoffs to `.claude/handoffs/{YYYY-MM-DD}-{slug}.md`. That directory is gitignored — it holds internal session state.
 
+## Subagent Review Order (SDD)
+
+When work is dispatched through the Subagent-Driven Development workflow (the
+`superpowers:subagent-driven-development` driver referenced by the `prompts/`
+packs), the orchestrator runs a **two-stage review gate** after each `implementer`
+run. The order is mandatory:
+
+1. **`spec-reviewer`** (Stage 1) — verifies the implementation matches the spec
+   exactly by reading the actual code. If it reports ❌, the `implementer` fixes
+   the gaps and `spec-reviewer` re-runs. Never skip the re-review.
+2. **`code-reviewer`** (Stage 2) — only dispatched **after** spec compliance
+   passes. Reviews code quality, security, and correctness.
+
+Never run `code-reviewer` while `spec-reviewer` has open issues — spec compliance
+first, code quality second. See `.claude/agents/implementer.md` and
+`.claude/agents/spec-reviewer.md`.
+
 ## Definition of Done
 
 A task is complete only when **all** of the following hold:
@@ -811,6 +824,9 @@ Common failure modes on this project — check generated work against all of the
 Agents create and link Notion tasks using these references:
 
 - **Tasks DB:** `collection://2e97d7f5-6298-80a5-acef-000bb9796a9d`
+- **Tasks data_source_id:** `2e97d7f5-6298-80a5-acef-000bb9796a9d`
+- **Projects data_source_id:** `da96d1a7-0ba0-4701-83e5-84ee1b053552`
+- **Clients data_source_id:** `2e97d7f5-6298-8064-8633-000bc6c51b86`
 - **Project Page:** https://www.notion.so/6a5fd2ac191d45859c0318e3acb7f018
 - **Client Page:** https://www.notion.so/2f37d7f5629881bb814de76479af10db (Abstract Data — Internal)
 
