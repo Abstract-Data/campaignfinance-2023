@@ -37,6 +37,7 @@ def _add_input_row(
     zip5: str | None = None,
     line_1: str | None = None,
     first_name: str | None = "John",
+    first_name_phonetic: str | None = None,
 ) -> None:
     session.add(
         ResolutionInput(
@@ -47,6 +48,7 @@ def _add_input_row(
             raw_name=f"{source_type}-{source_id}",
             raw_address="raw address",
             first_name=first_name,
+            first_name_phonetic=first_name_phonetic,
             last_name_phonetic=last_name_phonetic,
             normalized_org=normalized_org,
             zip5=zip5,
@@ -115,6 +117,83 @@ def test_generate_candidate_pairs_does_not_cross_blocks():
             generate_candidate_pairs(
                 session,
                 run_id=12,
+                rules=default_blocking_rules(),
+                max_block_size=100,
+            )
+        )
+
+        assert pairs == []
+
+
+def test_full_first_phonetic_blocks_same_person_across_zips():
+    """Rule 2 (first_name_phonetic + last_name_phonetic) pairs the same person
+    across different ZIP3s, where the ZIP3-anchored rule 1 cannot."""
+    with _build_session() as session:
+        _add_input_row(
+            session,
+            run_id=20,
+            source_type="unified_person",
+            source_id="P1",
+            first_name="John",
+            first_name_phonetic="JN",
+            last_name_phonetic="SM0",
+            zip5="78701",
+        )
+        _add_input_row(
+            session,
+            run_id=20,
+            source_type="unified_person",
+            source_id="P2",
+            first_name="Jon",
+            first_name_phonetic="JN",
+            last_name_phonetic="SM0",
+            zip5="90210",
+        )
+        session.commit()
+
+        pairs = list(
+            generate_candidate_pairs(
+                session,
+                run_id=20,
+                rules=default_blocking_rules(),
+                max_block_size=100,
+            )
+        )
+
+        assert len(pairs) == 1
+        assert {p.rule_name for p in pairs} == {"person_first_last_phonetic"}
+
+
+def test_shared_first_initial_alone_does_not_block_across_zips():
+    """Two different first names sharing only an initial (and a phonetic last
+    name) must NOT pair across ZIP3s — the explosive first-initial key is gone."""
+    with _build_session() as session:
+        _add_input_row(
+            session,
+            run_id=21,
+            source_type="unified_person",
+            source_id="P1",
+            first_name="John",
+            first_name_phonetic="JN",
+            last_name_phonetic="SM0",
+            zip5="78701",
+        )
+        _add_input_row(
+            session,
+            run_id=21,
+            source_type="unified_person",
+            source_id="P2",
+            first_name="Jane",
+            first_name_phonetic="JN0",
+            last_name_phonetic="SM0",
+            zip5="90210",
+        )
+        session.commit()
+
+        pairs = list(
+            generate_candidate_pairs(
+                session,
+                run_id=21,
                 rules=default_blocking_rules(),
                 max_block_size=100,
             )
@@ -223,7 +302,7 @@ def test_default_rules_exclude_lone_phonetic_last_name():
     assert "person_last_phonetic" not in rule_names
     assert "org_normalized" not in rule_names
     assert "person_last_phonetic_zip3" in rule_names
-    assert "person_first_initial_last_phonetic" in rule_names
+    assert "person_first_last_phonetic" in rule_names
     assert "org_normalized_zip3" in rule_names
 
 

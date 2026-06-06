@@ -85,8 +85,12 @@ class CandidatePair(SQLModel, table=True):
 def default_blocking_rules() -> list[BlockingRule]:
     """Return conservative default blocking rules for release-scale runs.
 
-    Person rules require either ZIP3 or first-initial disambiguation — never
-    phonetic last name alone (which explodes pair counts on common surnames).
+    Person rules require either ZIP3 or a *full* phonetic first name alongside
+    the phonetic last name — never phonetic last name alone, and never a single
+    first initial (both explode pair counts on common surnames at 1M+ rows: a
+    first-initial+last-phonetic key collapses every "J Smith" in the state into
+    one block, summing to >100M candidate pairs). Using the full first-name
+    phonetic keeps the cross-ZIP same-person signal while staying selective.
     Organization/committee rules require ZIP3 alongside normalized name.
     """
     return [
@@ -95,8 +99,8 @@ def default_blocking_rules() -> list[BlockingRule]:
             fields=("last_name_phonetic", "zip3"),
         ),
         BlockingRule(
-            name="person_first_initial_last_phonetic",
-            fields=("first_initial", "last_name_phonetic"),
+            name="person_first_last_phonetic",
+            fields=("first_name_phonetic", "last_name_phonetic"),
         ),
         BlockingRule(
             name="org_normalized_zip3",
@@ -227,7 +231,7 @@ def resolve_blocking_backend(session, config: dict) -> str:
 
 
 def _run_blocking_stage_python(session, run_id: int, config: dict) -> dict:
-    max_block_size = int(config.get("max_block_size", 500))
+    max_block_size = int(config.get("max_block_size", 100))
     max_pairs_raw = config.get("max_pairs_per_run")
     max_pairs_per_run = int(max_pairs_raw) if max_pairs_raw is not None else None
     rules = _rules_from_config(config)

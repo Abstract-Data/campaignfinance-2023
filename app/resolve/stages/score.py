@@ -84,6 +84,7 @@ def _row_to_dict(row: ResolutionInput) -> dict[str, Any]:
         "source_type": row.source_type,
         "first_name": first_name,
         "first_initial": first_name[:1].lower() if first_name.strip() else "",
+        "first_name_phonetic": row.first_name_phonetic or "",
         "last_name": row.last_name or "",
         "last_name_phonetic": row.last_name_phonetic or "",
         "normalized_org": row.normalized_org or "",

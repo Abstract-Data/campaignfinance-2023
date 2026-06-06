@@ -42,11 +42,11 @@ _RULE_BLOCK_KEY_SQL: dict[str, str] = {
         "THEN lower(trim(ri.last_name_phonetic)) || '|' || "
         "lower(substr(trim(ri.zip5), 1, 3)) END"
     ),
-    "person_first_initial_last_phonetic": (
+    "person_first_last_phonetic": (
         "CASE WHEN ri.entity_type = 'person' "
-        "AND ri.first_name IS NOT NULL AND trim(ri.first_name) <> '' "
+        "AND ri.first_name_phonetic IS NOT NULL AND trim(ri.first_name_phonetic) <> '' "
         "AND ri.last_name_phonetic IS NOT NULL AND trim(ri.last_name_phonetic) <> '' "
-        "THEN lower(substr(trim(ri.first_name), 1, 1)) || '|' || "
+        "THEN lower(trim(ri.first_name_phonetic)) || '|' || "
         "lower(trim(ri.last_name_phonetic)) END"
     ),
     "org_normalized_zip3": (
@@ -176,6 +176,15 @@ def ensure_blocking_indexes(session: Session) -> None:
             CREATE INDEX IF NOT EXISTS ix_resolution_input_run_org_zip5
             ON resolution_input (run_id, normalized_org, zip5)
             WHERE normalized_org IS NOT NULL AND zip5 IS NOT NULL
+            """
+        )
+    )
+    session.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_resolution_input_run_first_last_phonetic
+            ON resolution_input (run_id, first_name_phonetic, last_name_phonetic)
+            WHERE first_name_phonetic IS NOT NULL AND last_name_phonetic IS NOT NULL
             """
         )
     )
@@ -400,7 +409,7 @@ def _apply_pair_cap(
 
 def run_blocking_stage_sql(session: Session, run_id: int, config: dict) -> dict:
     """Postgres blocking backend: batched temp-table joins with cross-rule dedupe."""
-    max_block_size = int(config.get("max_block_size", 500))
+    max_block_size = int(config.get("max_block_size", 100))
     max_pairs_raw = config.get("max_pairs_per_run")
     max_pairs_per_run = int(max_pairs_raw) if max_pairs_raw is not None else None
     block_key_batch_size = int(
