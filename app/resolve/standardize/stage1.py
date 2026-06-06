@@ -199,6 +199,8 @@ def _collect_source_rows(session: Session, state_id: int) -> list[dict[str, Any]
             UnifiedEntity.id,
             UnifiedEntity.name,
             UnifiedEntity.entity_type,
+            UnifiedEntity.person_id,
+            UnifiedEntity.committee_id,
             UnifiedAddress.street_1,
             UnifiedAddress.street_2,
             UnifiedAddress.city,
@@ -260,6 +262,8 @@ def _collect_source_rows(session: Session, state_id: int) -> list[dict[str, Any]
                 "source_type": "unified_entity",
                 "source_id": str(row.id),
                 "entity_type": row.entity_type.value,
+                "linked_person_id": row.person_id,
+                "linked_committee_id": row.committee_id,
                 "raw_name": row.name or "",
                 "raw_address": _compose_raw_address(
                     row.street_1, row.street_2, row.city, row.state, row.zip_code
@@ -332,8 +336,16 @@ def _compute_features(rows: list[dict[str, Any]], run_id: int) -> list[Resolutio
     activity_dates = [
         (r.get("first_activity_date"), r.get("last_activity_date")) for r in rows
     ]
+    # Keep the deterministic link ids out of the Polars frame too (mixed None/int and
+    # None/str across source types); reattach by row index like the activity dates.
+    linked_ids = [
+        (r.get("linked_person_id"), r.get("linked_committee_id")) for r in rows
+    ]
+    _frame_skip = (
+        "first_activity_date", "last_activity_date", "linked_person_id", "linked_committee_id",
+    )
     frame_rows = [
-        {k: v for k, v in r.items() if k not in ("first_activity_date", "last_activity_date")}
+        {k: v for k, v in r.items() if k not in _frame_skip}
         for r in rows
     ]
     frame = pl.DataFrame(frame_rows)
@@ -363,6 +375,7 @@ def _compute_features(rows: list[dict[str, Any]], run_id: int) -> list[Resolutio
     staged: list[ResolutionInput] = []
     for idx, row in enumerate(enriched.iter_rows(named=True)):
         first_activity_date, last_activity_date = activity_dates[idx]
+        linked_person_id, linked_committee_id = linked_ids[idx]
         name_values = _name_fields(row["std_name"])
         address_values = _address_fields(row["std_address"])
         normalized_org = row["normalized_org"] or ""
@@ -380,6 +393,8 @@ def _compute_features(rows: list[dict[str, Any]], run_id: int) -> list[Resolutio
                 raw_address=row["raw_address"],
                 first_activity_date=first_activity_date,
                 last_activity_date=last_activity_date,
+                linked_person_id=linked_person_id,
+                linked_committee_id=linked_committee_id,
                 **name_values,
                 **address_values,
             )

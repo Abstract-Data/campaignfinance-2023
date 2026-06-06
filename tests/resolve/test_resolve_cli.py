@@ -136,6 +136,25 @@ class TestEnsureResolutionSchema:
 
         engine.dispose()
 
+    def test_adds_missing_columns_to_existing_resolution_input(self):
+        """An older resolution_input (no linked_* cols) is migrated in place;
+        create_all alone cannot add columns to a pre-existing table."""
+        from sqlalchemy import text
+
+        engine = create_engine("sqlite:///:memory:", echo=False)
+        # Simulate a pre-existing table that lacks the new deterministic-link columns.
+        with engine.begin() as conn:
+            conn.execute(
+                text("CREATE TABLE resolution_input (id INTEGER PRIMARY KEY, run_id INTEGER)")
+            )
+
+        ensure_resolution_schema(engine)
+
+        cols = {c["name"] for c in sa_inspect(engine).get_columns("resolution_input")}
+        assert "linked_person_id" in cols
+        assert "linked_committee_id" in cols
+        engine.dispose()
+
 
 class TestResolveStateCode:
     def test_texas_name_returns_TX(self):

@@ -299,3 +299,71 @@ def test_running_fastpath_twice_is_deterministic():
     assert sorted(map(decision_key, first_decisions)) == sorted(
         map(decision_key, second_decisions)
     )
+
+
+def _entity_row(
+    *,
+    run_id: int,
+    source_id: str,
+    entity_type: str = "person",
+    linked_person_id: int | None = None,
+    linked_committee_id: str | None = None,
+) -> ResolutionInput:
+    return ResolutionInput(
+        run_id=run_id,
+        source_type="unified_entity",
+        source_id=source_id,
+        entity_type=entity_type,
+        linked_person_id=linked_person_id,
+        linked_committee_id=linked_committee_id,
+        first_name="Jane" if entity_type == "person" else None,
+        last_name="Doe" if entity_type == "person" else None,
+        normalized_org=None if entity_type == "person" else "Friends of Texas",
+        parse_status="parsed",
+    )
+
+
+def test_unified_entity_merges_with_its_linked_person():
+    engine = _make_engine()
+    with Session(engine) as session:
+        _seed_run(session)
+        session.add(_person_row(run_id=1, source_id="42"))
+        session.add(_entity_row(run_id=1, source_id="900", linked_person_id=42))
+        session.commit()
+
+        result = run_fastpath_stage(session, run_id=1, config={})
+        assert result == {"auto_merges": 1}
+
+        edges = session.exec(select(MergeEdge).where(MergeEdge.run_id == 1)).all()
+        assert len(edges) == 1
+        pair = {
+            (edges[0].source_a_type, edges[0].source_a_id),
+            (edges[0].source_b_type, edges[0].source_b_id),
+        }
+        assert pair == {("unified_person", "42"), ("unified_entity", "900")}
+
+        decisions = session.exec(select(MatchDecision).where(MatchDecision.run_id == 1)).all()
+        assert json.loads(decisions[0].explanation_json)["rule"] == "unified_entity_to_person_link"
+
+
+def test_unified_entity_merges_with_its_linked_committee():
+    engine = _make_engine()
+    with Session(engine) as session:
+        _seed_run(session)
+        session.add(_committee_row(run_id=1, source_id="CMT-7"))
+        session.add(
+            _entity_row(
+                run_id=1, source_id="901", entity_type="committee", linked_committee_id="CMT-7"
+            )
+        )
+        session.commit()
+
+        result = run_fastpath_stage(session, run_id=1, config={})
+        assert result == {"auto_merges": 1}
+
+        edges = session.exec(select(MergeEdge).where(MergeEdge.run_id == 1)).all()
+        pair = {
+            (edges[0].source_a_type, edges[0].source_a_id),
+            (edges[0].source_b_type, edges[0].source_b_id),
+        }
+        assert pair == {("unified_committee", "CMT-7"), ("unified_entity", "901")}
