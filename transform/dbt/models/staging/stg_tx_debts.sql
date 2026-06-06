@@ -1,0 +1,35 @@
+{#  DEBT → one CONTRIBUTOR (creditor, via lender* cols) + committee (debtor).
+    TEC debt rows carry no amount/date (the loan record holds those). #}
+with src as (select * from {{ source('silver', 'tx_debts') }})
+select
+    'DEBT'                                      as record_type,
+    'DEBT'                                      as transaction_type,
+    'CONTRIBUTOR'                               as role,
+    {{ var('state_id') }}                       as state_id,
+    loanInfoId::text                            as source_transaction_id,
+    cast(null as numeric)                       as amount,
+    cast(null as date)                          as transaction_date,
+    cast(null as text)                          as description,
+    reportInfoIdent::text                       as report_ident,
+    lpad(filerIdent::text, 8, '0')              as committee_filer_id,
+    {{ cf_clean('filerName') }}                 as committee_name,
+    (lenderPersentTypeCd = 'ENTITY')            as is_org,
+    {{ cf_clean('lenderNameFirst') }}           as first_name,
+    cast(null as text)                          as middle_name,
+    {{ cf_clean('lenderNameLast') }}            as last_name,
+    {{ cf_clean('lenderNameSuffixCd') }}        as suffix,
+    {{ cf_clean('lenderNameOrganization') }}    as organization,
+    cast(null as text)                          as employer,
+    cast(null as text)                          as occupation,
+    cast(null as text)                          as job_title,
+    cast(null as text)                          as street_1,
+    cast(null as text)                          as street_2,
+    {{ cf_clean('lenderStreetCity') }}          as city,
+    {{ cf_clean('lenderStreetStateCd') }}       as state,
+    {{ cf_clean('lenderStreetPostalCode') }}    as zip_code,
+    {{ cf_clean('lenderStreetCountryCd') }}     as country,
+    {{ cf_clean('lenderStreetCountyCd') }}      as county,
+    cast(null as text)                          as parent_transaction_type,
+    cast(null as text)                          as parent_transaction_id,
+    cast(null as numeric)                       as parent_amount
+from src

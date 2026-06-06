@@ -1,0 +1,30 @@
+name: 'cf_elt'
+version: '1.0.0'
+config-version: 2
+
+# ELT unify spike (PoC). Transforms Silver (validated TX contributions +
+# expenditures) into the unified_* schema, then publishes into the ORM-owned
+# public.unified_* tables that app/resolve reads. See docs/adr/0004-elt-unify-spike.md.
+profile: 'cf_elt'
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # Overridden at runtime via --vars '{state_id: N}'. The unified_* tables carry a
+  # state_id FK; resolve filters on it (PIPELINE_REVIEW Fix 4 — state-scoped dedup).
+  state_id: 1
+  state_code: 'TX'
+
+models:
+  cf_elt:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    gold:
+      +materialized: table

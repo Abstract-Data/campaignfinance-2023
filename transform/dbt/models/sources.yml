@@ -1,0 +1,30 @@
+version: 2
+
+sources:
+  - name: silver
+    description: >
+      Pydantic-validated, typed Texas rows landed by transform/silver_load.py. The
+      "EL" of ELT — validation stays in Python (the existing TEC validators); dbt
+      only transforms. Column names are the validator field names verbatim.
+    schema: silver
+    tables:
+      - name: tx_contributions
+        description: Validated RCPT rows (one per contributionInfoId).
+      - name: tx_expenditures
+        description: Validated EXPN rows (one per expendInfoId).
+      - name: tx_filers
+        description: FILER committee master (raw) — one row per filer id; name/type/status.
+      - name: tx_loans
+        description: Validated/raw LOAN rows (lender + guarantors 1-5).
+      - name: tx_debts
+        description: Raw DEBT rows (creditor via lender* cols + guarantors 1-5).
+      - name: tx_pledges
+        description: Raw PLDG rows (pledger).
+      - name: tx_credits
+        description: Raw CRED rows (payor).
+      - name: tx_travel
+        description: Raw TRVL rows (traveller; parent-transaction refs).
+      - name: tx_assets
+        description: Raw ASSET rows (committee property; no party).
+      - name: tx_candidate
+        description: Raw CAND rows (direct expenditure to a candidate).

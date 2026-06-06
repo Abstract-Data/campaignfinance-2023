@@ -1,0 +1,35 @@
+{#  TRVL → one PAYEE (traveller). No traveller address; amount = parent amount;
+    parent transaction stored denormalized (no FK — mirrors _build_travel_detail). #}
+with src as (select * from {{ source('silver', 'tx_travel') }})
+select
+    'TRVL'                                          as record_type,
+    'TRAVEL'                                        as transaction_type,
+    'PAYEE'                                         as role,
+    {{ var('state_id') }}                           as state_id,
+    travelInfoId::text                              as source_transaction_id,
+    {{ cf_safe_numeric('parentAmount') }}           as amount,
+    {{ cf_safe_date('departureDt') }}               as transaction_date,
+    {{ cf_clean('travelPurpose') }}                 as description,
+    reportInfoIdent::text                           as report_ident,
+    lpad(filerIdent::text, 8, '0')                  as committee_filer_id,
+    {{ cf_clean('filerName') }}                     as committee_name,
+    (travellerPersentTypeCd = 'ENTITY')             as is_org,
+    {{ cf_clean('travellerNameFirst') }}            as first_name,
+    cast(null as text)                              as middle_name,
+    {{ cf_clean('travellerNameLast') }}             as last_name,
+    {{ cf_clean('travellerNameSuffixCd') }}         as suffix,
+    {{ cf_clean('travellerNameOrganization') }}     as organization,
+    cast(null as text)                              as employer,
+    cast(null as text)                              as occupation,
+    cast(null as text)                              as job_title,
+    cast(null as text)                              as street_1,
+    cast(null as text)                              as street_2,
+    cast(null as text)                              as city,
+    cast(null as text)                              as state,
+    cast(null as text)                              as zip_code,
+    cast(null as text)                              as country,
+    cast(null as text)                              as county,
+    {{ cf_clean('parentType') }}                    as parent_transaction_type,
+    parentId::text                                  as parent_transaction_id,
+    {{ cf_safe_numeric('parentAmount') }}           as parent_amount
+from src

@@ -765,6 +765,11 @@ class LoanGuarantor(SQLModel, table=True):
     loan_id: int | None = Field(default=None, foreign_key="unified_loans.id", index=True)
     debt_id: int | None = Field(default=None, foreign_key="unified_debts.id", index=True)
 
+    # Link to the shared, deduped entity dimension (the ELT path resolves guarantors
+    # into unified_entities so they dedupe against every other party). Nullable for
+    # guarantors that cannot be resolved (no name).
+    entity_id: int | None = Field(default=None, foreign_key="unified_entities.id", index=True)
+
     # Position (1-5) within the source record
     position: int = Field(default=1)
 

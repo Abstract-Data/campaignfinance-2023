@@ -1,0 +1,206 @@
+version: 2
+
+models:
+  - name: person_keys
+    columns:
+      - name: nk
+        data_tests: [unique, not_null]
+      - name: id
+        data_tests: [unique, not_null]
+  - name: address_keys
+    columns:
+      - name: nk
+        data_tests: [unique, not_null]
+      - name: id
+        data_tests: [unique, not_null]
+  - name: entity_keys
+    columns:
+      - name: nk
+        data_tests: [unique, not_null]
+      - name: id
+        data_tests: [unique, not_null]
+  - name: transaction_keys
+    columns:
+      - name: nk
+        data_tests: [unique, not_null]
+      - name: id
+        data_tests: [unique, not_null]
+
+  - name: unified_persons
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: person_type
+        data_tests:
+          - accepted_values:
+              values: ['INDIVIDUAL', 'ORGANIZATION', 'UNKNOWN']
+  - name: unified_addresses
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: unified_committees
+    columns:
+      - name: filer_id
+        data_tests: [unique, not_null]
+  - name: unified_entities
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: person_id
+        data_tests: [unique]   # one entity per person (nulls allowed for committees)
+      - name: committee_id
+        data_tests: [unique]
+      - name: entity_type
+        data_tests:
+          - accepted_values:
+              values: ['PERSON', 'ORGANIZATION', 'COMMITTEE']
+
+  - name: unified_transactions
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: transaction_type
+        data_tests:
+          - accepted_values:
+              values: ['CONTRIBUTION', 'EXPENDITURE', 'LOAN', 'DEBT', 'PLEDGE', 'CREDIT', 'TRAVEL', 'ASSET']
+      - name: committee_id
+        data_tests:
+          - relationships:
+              to: ref('unified_committees')
+              field: filer_id
+
+  - name: unified_transaction_persons
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: role
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['CONTRIBUTOR', 'PAYEE']   # never RECIPIENT/CANDIDATE — Fix 1 lock
+      - name: transaction_id
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('unified_transactions')
+              field: id
+      - name: person_id
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('unified_persons')
+              field: id
+      - name: entity_id
+        data_tests:
+          - relationships:
+              to: ref('unified_entities')
+              field: id
+
+  - name: unified_contributions
+    columns:
+      - name: transaction_id
+        data_tests:
+          - unique
+          - relationships:
+              to: ref('unified_transactions')
+              field: id
+      - name: contributor_entity_id
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('unified_entities')
+              field: id
+      - name: recipient_entity_id
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('unified_entities')
+              field: id
+
+  - name: unified_expenditures
+    columns:
+      - name: transaction_id
+        data_tests:
+          - unique
+          - relationships:
+              to: ref('unified_transactions')
+              field: id
+      - name: payer_entity_id
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('unified_entities')
+              field: id
+      - name: payee_entity_id
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('unified_entities')
+              field: id
+
+  - name: unified_loans
+    columns:
+      - name: transaction_id
+        data_tests: [unique, {relationships: {to: ref('unified_transactions'), field: id}}]
+      - name: lender_entity_id
+        data_tests: [not_null, {relationships: {to: ref('unified_entities'), field: id}}]
+      - name: borrower_entity_id
+        data_tests: [not_null, {relationships: {to: ref('unified_entities'), field: id}}]
+  - name: unified_debts
+    columns:
+      - name: transaction_id
+        data_tests: [unique, {relationships: {to: ref('unified_transactions'), field: id}}]
+      - name: creditor_entity_id
+        data_tests: [not_null, {relationships: {to: ref('unified_entities'), field: id}}]
+      - name: debtor_entity_id
+        data_tests: [not_null, {relationships: {to: ref('unified_entities'), field: id}}]
+  - name: unified_credits
+    columns:
+      - name: transaction_id
+        data_tests: [unique, {relationships: {to: ref('unified_transactions'), field: id}}]
+      - name: payor_entity_id
+        data_tests: [not_null, {relationships: {to: ref('unified_entities'), field: id}}]
+      - name: recipient_entity_id
+        data_tests: [not_null, {relationships: {to: ref('unified_entities'), field: id}}]
+  - name: unified_pledges
+    columns:
+      - name: transaction_id
+        data_tests: [unique, {relationships: {to: ref('unified_transactions'), field: id}}]
+  - name: unified_travel
+    columns:
+      - name: transaction_id
+        data_tests: [unique, {relationships: {to: ref('unified_transactions'), field: id}}]
+      - name: traveler_person_id
+        data_tests: [{relationships: {to: ref('unified_persons'), field: id}}]
+  - name: unified_assets
+    columns:
+      - name: transaction_id
+        data_tests: [unique, {relationships: {to: ref('unified_transactions'), field: id}}]
+  - name: unified_loan_guarantors
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: entity_id
+        data_tests: [{relationships: {to: ref('unified_entities'), field: id}}]
+
+  - name: unified_entity_associations
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: source_entity_id
+        data_tests: [not_null, {relationships: {to: ref('unified_entities'), field: id}}]
+      - name: target_entity_id
+        data_tests: [not_null, {relationships: {to: ref('unified_entities'), field: id}}]
+      - name: association_type
+        data_tests:
+          - accepted_values: {values: ['DONOR_TO', 'VENDOR_FOR', 'EMPLOYED_BY', 'TREASURER_OF']}
+  - name: unified_committee_persons
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: committee_id
+        data_tests: [not_null, {relationships: {to: ref('unified_committees'), field: filer_id}}]
+      - name: person_id
+        data_tests: [not_null, {relationships: {to: ref('unified_persons'), field: id}}]
+      - name: entity_id
+        data_tests: [{relationships: {to: ref('unified_entities'), field: id}}]
