@@ -16,11 +16,15 @@ from __future__ import annotations
 import importlib
 import json
 import logging
+import os
+import shutil
+import tempfile
 import types
+from collections.abc import Iterator, Mapping
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import Column, Float, String, Text
+from sqlalchemy import Column, Float, String, Text, insert
 from sqlmodel import Field, Session, SQLModel, delete, select
 
 from app.resolve.blocking import CandidatePair
@@ -37,6 +41,18 @@ _FALLBACK_SCORE = 0.0
 
 # Bulk-insert scored pairs in chunks to avoid huge ORM flushes.
 _SCORED_PAIR_BATCH_SIZE = 5_000
+
+# Stream candidate_pairs from the source DB in chunks of this size (keeps the
+# Python-side working set flat regardless of run size — never list() the table).
+_PAIR_STREAM_SIZE = 50_000
+
+# Rows pulled per batch out of the DuckDB scored-pairs join.
+_PREDICT_STREAM_SIZE = 50_000
+
+# DuckDB memory ceiling for the per-entity-type linker. The predict() blocking +
+# comparison spills to ``temp_directory`` once this is exceeded, so the stage's
+# peak RSS stays bounded even at tens of millions of pairs.
+_DUCKDB_MEMORY_LIMIT = os.environ.get("RESOLVE_DUCKDB_MEMORY_LIMIT", "6GB")
 
 # ---------------------------------------------------------------------------
 # ScoredPair staging table (written by this stage; read by stage-5 classify)
@@ -94,10 +110,6 @@ def _row_to_dict(row: ResolutionInput) -> dict[str, Any]:
         "zip5": zip5,
         "zip3": zip5[:3] if len(zip5) >= 3 else "",
     }
-
-
-def _normalize_pair_key(uid_a: str, uid_b: str) -> tuple[str, str]:
-    return tuple(sorted((uid_a, uid_b)))
 
 
 def _load_entity_config(entity_type: str) -> types.ModuleType | None:
@@ -159,14 +171,20 @@ def _extract_comp_meta(settings_obj: Any) -> dict[str, list[dict[str, Any]]]:
 
 
 def _build_explanation(
-    pred_row: pd.Series,
+    pred_row: Mapping[str, Any] | pd.Series,
     comp_meta: dict[str, list[dict[str, Any]]],
 ) -> dict[str, Any]:
-    """Serialise a per-comparison contribution breakdown from a prediction row."""
+    """Serialise a per-comparison contribution breakdown from a prediction row.
+
+    ``pred_row`` may be a pandas ``Series`` (single-pair ``compare_two_records``
+    fallback) or a plain mapping (a row streamed out of the bulk DuckDB join).
+    Both support ``in`` / ``[]`` keyed by column name, so the same logic serves
+    both paths without ever materialising the whole prediction frame.
+    """
     explanation: dict[str, Any] = {}
     for col, levels in comp_meta.items():
         gamma_col = f"gamma_{col}"
-        if gamma_col not in pred_row.index:
+        if gamma_col not in pred_row or pred_row[gamma_col] is None:
             continue
         gamma = int(pred_row[gamma_col])
         matched = next(
@@ -185,7 +203,7 @@ def _build_explanation(
             )
         # Capture TF-adjusted Bayes factor when present.
         tf_adj_col = f"bf_tf_adj_{col}"
-        if tf_adj_col in pred_row.index:
+        if tf_adj_col in pred_row and pred_row[tf_adj_col] is not None:
             entry["bf_tf_adj"] = float(pred_row[tf_adj_col])
         explanation[col] = entry
     return explanation
@@ -212,9 +230,10 @@ def _train_linker(
     df: pd.DataFrame,
     config: types.ModuleType,
     seed: int,
+    db_api: Any,
 ) -> Any:
-    """Build and train a Splink linker for one entity type."""
-    from splink import DuckDBAPI, Linker, SettingsCreator
+    """Build and train a Splink linker for one entity type on ``db_api``."""
+    from splink import Linker, SettingsCreator
 
     settings = SettingsCreator(
         link_type="dedupe_only",
@@ -224,7 +243,7 @@ def _train_linker(
         # Bulk predict omits bf_tf_adj_* unless intermediate columns are retained.
         retain_intermediate_calculation_columns=True,
     )
-    linker = Linker(df, settings, DuckDBAPI())
+    linker = Linker(df, settings, db_api)
 
     if len(df) >= _MIN_RECORDS_FOR_EM:
         try:
@@ -245,145 +264,300 @@ def _train_linker(
     return linker
 
 
-def _predictions_lookup(
-    pred_df: pd.DataFrame,
-    comp_meta: dict[str, list[dict[str, Any]]],
-) -> dict[tuple[str, str], tuple[float, dict[str, Any]]]:
-    """Index bulk Splink predictions by normalized ``unique_id`` pair."""
-    lookup: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
-    for _, row in pred_df.iterrows():
-        uid_l = str(row["unique_id_l"])
-        uid_r = str(row["unique_id_r"])
-        key = _normalize_pair_key(uid_l, uid_r)
-        score = float(row.get("match_probability", _FALLBACK_SCORE))
-        explanation = _build_explanation(row, comp_meta)
-        lookup[key] = (max(0.0, min(1.0, score)), explanation)
-    return lookup
+def _scored_row(
+    run_id: int,
+    a_type: str,
+    a_id: str,
+    b_type: str,
+    b_id: str,
+    entity_type: str,
+    score: float,
+    explanation: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a plain-dict ``scored_pairs`` row for Core bulk insert."""
+    return {
+        "run_id": run_id,
+        "source_a_type": a_type,
+        "source_a_id": a_id,
+        "source_b_type": b_type,
+        "source_b_id": b_id,
+        "entity_type": entity_type,
+        "score": score,
+        "explanation_json": json.dumps(explanation),
+    }
 
 
-def _score_entity_type(
-    pairs: list[CandidatePair],
-    records: list[ResolutionInput],
+def _bulk_insert_scored(session: Session, rows: list[dict[str, Any]]) -> None:
+    """Insert a batch of ``scored_pairs`` rows via a single Core executemany."""
+    if not rows:
+        return
+    session.execute(insert(ScoredPair.__table__), rows)
+    session.commit()
+
+
+def _duckdb_tmp_root() -> str:
+    """Directory for the per-entity on-disk DuckDB + its spill files.
+
+    Override with ``RESOLVE_DUCKDB_TMP`` to point at a volume with headroom —
+    at tens of millions of pairs the predict() intermediates spill here.
+    """
+    return os.environ.get("RESOLVE_DUCKDB_TMP", tempfile.gettempdir())
+
+
+def _load_type_uids(session: Session, run_id: int, entity_type: str) -> set[str]:
+    """All ``unique_id`` values for one entity_type in a run (for pair routing)."""
+    rows = session.exec(
+        select(ResolutionInput.source_type, ResolutionInput.source_id).where(
+            ResolutionInput.run_id == run_id,
+            ResolutionInput.entity_type == entity_type,
+        )
+    ).all()
+    return {_build_uid(st, sid) for (st, sid) in rows}
+
+
+def _iter_type_pairs(
+    session: Session,
+    run_id: int,
+    type_uids: set[str],
+) -> Iterator[tuple[str, str, str, str, str, str]]:
+    """Stream candidate_pairs for a run, routing each to its entity_type.
+
+    Yields ``(a_type, a_id, b_type, b_id, uid_l, uid_r)`` where ``uid_l <= uid_r``
+    is the normalised key for joining against Splink predictions (dedupe_only
+    emits pairs with ``unique_id_l < unique_id_r``). Pairs are filtered to
+    ``type_uids`` by the A-side uid — same-type blocking guarantees both sides
+    share an entity_type, so A-side membership is sufficient and unique.
+
+    Streams with ``yield_per`` so the pair table is never materialised in Python.
+    The caller must not write to ``session`` while consuming this generator
+    (a commit would invalidate the server-side cursor).
+    """
+    stmt = (
+        select(
+            CandidatePair.source_a_type,
+            CandidatePair.source_a_id,
+            CandidatePair.source_b_type,
+            CandidatePair.source_b_id,
+        )
+        .where(CandidatePair.run_id == run_id)
+        .execution_options(yield_per=_PAIR_STREAM_SIZE)
+    )
+    for a_type, a_id, b_type, b_id in session.exec(stmt):
+        uid_a = _build_uid(a_type, a_id)
+        if uid_a not in type_uids:
+            continue
+        uid_b = _build_uid(b_type, b_id)
+        if uid_a <= uid_b:
+            yield a_type, a_id, b_type, b_id, uid_a, uid_b
+        else:
+            yield a_type, a_id, b_type, b_id, uid_b, uid_a
+
+
+# Static SQL — DuckDB cannot parameterise identifiers, so the prediction output
+# is registered under the fixed view name ``pred_out`` and joined with ``p.*``;
+# no value is interpolated into any SQL string.
+_CREATE_CAND_PAIRS_SQL = (
+    "CREATE TABLE cand_pairs "
+    "(uid_l VARCHAR, uid_r VARCHAR, "
+    "a_type VARCHAR, a_id VARCHAR, b_type VARCHAR, b_id VARCHAR)"
+)
+_INSERT_CAND_PAIRS_SQL = "INSERT INTO cand_pairs VALUES (?, ?, ?, ?, ?, ?)"
+_JOIN_SCORES_SQL = (
+    "SELECT c.a_type, c.a_id, c.b_type, c.b_id, p.* "
+    "FROM cand_pairs c "
+    "LEFT JOIN pred_out p "
+    "ON p.unique_id_l = c.uid_l AND p.unique_id_r = c.uid_r"
+)
+
+
+def _score_entity_type_streaming(
+    session: Session,
+    run_id: int,
     entity_type: str,
     config: types.ModuleType,
     seed: int,
-) -> list[ScoredPair]:
-    """Train a per-entity Splink model and bulk-score candidate pairs."""
-    if not pairs:
-        return []
+) -> int:
+    """Train a per-entity Splink model and score its candidate pairs at scale.
 
-    rec_by_uid: dict[str, dict[str, Any]] = {
-        _build_uid(r.source_type, r.source_id): _row_to_dict(r) for r in records
-    }
+    Memory stays flat regardless of run size: records stream into a pandas frame
+    of small dicts (not ORM rows); candidate_pairs stream into an on-disk DuckDB
+    table; ``predict()`` runs against the same on-disk DuckDB (spilling its
+    intermediates to ``temp_directory``); and scores stream back out of a DuckDB
+    LEFT JOIN in record batches — the full prediction frame is never pulled into
+    Python. Pairs Splink's blocking misses (≈0 at scale, since the run's capped
+    candidate set is a subset of predict()'s uncapped re-blocking) fall back to
+    per-pair ``compare_two_records``.
 
-    df = pd.DataFrame(list(rec_by_uid.values()))
-    if df.empty:
-        return _fallback_scored(pairs, entity_type, "no_records")
+    Returns the number of ``scored_pairs`` rows written for this entity_type.
+    """
+    import duckdb
+    from splink import DuckDBAPI
 
-    linker = _train_linker(df, config, seed)
-    settings_obj = _linker_settings_obj(linker)
-    comp_meta = _extract_comp_meta(settings_obj) if settings_obj is not None else {}
+    # 1. Stream this type's records into the linker input frame + uid set.
+    rec_dicts: list[dict[str, Any]] = []
+    type_uids: set[str] = set()
+    rec_stmt = (
+        select(ResolutionInput)
+        .where(
+            ResolutionInput.run_id == run_id,
+            ResolutionInput.entity_type == entity_type,
+        )
+        .execution_options(yield_per=_PAIR_STREAM_SIZE)
+    )
+    for rec in session.exec(rec_stmt):
+        d = _row_to_dict(rec)
+        rec_dicts.append(d)
+        type_uids.add(d["unique_id"])
 
-    pred_df = linker.inference.predict(threshold_match_probability=0.0).as_pandas_dataframe()
-    lookup = _predictions_lookup(pred_df, comp_meta)
+    if not rec_dicts:
+        return 0
+    df = pd.DataFrame(rec_dicts)
+    rec_by_uid = {d["unique_id"]: d for d in rec_dicts}
+    del rec_dicts
 
-    scored: list[ScoredPair] = []
-    missing_pairs: list[tuple[CandidatePair, dict[str, Any], dict[str, Any]]] = []
+    tmp_dir = tempfile.mkdtemp(prefix=f"resolve_score_{entity_type}_", dir=_duckdb_tmp_root())
+    con: Any = None
+    written = 0
+    try:
+        # On-disk DuckDB with bounded memory; spills to tmp_dir at scale.
+        con = duckdb.connect(
+            os.path.join(tmp_dir, "score.duckdb"),
+            config={"memory_limit": _DUCKDB_MEMORY_LIMIT, "temp_directory": tmp_dir},
+        )
+        db_api = DuckDBAPI(con)
 
-    for pair in pairs:
-        uid_a = _build_uid(pair.source_a_type, pair.source_a_id)
-        uid_b = _build_uid(pair.source_b_type, pair.source_b_id)
-        key = _normalize_pair_key(uid_a, uid_b)
-        cached = lookup.get(key)
-        if cached is not None:
-            score, explanation = cached
-        else:
-            rec_a = rec_by_uid.get(uid_a)
-            rec_b = rec_by_uid.get(uid_b)
-            if rec_a is None or rec_b is None:
-                LOGGER.warning(
-                    "Missing resolution_input record for pair (%s, %s)",
-                    uid_a,
-                    uid_b,
+        linker = _train_linker(df, config, seed, db_api)
+        settings_obj = _linker_settings_obj(linker)
+        comp_meta = _extract_comp_meta(settings_obj) if settings_obj is not None else {}
+
+        # 2. Stage this type's candidate pairs into DuckDB (streamed; no Python list).
+        con.execute(_CREATE_CAND_PAIRS_SQL)
+        n_pairs = 0
+        stage_buf: list[tuple[str, str, str, str, str, str]] = []
+        for a_type, a_id, b_type, b_id, uid_l, uid_r in _iter_type_pairs(
+            session, run_id, type_uids
+        ):
+            stage_buf.append((uid_l, uid_r, a_type, a_id, b_type, b_id))
+            if len(stage_buf) >= _PAIR_STREAM_SIZE:
+                con.executemany(_INSERT_CAND_PAIRS_SQL, stage_buf)
+                n_pairs += len(stage_buf)
+                stage_buf.clear()
+        if stage_buf:
+            con.executemany(_INSERT_CAND_PAIRS_SQL, stage_buf)
+            n_pairs += len(stage_buf)
+        if n_pairs == 0:
+            return 0
+
+        # 3. Bulk-score: predict() (DuckDB, on-disk) then LEFT JOIN our pairs,
+        #    streamed out in record batches — never materialised as one frame.
+        pred = linker.inference.predict(threshold_match_probability=0.0)
+        con.register("pred_out", pred.as_duckdbpyrelation())
+
+        # Stream the join with DuckDB-native fetchmany (positional tuples; no
+        # pyarrow dependency). Map column names to positions once.
+        rel = con.sql(_JOIN_SCORES_SQL)
+        idx = {name: i for i, name in enumerate(rel.columns)}
+        meta_cols = [
+            c
+            for col in comp_meta
+            for c in (f"gamma_{col}", f"bf_tf_adj_{col}")
+            if c in idx
+        ]
+        i_prob = idx["match_probability"]
+        i_at, i_ai = idx["a_type"], idx["a_id"]
+        i_bt, i_bi = idx["b_type"], idx["b_id"]
+        meta_idx = [(c, idx[c]) for c in meta_cols]
+
+        buf: list[dict[str, Any]] = []
+        miss: list[tuple[str, str, str, str]] = []
+        while True:
+            rows = rel.fetchmany(_PREDICT_STREAM_SIZE)
+            if not rows:
+                break
+            for row in rows:
+                prob = row[i_prob]
+                if prob is None:
+                    miss.append((row[i_at], row[i_ai], row[i_bt], row[i_bi]))
+                    continue
+                row_map = {c: row[pos] for c, pos in meta_idx}
+                explanation = _build_explanation(row_map, comp_meta)
+                buf.append(
+                    _scored_row(
+                        run_id,
+                        row[i_at],
+                        row[i_ai],
+                        row[i_bt],
+                        row[i_bi],
+                        entity_type,
+                        max(0.0, min(1.0, float(prob))),
+                        explanation,
+                    )
                 )
-                score = _FALLBACK_SCORE
-                explanation = {"note": "missing_input_record"}
-            else:
-                missing_pairs.append((pair, rec_a, rec_b))
-                continue
+                if len(buf) >= _SCORED_PAIR_BATCH_SIZE:
+                    _bulk_insert_scored(session, buf)
+                    written += len(buf)
+                    buf.clear()
+        if buf:
+            _bulk_insert_scored(session, buf)
+            written += len(buf)
+            buf.clear()
 
-        scored.append(
-            ScoredPair(
-                run_id=pair.run_id,
-                source_a_type=pair.source_a_type,
-                source_a_id=pair.source_a_id,
-                source_b_type=pair.source_b_type,
-                source_b_id=pair.source_b_id,
-                entity_type=entity_type,
-                score=score,
-                explanation_json=json.dumps(explanation),
+        # 4. Fallback for the (rare) pairs predict() did not cover.
+        if miss:
+            LOGGER.info(
+                "predict() missed %s/%s pairs for entity_type=%r; using compare_two_records",
+                len(miss),
+                n_pairs,
+                entity_type,
             )
-        )
-
-    if missing_pairs:
-        LOGGER.info(
-            "Bulk predict missed %s/%s pairs for entity_type=%r; falling back to compare_two_records",
-            len(missing_pairs),
-            len(pairs),
-            entity_type,
-        )
-        for pair, rec_a, rec_b in missing_pairs:
-            score, explanation = _train_and_score_pair(linker, rec_a, rec_b)
-            scored.append(
-                ScoredPair(
-                    run_id=pair.run_id,
-                    source_a_type=pair.source_a_type,
-                    source_a_id=pair.source_a_id,
-                    source_b_type=pair.source_b_type,
-                    source_b_id=pair.source_b_id,
-                    entity_type=entity_type,
-                    score=score,
-                    explanation_json=json.dumps(explanation),
+            for a_type, a_id, b_type, b_id in miss:
+                rec_a = rec_by_uid.get(_build_uid(a_type, a_id))
+                rec_b = rec_by_uid.get(_build_uid(b_type, b_id))
+                if rec_a is None or rec_b is None:
+                    score, explanation = _FALLBACK_SCORE, {"note": "missing_input_record"}
+                else:
+                    score, explanation = _train_and_score_pair(linker, rec_a, rec_b)
+                buf.append(
+                    _scored_row(run_id, a_type, a_id, b_type, b_id, entity_type, score, explanation)
                 )
-            )
+                if len(buf) >= _SCORED_PAIR_BATCH_SIZE:
+                    _bulk_insert_scored(session, buf)
+                    written += len(buf)
+                    buf.clear()
+            if buf:
+                _bulk_insert_scored(session, buf)
+                written += len(buf)
+        return written
+    finally:
+        if con is not None:
+            try:
+                con.close()
+            except Exception:  # pragma: no cover - best-effort cleanup
+                LOGGER.debug("Failed to close scoring DuckDB connection", exc_info=True)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    return scored
 
-
-def _fallback_scored(
-    pairs: list[CandidatePair],
-    entity_type: str,
-    note: str,
-) -> list[ScoredPair]:
-    """Return zero-scored rows when Splink cannot be run."""
-    return [
-        ScoredPair(
-            run_id=p.run_id,
-            source_a_type=p.source_a_type,
-            source_a_id=p.source_a_id,
-            source_b_type=p.source_b_type,
-            source_b_id=p.source_b_id,
-            entity_type=entity_type,
-            score=_FALLBACK_SCORE,
-            explanation_json=json.dumps({"note": note}),
+def _score_unconfigured_type(session: Session, run_id: int, entity_type: str) -> int:
+    """Write zero-score ``no_config`` rows for an entity_type with no Splink config."""
+    type_uids = _load_type_uids(session, run_id, entity_type)
+    if not type_uids:
+        return 0
+    # Buffer first: we cannot write to ``session`` while its streaming cursor is
+    # open. Unconfigured types are rare and small, so full buffering is fine.
+    rows = [
+        _scored_row(
+            run_id, a_type, a_id, b_type, b_id, entity_type, _FALLBACK_SCORE, {"note": "no_config"}
         )
-        for p in pairs
+        for a_type, a_id, b_type, b_id, _uid_l, _uid_r in _iter_type_pairs(
+            session, run_id, type_uids
+        )
     ]
-
-
-def _entity_type_for_pair(
-    pair: CandidatePair,
-    input_map: dict[str, ResolutionInput],
-) -> str:
-    """Look up entity_type by checking either side of the pair."""
-    for uid in (
-        _build_uid(pair.source_a_type, pair.source_a_id),
-        _build_uid(pair.source_b_type, pair.source_b_id),
-    ):
-        rec = input_map.get(uid)
-        if rec is not None:
-            return rec.entity_type
-    return "unknown"
+    written = 0
+    for offset in range(0, len(rows), _SCORED_PAIR_BATCH_SIZE):
+        batch = rows[offset : offset + _SCORED_PAIR_BATCH_SIZE]
+        _bulk_insert_scored(session, batch)
+        written += len(batch)
+    return written
 
 
 # ---------------------------------------------------------------------------
@@ -393,6 +567,11 @@ def _entity_type_for_pair(
 
 def run_score_stage(session: Session, run_id: int, config: dict) -> dict:
     """Run Stage 4 probabilistic scoring for one match run.
+
+    Scales to tens of millions of candidate pairs: each entity_type is processed
+    independently, streaming its records and candidate pairs through an on-disk
+    DuckDB Splink model and streaming scores back out — nothing proportional to
+    the run size is held in Python memory (see ``_score_entity_type_streaming``).
 
     Parameters
     ----------
@@ -412,44 +591,24 @@ def run_score_stage(session: Session, run_id: int, config: dict) -> dict:
     """
     seed: int = int(config.get("seed", 42))
 
-    # Load staging tables.
-    pairs: list[CandidatePair] = list(
-        session.exec(select(CandidatePair).where(CandidatePair.run_id == run_id)).all()
+    # Entity types present for this run (drives per-type partitioning).
+    entity_types = list(
+        session.exec(
+            select(ResolutionInput.entity_type)
+            .where(ResolutionInput.run_id == run_id)
+            .distinct()
+        ).all()
     )
-    inputs: list[ResolutionInput] = list(
-        session.exec(select(ResolutionInput).where(ResolutionInput.run_id == run_id)).all()
-    )
-
-    input_map: dict[str, ResolutionInput] = {
-        _build_uid(r.source_type, r.source_id): r for r in inputs
-    }
-
-    # Group candidate pairs by entity_type.
-    pairs_by_type: dict[str, list[CandidatePair]] = {}
-    for pair in pairs:
-        etype = _entity_type_for_pair(pair, input_map)
-        pairs_by_type.setdefault(etype, []).append(pair)
-
-    # Group resolution_input records by entity_type.
-    inputs_by_type: dict[str, list[ResolutionInput]] = {}
-    for rec in inputs:
-        inputs_by_type.setdefault(rec.entity_type, []).append(rec)
 
     # Clear any previous scored_pairs for this run.
     session.exec(delete(ScoredPair).where(ScoredPair.run_id == run_id))
     session.commit()
 
     total_pairs = 0
-    for entity_type, type_pairs in pairs_by_type.items():
+    for entity_type in entity_types:
         cfg = _load_entity_config(entity_type)
         if cfg is None:
-            scored = _fallback_scored(type_pairs, entity_type, "no_config")
+            total_pairs += _score_unconfigured_type(session, run_id, entity_type)
         else:
-            type_records = inputs_by_type.get(entity_type, [])
-            scored = _score_entity_type(type_pairs, type_records, entity_type, cfg, seed)
-
-        for offset in range(0, len(scored), _SCORED_PAIR_BATCH_SIZE):
-            session.add_all(scored[offset : offset + _SCORED_PAIR_BATCH_SIZE])
-            session.commit()
-        total_pairs += len(type_pairs)
+            total_pairs += _score_entity_type_streaming(session, run_id, entity_type, cfg, seed)
     return {"pairs_compared": total_pairs}
