@@ -343,6 +343,22 @@ def _bulk_insert_scored(session: Session, rows: list[dict[str, Any]]) -> None:
     session.commit()
 
 
+def _drop_scored_indexes(session: Session) -> None:
+    """Drop scored_pairs secondary indexes before a bulk load (Postgres)."""
+    bind = session.connection()
+    for ix in list(ScoredPair.__table__.indexes):
+        ix.drop(bind, checkfirst=True)
+    session.commit()
+
+
+def _create_scored_indexes(session: Session) -> None:
+    """Rebuild scored_pairs secondary indexes after a bulk load (Postgres)."""
+    bind = session.connection()
+    for ix in list(ScoredPair.__table__.indexes):
+        ix.create(bind, checkfirst=True)
+    session.commit()
+
+
 def _duckdb_tmp_root() -> str:
     """Directory for the per-entity on-disk DuckDB + its spill files.
 
@@ -416,6 +432,74 @@ _JOIN_SCORES_SQL = (
     "LEFT JOIN pred_out p "
     "ON p.unique_id_l = c.uid_l AND p.unique_id_r = c.uid_r"
 )
+
+
+# SQL building __splink__blocked_id_pairs from our staged pairs — static, no
+# interpolation (cand_pairs is a literal table created in this DuckDB session).
+_BLOCKED_ID_PAIRS_SQL = (
+    "SELECT uid_l AS join_key_l, uid_r AS join_key_r, 0 AS match_key FROM cand_pairs"
+)
+
+
+def _predict_exact_pairs(linker: Any, con: Any) -> Any:
+    """Score EXACTLY the pairs in the DuckDB ``cand_pairs`` table.
+
+    ``linker.inference.predict()`` re-blocks every record on the prediction
+    blocking rules *uncapped*, regenerating ~3x our candidate set (e.g. ~70M vs
+    25.87M for the 25% person run) and computing comparison vectors for all of
+    them. This feeds our candidate pairs straight into Splink's
+    comparison-vector → match-probability pipeline instead, scoring only the
+    edges we actually keep.
+
+    Uses Splink internals (pinned splink==4.0.16); the caller wraps this in a
+    try/except that falls back to ``predict()`` if these private APIs shift.
+    Returns a SplinkDataFrame with the same schema as ``predict()`` output
+    (unique_id_l/r, match_probability, gamma_*, bf_tf_adj_*).
+    """
+    from splink.internals.comparison_vector_values import (
+        compute_comparison_vector_values_from_id_pairs_sqls,
+    )
+    from splink.internals.pipeline import CTEPipeline
+    from splink.internals.predict import (
+        predict_from_comparison_vectors_sqls_using_settings,
+    )
+    from splink.internals.vertically_concatenate import compute_df_concat_with_tf
+
+    s = linker._settings_obj
+    db_api = linker._db_api
+    ci = s.column_info_settings
+
+    # TF-augmented record table Splink's comparison pipeline joins against.
+    df_concat = compute_df_concat_with_tf(linker, CTEPipeline())
+
+    # Materialise our candidate pairs as the blocked-id-pairs table.
+    pipeline = CTEPipeline([df_concat])
+    pipeline.enqueue_sql(_BLOCKED_ID_PAIRS_SQL, "__splink__blocked_id_pairs")
+    blocked = db_api.sql_pipeline_to_splink_dataframe(pipeline)
+
+    # Comparison vectors → match probabilities, for exactly those pairs.
+    pipeline = CTEPipeline([blocked, df_concat])
+    pipeline.enqueue_list_of_sqls(
+        compute_comparison_vector_values_from_id_pairs_sqls(
+            s._columns_to_select_for_blocking,
+            s._columns_to_select_for_comparison_vector_values,
+            input_tablename_l="__splink__df_concat_with_tf",
+            input_tablename_r="__splink__df_concat_with_tf",
+            source_dataset_input_column=ci.source_dataset_input_column,
+            unique_id_input_column=ci.unique_id_input_column,
+            link_type=s._link_type,
+            sql_dialect_str=linker._sql_dialect_str,
+        )
+    )
+    pipeline.enqueue_list_of_sqls(
+        predict_from_comparison_vectors_sqls_using_settings(
+            s,
+            0.0,
+            None,
+            sql_infinity_expression=linker._infinity_expression,
+        )
+    )
+    return db_api.sql_pipeline_to_splink_dataframe(pipeline)
 
 
 def _score_entity_type_streaming(
@@ -496,9 +580,20 @@ def _score_entity_type_streaming(
         if n_pairs == 0:
             return 0
 
-        # 3. Bulk-score: predict() (DuckDB, on-disk) then LEFT JOIN our pairs,
-        #    streamed out in record batches — never materialised as one frame.
-        pred = linker.inference.predict(threshold_match_probability=0.0)
+        # 3. Bulk-score EXACTLY our candidate pairs (no uncapped re-blocking),
+        #    then LEFT JOIN our pairs and stream out in record batches — never
+        #    materialised as one frame. Falls back to the full predict() if the
+        #    Splink-internals exact path is unavailable.
+        try:
+            pred = _predict_exact_pairs(linker, con)
+        except Exception:  # pragma: no cover - version-drift safety net
+            LOGGER.warning(
+                "Exact-pair scoring unavailable for entity_type=%r; "
+                "falling back to full predict() (uncapped re-blocking)",
+                entity_type,
+                exc_info=True,
+            )
+            pred = linker.inference.predict(threshold_match_probability=0.0)
         con.register("pred_out", pred.as_duckdbpyrelation())
 
         # Stream the join with DuckDB-native fetchmany (positional tuples; no
@@ -652,11 +747,24 @@ def run_score_stage(session: Session, run_id: int, config: dict) -> dict:
     session.exec(delete(ScoredPair).where(ScoredPair.run_id == run_id))
     session.commit()
 
+    # On Postgres, drop the scored_pairs secondary indexes around the bulk load
+    # (publish-style): index maintenance per COPY otherwise dominates at 25M+
+    # rows. Rebuilt in finally so an interrupt never leaves the table unindexed.
+    swap_indexes = session.get_bind().dialect.name == "postgresql"
+    if swap_indexes:
+        _drop_scored_indexes(session)
+
     total_pairs = 0
-    for entity_type in entity_types:
-        cfg = _load_entity_config(entity_type)
-        if cfg is None:
-            total_pairs += _score_unconfigured_type(session, run_id, entity_type)
-        else:
-            total_pairs += _score_entity_type_streaming(session, run_id, entity_type, cfg, seed)
+    try:
+        for entity_type in entity_types:
+            cfg = _load_entity_config(entity_type)
+            if cfg is None:
+                total_pairs += _score_unconfigured_type(session, run_id, entity_type)
+            else:
+                total_pairs += _score_entity_type_streaming(
+                    session, run_id, entity_type, cfg, seed
+                )
+    finally:
+        if swap_indexes:
+            _create_scored_indexes(session)
     return {"pairs_compared": total_pairs}

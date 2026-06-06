@@ -63,10 +63,32 @@ Python dict. Instead:
    explanation incl. a gamma breakdown. ✅ DONE (0.9996 / 0.057 / 0.057 with
    normalized_org/line_1/city/zip5 breakdowns).
 
+## Follow-up optimizations (after full-run revealed 15.4h, write+predict bound)
+The full run_id=2 run completed correctly (25,873,623, memory/disk bounded) but
+took 15.4h: ~13.6h writing scored_pairs (executemany ~526 rows/s) + ~85min
+predict() on the uncapped ~70M re-blocking + ~15min EM. Two fixes implemented:
+
+1. **Write via COPY + drop/rebuild indexes** (commits 1bf4f60 + this one).
+   `_bulk_insert_scored` uses PostgreSQL COPY on the postgres dialect (executemany
+   fallback on sqlite); `run_score_stage` drops the scored_pairs secondary indexes
+   (entity_type, run_id) around the bulk-load loop and rebuilds them in a finally.
+   Expected: ~13.6h write → ~minutes.
+2. **Exact-edge-list scoring** (`_predict_exact_pairs`). Replaces predict()'s
+   uncapped re-blocking by feeding our staged candidate pairs straight into
+   Splink's comparison-vector → match-probability pipeline (internals, pinned
+   4.0.16; try/except fallback to full predict()). Scores exactly 25.87M, not
+   ~70M. Expected: ~85min predict → ~half.
+
+Checks: full resolve suite green (479 passed); 14 score unit tests green (they
+now exercise the exact-pair path); ruff clean; full run_id=2 re-run to confirm
+end-to-end wall-clock + exact count (in progress).
+
 ## Out of scope (defer, note in handoff)
 - `max_pairs_per_run` cap policy decision (separate; cap is moot for score cost).
 - Running classify/cluster/survivorship end-to-end (next workstream once score scales).
 - The Phase-1 ELT record-type expansion plan (misty-hugging-puzzle.md) — unrelated.
+- EM training time (~15min, pre-existing in _train_linker; not addressed here).
+- Single-pass pair routing (currently one candidate_pairs scan per entity_type).
 
 ## Done =
 Checks 1–4 pass with recorded evidence (tests green, ruff clean, run_id=2 scored
