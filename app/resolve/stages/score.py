@@ -13,7 +13,9 @@ Task: 2a | Branch: resolve/phase-2/task-2a-splink-scoring
 
 from __future__ import annotations
 
+import csv
 import importlib
+import io
 import json
 import logging
 import os
@@ -39,8 +41,22 @@ _MIN_RECORDS_FOR_EM = 4
 # Fallback score when a pair falls outside Splink's blocking coverage.
 _FALLBACK_SCORE = 0.0
 
-# Bulk-insert scored pairs in chunks to avoid huge ORM flushes.
-_SCORED_PAIR_BATCH_SIZE = 5_000
+# Bulk-insert scored pairs in chunks. On Postgres this is one COPY per chunk
+# (psycopg2 executemany degrades to ~per-row INSERTs — ~500 rows/s, hours at
+# 25M+; COPY is ~100-1000x faster), so a large chunk amortises COPY overhead.
+_SCORED_PAIR_BATCH_SIZE = 50_000
+
+# Column order for the scored_pairs COPY / executemany.
+_SCORED_COLS = (
+    "run_id",
+    "source_a_type",
+    "source_a_id",
+    "source_b_type",
+    "source_b_id",
+    "entity_type",
+    "score",
+    "explanation_json",
+)
 
 # Stream candidate_pairs from the source DB in chunks of this size (keeps the
 # Python-side working set flat regardless of run size — never list() the table).
@@ -287,11 +303,43 @@ def _scored_row(
     }
 
 
+# Static COPY statement — no interpolation (identifiers are literal).
+_COPY_SCORED_SQL = (
+    "COPY scored_pairs "
+    "(run_id, source_a_type, source_a_id, source_b_type, source_b_id, "
+    "entity_type, score, explanation_json) "
+    "FROM STDIN WITH (FORMAT csv)"
+)
+
+
+def _copy_scored_postgres(session: Session, rows: list[dict[str, Any]]) -> None:
+    """Fast-path bulk load of ``scored_pairs`` via PostgreSQL COPY (psycopg2)."""
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    for r in rows:
+        writer.writerow([r[c] for c in _SCORED_COLS])
+    buf.seek(0)
+    raw = session.connection().connection.driver_connection
+    cur = raw.cursor()
+    try:
+        cur.copy_expert(_COPY_SCORED_SQL, buf)
+    finally:
+        cur.close()
+
+
 def _bulk_insert_scored(session: Session, rows: list[dict[str, Any]]) -> None:
-    """Insert a batch of ``scored_pairs`` rows via a single Core executemany."""
+    """Persist a batch of ``scored_pairs`` rows.
+
+    On Postgres this uses COPY (orders of magnitude faster than executemany at
+    25M+ rows); on other backends (sqlite in tests) it falls back to a Core
+    executemany.
+    """
     if not rows:
         return
-    session.execute(insert(ScoredPair.__table__), rows)
+    if session.get_bind().dialect.name == "postgresql":
+        _copy_scored_postgres(session, rows)
+    else:
+        session.execute(insert(ScoredPair.__table__), rows)
     session.commit()
 
 
