@@ -258,6 +258,44 @@ def ensure_candidate_pair_unique_index(session: Session) -> None:
     session.commit()
 
 
+# The promote insert is the one step that touches the pair unique index. Dropping
+# the uniqueness object for just that insert turns ~25M incremental index probes
+# into a plain append + one set-based index build on re-add. Safe because the
+# promote source is already deduped (DISTINCT ON), so the rebuild never finds a
+# conflict, and it runs inside a try/finally that always restores the constraint.
+_DROP_PAIR_UNIQUE_CONSTRAINT_SQL = (
+    "ALTER TABLE candidate_pairs "
+    "DROP CONSTRAINT IF EXISTS uq_candidate_pairs_run_sources"
+)
+_DROP_PAIR_UNIQUE_INDEX_SQL = "DROP INDEX IF EXISTS uq_candidate_pairs_run_sources"
+_ADD_PAIR_UNIQUE_CONSTRAINT_SQL = (
+    "ALTER TABLE candidate_pairs "
+    "ADD CONSTRAINT uq_candidate_pairs_run_sources "
+    "UNIQUE (run_id, source_a_type, source_a_id, source_b_type, source_b_id)"
+)
+
+
+def _drop_candidate_pair_unique(session: Session) -> None:
+    """Drop the pair uniqueness object (table constraint or bare index) if present."""
+    session.execute(text(_DROP_PAIR_UNIQUE_CONSTRAINT_SQL))
+    session.execute(text(_DROP_PAIR_UNIQUE_INDEX_SQL))
+    session.commit()
+
+
+def _restore_candidate_pair_unique(session: Session) -> None:
+    """Re-add the pair unique constraint (single set-based build; revalidates dedup).
+
+    Normalizes the uniqueness object back to a table constraint (matching the
+    SQLModel definition) regardless of whether it started as a constraint or a
+    bare index. A no-op-safe ``ensure_candidate_pair_unique_index`` fallback would
+    only re-create an index, so this is the canonical restore.
+    """
+    # Clear any aborted transaction (e.g. a failed promote) so the DDL can run.
+    session.rollback()
+    session.execute(text(_ADD_PAIR_UNIQUE_CONSTRAINT_SQL))
+    session.commit()
+
+
 def _log_oversized_blocks_from_temp(
     session: Session,
     *,
@@ -468,15 +506,22 @@ def run_blocking_stage_sql(session: Session, run_id: int, config: dict) -> dict:
             staged_total,
             len(rules),
         )
-        promoted = session.execute(
-            text(_PROMOTE_PAIR_STAGE_SQL),
-            {"run_id": run_id},
-        )
-        session.commit()
-        LOGGER.info(
-            "Blocking promoted %s deduped pairs to candidate_pairs",
-            int(promoted.rowcount or 0),
-        )
+        # Drop the pair unique object for just the promote insert, then restore it
+        # with one set-based build. The finally guarantees the constraint comes
+        # back even on error, so the table never persists without its guarantee.
+        _drop_candidate_pair_unique(session)
+        try:
+            promoted = session.execute(
+                text(_PROMOTE_PAIR_STAGE_SQL),
+                {"run_id": run_id},
+            )
+            session.commit()
+            LOGGER.info(
+                "Blocking promoted %s deduped pairs to candidate_pairs",
+                int(promoted.rowcount or 0),
+            )
+        finally:
+            _restore_candidate_pair_unique(session)
     finally:
         session.execute(text(_DROP_PAIR_STAGE_SQL))
         session.commit()
