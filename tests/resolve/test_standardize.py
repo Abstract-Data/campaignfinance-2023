@@ -232,3 +232,18 @@ def test_build_resolution_input_rolls_back_delete_on_insert_failure(monkeypatch)
         assert len(surviving) == 1
         assert surviving[0].source_id == "legacy"
 
+
+
+@pytest.mark.parametrize(
+    "dirty",
+    [
+        "123 Main St Apt, Austin, TX 78701",   # occupancy type, no identifier
+        "500 W 2nd St Unit, Dallas TX",
+        "1 Plaza Fl, Houston, TX",
+    ],
+)
+def test_standardize_address_survives_dirty_occupancy(dirty):
+    """A scourgify AddressNormalizationError (occupancy type w/o identifier) must
+    degrade to a parsed/unparsed result, never propagate and kill stage 1."""
+    result = standardize_address(dirty)
+    assert result.parse_status in {"parsed", "partial", "unparsed"}
