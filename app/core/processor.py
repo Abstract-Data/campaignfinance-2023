@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.core.load_cache import BuilderCache
 from app.core.enums import PersonRole, TransactionType
 from app.core.models import (
+    LoanGuarantor,
     UnifiedAsset,
     UnifiedContribution,
     UnifiedCredit,
@@ -105,6 +106,52 @@ def _build_contribution_detail(
     )
 
 
+def _guarantor_str(value: Any, max_len: int) -> str | None:
+    """Strip a raw guarantor value to None-or-clipped-text for the column width."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return text[:max_len]
+
+
+def _build_guarantors(raw_data: dict[str, Any], *, state_id: int | None) -> list[LoanGuarantor]:
+    """Parse guarantor 1–5 from a LOAN/DEBT row into ``LoanGuarantor`` rows.
+
+    Guarantor columns are raw TEC names (``guarantorNameLast1`` …) that carry no
+    field-library mapping, so they're read straight from ``raw_data`` (mirroring
+    filer_ingest's officer parsing).  A slot is emitted only when it has a name or
+    organization.  Widths are clipped to the model's column sizes so a malformed
+    source value can't raise a ``DataError`` mid-batch.
+    """
+    guarantors: list[LoanGuarantor] = []
+    for i in range(1, 6):
+        last = _guarantor_str(raw_data.get(f"guarantorNameLast{i}"), 100)
+        first = _guarantor_str(raw_data.get(f"guarantorNameFirst{i}"), 100)
+        org = _guarantor_str(raw_data.get(f"guarantorNameOrganization{i}"), 200)
+        if not any((last, first, org)):
+            continue
+        guarantors.append(
+            LoanGuarantor(
+                position=i,
+                person_type=_guarantor_str(raw_data.get(f"guarantorPersentTypeCd{i}"), 30),
+                organization=org,
+                last_name=last,
+                first_name=first,
+                suffix=_guarantor_str(raw_data.get(f"guarantorNameSuffixCd{i}"), 30),
+                prefix=_guarantor_str(raw_data.get(f"guarantorNamePrefixCd{i}"), 30),
+                city=_guarantor_str(raw_data.get(f"guarantorStreetCity{i}"), 100),
+                state_code=_guarantor_str(raw_data.get(f"guarantorStreetStateCd{i}"), 2),
+                county=_guarantor_str(raw_data.get(f"guarantorStreetCountyCd{i}"), 10),
+                country=_guarantor_str(raw_data.get(f"guarantorStreetCountryCd{i}"), 3),
+                postal_code=_guarantor_str(raw_data.get(f"guarantorStreetPostalCode{i}"), 20),
+                region=_guarantor_str(raw_data.get(f"guarantorStreetRegion{i}"), 50),
+            )
+        )
+    return guarantors
+
+
 def _build_loan_detail(
     transaction: UnifiedTransaction,
     builder: UnifiedSQLModelBuilder,
@@ -134,6 +181,7 @@ def _build_loan_detail(
         collateral=builder._get_field_value(raw_data, "loan_collateral"),
         state_id=builder.state_id,
     )
+    transaction.loan.guarantors = _build_guarantors(raw_data, state_id=builder.state_id)
 
 
 def _build_debt_detail(
@@ -178,6 +226,7 @@ def _build_debt_detail(
         ),
         state_id=builder.state_id,
     )
+    transaction.debt.guarantors = _build_guarantors(raw_data, state_id=builder.state_id)
 
 
 def _build_credit_detail(

@@ -97,7 +97,10 @@ class TestDatabaseUrlResolution:
             "DATABASE_URL",
             "postgresql+psycopg2://bad:bad@127.0.0.1:59999/nodb",
         )
-        with pytest.raises(RuntimeError, match="Refusing to fall back to SQLite"):
+        # Non-interactive: an unreachable Postgres must raise, never silently fall
+        # back to SQLite (and never prompt under `pytest -s`).
+        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+        with pytest.raises(RuntimeError, match="not reachable"):
             resolve_engine_url()
 
     def test_postgres_connection_failure_main_returns_1(self, monkeypatch):
@@ -105,6 +108,7 @@ class TestDatabaseUrlResolution:
             "DATABASE_URL",
             "postgresql+psycopg2://bad:bad@127.0.0.1:59999/nodb",
         )
+        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
         code = main(["run", "--state", "texas"])
         assert code == 1
 

@@ -118,24 +118,21 @@ def validate_database_connection(db_url: str) -> None:
 
 
 def resolve_engine_url(*, use_sqlite: bool = False) -> str:
-    """Resolve and validate the database URL for the CLI.
+    """Resolve the database URL for the CLI (shared loader/resolve policy).
+
+    Default target is Postgres.  ``--sqlite`` forces an in-memory smoke DB; an
+    unreachable Postgres prompts an interactive user (set it up, or create a local
+    SQLite file) and raises in a non-interactive session — never a silent SQLite
+    fallback.  See :mod:`app.core.db_resolve`.
 
     Raises
     ------
     RuntimeError
-        When Postgres is configured but the connection cannot be opened.
+        Postgres is unreachable and the session is non-interactive.
     """
-    db_url = resolve_database_url(use_sqlite=use_sqlite)
-    if db_url.startswith("postgresql"):
-        try:
-            validate_database_connection(db_url)
-        except Exception as exc:
-            raise RuntimeError(
-                "PostgreSQL is configured but the connection failed. "
-                "Refusing to fall back to SQLite (data loss risk). "
-                f"Original error: {exc}"
-            ) from exc
-    return db_url
+    from app.core.db_resolve import resolve_runtime_database_url
+
+    return resolve_runtime_database_url(force_sqlite=use_sqlite)
 
 
 # ---------------------------------------------------------------------------
@@ -311,11 +308,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _run_address_stage(session, run_id, config):
-    """Address pass: deterministically build canonical_address + crosswalk."""
-    from app.resolve.publish.addresses import build_canonical_addresses
+    """Address pass: build canonical_address + crosswalk, then link entities to addresses."""
+    from app.resolve.publish.addresses import (
+        backfill_entity_addresses,
+        build_canonical_addresses,
+    )
 
     n = build_canonical_addresses(session, run_id=run_id)
-    return {"canonical_out": n}
+    linked = backfill_entity_addresses(session)
+    return {"canonical_out": n, "entities_linked": linked}
 
 
 def _run_campaign_stage(session, run_id, config):
