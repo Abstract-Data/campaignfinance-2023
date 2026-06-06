@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import usaddress
 from scourgify import normalize_address_record
-from scourgify.exceptions import UnParseableAddressError
+from scourgify.exceptions import AddressNormalizationError, UnParseableAddressError
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,7 +78,10 @@ def standardize_address(
 
     try:
         normalized = normalize_address_record(address_text)
-    except (UnParseableAddressError, ValueError):
+    except (UnParseableAddressError, AddressNormalizationError, ValueError):
+        # Dirty government addresses (e.g. an "Apt" with no unit number) raise
+        # AddressNormalizationError; degrade to the usaddress fallback / unparsed
+        # rather than crashing the whole standardization stage.
         normalized = None
 
     if normalized:
