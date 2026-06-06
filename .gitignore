@@ -190,3 +190,6 @@ cython_debug/
 
 # Local campaign finance source files (retain on disk)
 tmp/**/*.parquet
+
+# gate enforcement ledger (per-session, not committed)
+.claude/state/

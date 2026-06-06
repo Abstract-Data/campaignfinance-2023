@@ -25,6 +25,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python3 .claude/hooks/gate.py pretool"
+          },
+          {
+            "type": "command",
             "command": "bash .claude/hooks/block-dangerous.sh"
           },
           {
@@ -38,12 +42,20 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/pre-commit.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/goal-gate.sh"
           }
         ]
       },
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/gate.py pretool"
+          },
           {
             "type": "command",
             "command": "bash .claude/hooks/block-env-writes.sh"
@@ -51,6 +63,10 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/sql-injection-check.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/goal-gate.sh"
           }
         ]
       }
@@ -84,7 +100,16 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python3 .claude/hooks/gate.py stop-check"
+          },
+          {
+            "type": "command",
             "command": "bash .claude/hooks/verify-completion.sh"
+          },
+          {
+            "type": "agent",
+            "prompt": "First run: git diff --name-only HEAD 2>/dev/null | grep '\\.py$' to check if any Python files were modified. If the output is empty, immediately return {\"decision\": \"allow\"}. If Python files were changed: fetch the Python Design Principles Playbook at https://app.notion.com/p/3727d7f56298819cac31c4245e0870a9, read the False Positives section first, evaluate the changed Python files against principles P1-P17 using the scope rules in the playbook, apply the false positive filter. Return {\"decision\": \"block\", \"reason\": \"VIOLATIONS: <summary>\"} if any principles fail, or {\"decision\": \"allow\"} if all pass.",
+            "timeout": 120
           }
         ]
       }

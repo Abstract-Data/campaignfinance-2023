@@ -2,6 +2,18 @@
 # verify-completion.sh — Stop hook
 # Three-gate completion verification. Blocks Claude from declaring "done"
 # until all gates pass. campaignfinance project.
+
+# --- ECC_HOOK_PROFILE guard ---------------------------------------------
+PROFILE="${ECC_HOOK_PROFILE:-standard}"
+HOOK_NAME="verify-completion"
+case "$PROFILE" in
+  minimal)  [[ "$HOOK_NAME" != "block-dangerous" && "$HOOK_NAME" != "block-env-writes" ]] && exit 0 ;;
+  standard) [[ "$HOOK_NAME" == "post-edit-test" ]] && exit 0 ;;
+  strict)   ;;
+esac
+echo "${ECC_DISABLED_HOOKS:-}" | grep -q "$HOOK_NAME" && exit 0
+# ------------------------------------------------------------------------
+
 INPUT=$(cat)
 
 # CRITICAL: never loop. When stop_hook_active=true, let it stop.

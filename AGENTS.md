@@ -958,3 +958,33 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 - Main app test gates: `uv run pytest tests app/tests --ignore=tests/resolve`; coverage gate `uv run pytest tests/ app/tests/ --cov=app --cov-fail-under=60 --ignore=tests/resolve`; resolve fast tier `uv run pytest tests/resolve -m "not integration"` (+ full `tests/resolve/` + `uv run ruff check app/resolve/` before resolve commits); CI runs resolve via `ci.yml` job `resolve-tests` (reusable `ci-resolve-tests.yml`) plus `ci-resolve-integration.yml` (both `lfs: true`); golden-set CSVs at `tests/resolve/golden/*.csv` are Git LFS tracked — fresh clones need `git lfs pull` for `test_match_quality.py`
 - **Pipeline Fix Pack (2026-05-28, Fixes 1–7):** Fix 1 — `RECORD_TYPE_ROLE_MAP` in `processor.py` routes each TEC `record_type` to exactly one `PersonRole` + field-prefix (e.g. `RCPT → {CONTRIBUTOR: "contributor"}`, `EXPN → {PAYEE: "payee"}`); `unified_field_library.py` uses role-scoped unified names (`contributor_first_name`, `payee_first_name`, etc.) instead of the old role-blind `person_first_name`. Fix 2 — removed bad committee-as-contributor fallback in `_build_contribution_detail`. Fix 3 — `UnifiedExpenditure` table added to `tables.py`; `_build_expenditure_detail` added to `processor.py`; payer = committee entity, payee = vendor. Fix 4 — `_find_entity()` in `builders.py` now filters by `state_id`. Fix 5 — NULL-safe address dedup (`col.is_(None) if val is None else col == val`) in both `builders.py` and `unified_state_loader.py`. Fix 6 — explicit `PersonRole.RECIPIENT` guard in `_attach_transaction_persons`. Fix 7 — 7 partial unique indexes applied idempotently in `UnifiedDatabaseManager._apply_dedup_indexes()`, called from `bootstrap()`. Run `scripts/reset_and_reingest.py` to truncate stale data and re-ingest; run `scripts/verify_ingest.py` to confirm all fixes held.
 - GitButler often blocks raw `git checkout`; virtual-branch overlap can leave fixes uncommitted — stack with `but move <child> <parent>`; if `but setup` fails with conflicts returning to `gitbutler/workspace`, use `but apply <phase-branch>` instead of raw git; for commit conflicts use `but resolve <commit-id>` → edit files (no `git add`/`git commit` during resolution) → `but resolve finish`; consolidate parallel remediation on one `remediation/*` branch and verify with `git ls-tree` before opening a PR; never commit `tmp/texas/*.parquet` — untrack with `git rm --cached` if accidentally staged
+
+## Enforcement Gate (gate.py)
+
+A session-scoped enforcement gate (`python3 .claude/hooks/gate.py`) runs on every Stop and on all Bash/Edit/Write/MultiEdit tool uses. The gate is wired into `.claude/settings.json` — do not remove or bypass it.
+
+**Disposition ledger — how to close a failed or skipped check:**
+
+A failed or skipped check blocks the session from ending until it is resolved. To dispose of one, run:
+
+```bash
+python3 .claude/hooks/gate.py dispose --check '<check-name>' --status fixed|deferred|ticket|ignore --note '<brief reason>'
+```
+
+Never skip a check silently. If a check cannot be resolved now, use `deferred` or `ticket` with a note.
+
+**Task-critic receipt (when TASK.md exists):**
+
+When the project has a `TASK.md`, the gate requires a task-critic verdict before the session can end. After verifying all acceptance criteria, record:
+
+```bash
+python3 .claude/hooks/gate.py task-critic --verdict PASS|BLOCK --note '<brief summary>'
+```
+
+**Dangerous-ops ask behavior:**
+
+When the gate calls `ask` on an operation (force push, hard reset, alembic run, direct SQL write, `but config/reset/undo`, `rm -rf`), stop and surface the ask to the user. Do not attempt to bypass or retry the blocked command without explicit human confirmation.
+
+**Acceptance criteria:**
+
+Multi-step work MUST have acceptance criteria defined in `TASK.md` before implementation starts. If none exist, write them and get approval before proceeding. The task-critic must verify all criteria pass before recording a PASS verdict.

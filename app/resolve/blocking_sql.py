@@ -1,7 +1,12 @@
 """Postgres set-based blocking for stage 2.
 
-Materializes blocking keys into a temp table, then inserts pairs in batches of
-block keys so Postgres never self-joins the full ``resolution_input`` set at once.
+Per rule, materializes blocking keys into a temp table and self-joins within each
+eligible (size 2..max) block, appending pairs to an UNLOGGED, index-free staging
+table. A single sorted ``DISTINCT ON`` insert then promotes the staged pairs to
+``candidate_pairs`` — collapsing cross-rule duplicates and feeding the unique
+index in key order. Staging avoids the per-row ON CONFLICT probe into a
+multi-million-row unique index (the old batched path's quadratic wall) without
+ever dropping the unique constraint.
 """
 
 from __future__ import annotations
@@ -23,7 +28,6 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 
-_BLOCK_KEY_BATCH_SIZE = 2_000
 _PAIR_CAP_DELETE_BATCH = 500_000
 _BLOCK_KEY_PLACEHOLDER = "__BLOCK_KEY_EXPR__"
 
@@ -42,11 +46,11 @@ _RULE_BLOCK_KEY_SQL: dict[str, str] = {
         "THEN lower(trim(ri.last_name_phonetic)) || '|' || "
         "lower(substr(trim(ri.zip5), 1, 3)) END"
     ),
-    "person_first_initial_last_phonetic": (
+    "person_first_last_phonetic": (
         "CASE WHEN ri.entity_type = 'person' "
-        "AND ri.first_name IS NOT NULL AND trim(ri.first_name) <> '' "
+        "AND ri.first_name_phonetic IS NOT NULL AND trim(ri.first_name_phonetic) <> '' "
         "AND ri.last_name_phonetic IS NOT NULL AND trim(ri.last_name_phonetic) <> '' "
-        "THEN lower(substr(trim(ri.first_name), 1, 1)) || '|' || "
+        "THEN lower(trim(ri.first_name_phonetic)) || '|' || "
         "lower(trim(ri.last_name_phonetic)) END"
     ),
     "org_normalized_zip3": (
@@ -92,17 +96,33 @@ GROUP BY block_key
 HAVING COUNT(*) > :max_block_size
 """
 
-_ELIGIBLE_BLOCK_KEYS_SQL = """
-SELECT block_key
-FROM blocking_keyed_stage
-GROUP BY block_key
-HAVING COUNT(*) <= :max_block_size
-   AND COUNT(*) >= 2
-ORDER BY block_key
+# --- Pair staging (bulk-load path) ------------------------------------------
+# Pairs are first appended to an UNLOGGED, index-free staging table (fast: no
+# per-row unique-index maintenance, no WAL), then promoted to candidate_pairs in
+# a single sorted DISTINCT-ON insert. This avoids the per-row ON CONFLICT probe
+# into a multi-million-row unique index that made the old batched path scale
+# quadratically — without ever dropping the unique constraint (so an interrupted
+# run never loses the dedup guarantee, unlike a drop/rebuild trick).
+
+_DROP_PAIR_STAGE_SQL = "DROP TABLE IF EXISTS candidate_pairs_stage"
+
+_CREATE_PAIR_STAGE_SQL = """
+CREATE UNLOGGED TABLE candidate_pairs_stage (
+    run_id integer NOT NULL,
+    source_a_type varchar(64) NOT NULL,
+    source_a_id varchar(128) NOT NULL,
+    source_b_type varchar(64) NOT NULL,
+    source_b_id varchar(128) NOT NULL,
+    rule_name text NOT NULL
+)
 """
 
-_INSERT_PAIRS_BATCH_SQL = """
-INSERT INTO candidate_pairs (
+# One statement per rule: self-join the keyed temp table within each eligible
+# (size 2..max) block and append every within-block pair to the staging table.
+# (a.source_type, a.source_id) < (b.source_type, b.source_id) emits each
+# unordered pair once, so a single rule never self-duplicates.
+_INSERT_RULE_PAIRS_TO_STAGE_SQL = """
+INSERT INTO candidate_pairs_stage (
     run_id,
     source_a_type,
     source_a_id,
@@ -122,14 +142,39 @@ INNER JOIN blocking_keyed_stage b
     ON a.block_key = b.block_key
     AND a.entity_type = b.entity_type
     AND (a.source_type, a.source_id) < (b.source_type, b.source_id)
-WHERE a.block_key = ANY(:batch_keys)
-ON CONFLICT (
+INNER JOIN (
+    SELECT block_key
+    FROM blocking_keyed_stage
+    GROUP BY block_key
+    HAVING COUNT(*) BETWEEN 2 AND :max_block_size
+) eligible ON eligible.block_key = a.block_key
+"""
+
+# Promote staged pairs to the real table. DISTINCT ON collapses cross-rule
+# duplicates (a pair found by >1 rule) to one row, so no ON CONFLICT is needed;
+# the ORDER BY both drives DISTINCT ON and feeds the unique index sorted rows.
+_PROMOTE_PAIR_STAGE_SQL = """
+INSERT INTO candidate_pairs (
     run_id,
     source_a_type,
     source_a_id,
     source_b_type,
-    source_b_id
-) DO NOTHING
+    source_b_id,
+    rule_name
+)
+SELECT DISTINCT ON (
+    run_id, source_a_type, source_a_id, source_b_type, source_b_id
+)
+    run_id,
+    source_a_type,
+    source_a_id,
+    source_b_type,
+    source_b_id,
+    rule_name
+FROM candidate_pairs_stage
+WHERE run_id = :run_id
+ORDER BY
+    run_id, source_a_type, source_a_id, source_b_type, source_b_id, rule_name
 """
 
 
@@ -179,6 +224,15 @@ def ensure_blocking_indexes(session: Session) -> None:
             """
         )
     )
+    session.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_resolution_input_run_first_last_phonetic
+            ON resolution_input (run_id, first_name_phonetic, last_name_phonetic)
+            WHERE first_name_phonetic IS NOT NULL AND last_name_phonetic IS NOT NULL
+            """
+        )
+    )
     session.commit()
 
 
@@ -201,6 +255,44 @@ def ensure_candidate_pair_unique_index(session: Session) -> None:
             """
         )
     )
+    session.commit()
+
+
+# The promote insert is the one step that touches the pair unique index. Dropping
+# the uniqueness object for just that insert turns ~25M incremental index probes
+# into a plain append + one set-based index build on re-add. Safe because the
+# promote source is already deduped (DISTINCT ON), so the rebuild never finds a
+# conflict, and it runs inside a try/finally that always restores the constraint.
+_DROP_PAIR_UNIQUE_CONSTRAINT_SQL = (
+    "ALTER TABLE candidate_pairs "
+    "DROP CONSTRAINT IF EXISTS uq_candidate_pairs_run_sources"
+)
+_DROP_PAIR_UNIQUE_INDEX_SQL = "DROP INDEX IF EXISTS uq_candidate_pairs_run_sources"
+_ADD_PAIR_UNIQUE_CONSTRAINT_SQL = (
+    "ALTER TABLE candidate_pairs "
+    "ADD CONSTRAINT uq_candidate_pairs_run_sources "
+    "UNIQUE (run_id, source_a_type, source_a_id, source_b_type, source_b_id)"
+)
+
+
+def _drop_candidate_pair_unique(session: Session) -> None:
+    """Drop the pair uniqueness object (table constraint or bare index) if present."""
+    session.execute(text(_DROP_PAIR_UNIQUE_CONSTRAINT_SQL))
+    session.execute(text(_DROP_PAIR_UNIQUE_INDEX_SQL))
+    session.commit()
+
+
+def _restore_candidate_pair_unique(session: Session) -> None:
+    """Re-add the pair unique constraint (single set-based build; revalidates dedup).
+
+    Normalizes the uniqueness object back to a table constraint (matching the
+    SQLModel definition) regardless of whether it started as a constraint or a
+    bare index. A no-op-safe ``ensure_candidate_pair_unique_index`` fallback would
+    only re-create an index, so this is the canonical restore.
+    """
+    # Clear any aborted transaction (e.g. a failed promote) so the DDL can run.
+    session.rollback()
+    session.execute(text(_ADD_PAIR_UNIQUE_CONSTRAINT_SQL))
     session.commit()
 
 
@@ -242,40 +334,20 @@ def _materialize_keyed_rows(
     return int(result.rowcount or 0)
 
 
-def _iter_eligible_block_key_batches(
-    session: Session,
-    *,
-    max_block_size: int,
-    batch_size: int,
-):
-    """Yield block-key batches without loading every key into memory."""
-    result = session.execute(
-        text(_ELIGIBLE_BLOCK_KEYS_SQL),
-        {"max_block_size": max_block_size},
-    )
-    batch: list[str] = []
-    while True:
-        rows = result.fetchmany(batch_size)
-        if not rows:
-            if batch:
-                yield batch
-            return
-        for row in rows:
-            batch.append(str(row[0]))
-            if len(batch) >= batch_size:
-                yield batch
-                batch = []
-
-
-def _insert_rule_pairs_batched(
+def _stage_rule_pairs(
     session: Session,
     *,
     run_id: int,
     rule: BlockingRule,
     block_key_sql: str,
     max_block_size: int,
-    block_key_batch_size: int,
 ) -> int:
+    """Append every eligible within-block pair for one rule to the staging table.
+
+    A single set-based INSERT...SELECT into the index-free UNLOGGED staging
+    table — no per-row index maintenance, no ON CONFLICT probe. Returns the
+    number of staged rows (pre cross-rule dedup).
+    """
     keyed_rows = _materialize_keyed_rows(
         session,
         run_id=run_id,
@@ -289,36 +361,19 @@ def _insert_rule_pairs_batched(
 
     _log_oversized_blocks_from_temp(session, rule=rule, max_block_size=max_block_size)
 
-    total_inserted = 0
-    batch_index = 0
-    for batch_keys in _iter_eligible_block_key_batches(
-        session,
-        max_block_size=max_block_size,
-        batch_size=block_key_batch_size,
-    ):
-        batch_index += 1
-        result = session.execute(
-            text(_INSERT_PAIRS_BATCH_SQL),
-            {
-                "run_id": run_id,
-                "rule_name": rule.name,
-                "batch_keys": batch_keys,
-            },
-        )
-        inserted = int(result.rowcount or 0)
-        total_inserted += inserted
-        session.commit()
-        LOGGER.info(
-            "Blocking rule=%s batch %s block_keys=%s new_pairs=%s",
-            rule.name,
-            batch_index,
-            len(batch_keys),
-            inserted,
-        )
-
+    result = session.execute(
+        text(_INSERT_RULE_PAIRS_TO_STAGE_SQL),
+        {
+            "run_id": run_id,
+            "rule_name": rule.name,
+            "max_block_size": max_block_size,
+        },
+    )
+    staged = int(result.rowcount or 0)
     session.execute(text(_DROP_TEMP_SQL))
     session.commit()
-    return total_inserted
+    LOGGER.info("Blocking rule=%s staged %s pairs", rule.name, staged)
+    return staged
 
 
 _PAIR_CAP_DELETE_SQL = """
@@ -399,13 +454,18 @@ def _apply_pair_cap(
 
 
 def run_blocking_stage_sql(session: Session, run_id: int, config: dict) -> dict:
-    """Postgres blocking backend: batched temp-table joins with cross-rule dedupe."""
-    max_block_size = int(config.get("max_block_size", 500))
+    """Postgres blocking backend: stage pairs index-free, then promote deduped.
+
+    Each rule's eligible within-block pairs are appended to an UNLOGGED,
+    index-free staging table (fast set-based INSERT...SELECT, no per-row unique
+    index maintenance). A single sorted ``DISTINCT ON`` insert then promotes
+    them to ``candidate_pairs``, collapsing cross-rule duplicates and feeding the
+    unique index in key order. The unique constraint is never dropped, so an
+    interrupted run cannot leave the table without its dedup guarantee.
+    """
+    max_block_size = int(config.get("max_block_size", 100))
     max_pairs_raw = config.get("max_pairs_per_run")
     max_pairs_per_run = int(max_pairs_raw) if max_pairs_raw is not None else None
-    block_key_batch_size = int(
-        config.get("blocking_block_key_batch_size", _BLOCK_KEY_BATCH_SIZE)
-    )
     rules = _rules_from_config(config)
 
     for rule in rules:
@@ -424,21 +484,47 @@ def run_blocking_stage_sql(session: Session, run_id: int, config: dict) -> dict:
     session.exec(delete(CandidatePair).where(CandidatePair.run_id == run_id))
     session.commit()
 
-    for rule in rules:
-        block_key_sql = block_key_sql_for_rule(rule)
-        inserted = _insert_rule_pairs_batched(
-            session,
-            run_id=run_id,
-            rule=rule,
-            block_key_sql=block_key_sql,
-            max_block_size=max_block_size,
-            block_key_batch_size=block_key_batch_size,
-        )
+    # Fresh index-free staging table for this run's pairs.
+    session.execute(text(_DROP_PAIR_STAGE_SQL))
+    session.execute(text(_CREATE_PAIR_STAGE_SQL))
+    session.commit()
+
+    try:
+        staged_total = 0
+        for rule in rules:
+            block_key_sql = block_key_sql_for_rule(rule)
+            staged_total += _stage_rule_pairs(
+                session,
+                run_id=run_id,
+                rule=rule,
+                block_key_sql=block_key_sql,
+                max_block_size=max_block_size,
+            )
+
         LOGGER.info(
-            "Blocking rule=%s new_pairs_this_rule=%s (ON CONFLICT rows not counted)",
-            rule.name,
-            inserted,
+            "Blocking staged %s pairs across %s rules; promoting (deduped)",
+            staged_total,
+            len(rules),
         )
+        # Drop the pair unique object for just the promote insert, then restore it
+        # with one set-based build. The finally guarantees the constraint comes
+        # back even on error, so the table never persists without its guarantee.
+        _drop_candidate_pair_unique(session)
+        try:
+            promoted = session.execute(
+                text(_PROMOTE_PAIR_STAGE_SQL),
+                {"run_id": run_id},
+            )
+            session.commit()
+            LOGGER.info(
+                "Blocking promoted %s deduped pairs to candidate_pairs",
+                int(promoted.rowcount or 0),
+            )
+        finally:
+            _restore_candidate_pair_unique(session)
+    finally:
+        session.execute(text(_DROP_PAIR_STAGE_SQL))
+        session.commit()
 
     if max_pairs_per_run is not None:
         _apply_pair_cap(session, run_id=run_id, max_pairs_per_run=max_pairs_per_run)

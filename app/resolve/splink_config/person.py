@@ -35,8 +35,11 @@ COMPARISONS = [
 # Used during EM training to estimate m-probabilities for non-blocked fields.
 TRAINING_BLOCKING_RULE = block_on("last_name_phonetic", "zip3")
 
-# Mirrors Phase-1 default blocking rules for bulk DuckDB prediction.
+# Mirrors Phase-1 default blocking rules for bulk DuckDB prediction. Must stay
+# in lock-step with app.resolve.blocking.default_blocking_rules — Splink's bulk
+# predict re-blocks on these, so a broader rule here (e.g. first_initial) would
+# regenerate the >100M-pair explosion the external blocking was tuned to avoid.
 PREDICTION_BLOCKING_RULES = [
     block_on("last_name_phonetic", "zip3"),
-    block_on("first_initial", "last_name_phonetic"),
+    block_on("first_name_phonetic", "last_name_phonetic"),
 ]

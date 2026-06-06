@@ -1,6 +1,18 @@
 #!/bin/bash
 # sql-injection-check.sh — PreToolUse hook (matcher: Edit|Write) — BLOCKER
 # Blocks string-interpolated SQL. Use SQLModel/SQLAlchemy parameterized queries.
+
+# --- ECC_HOOK_PROFILE guard ---------------------------------------------
+PROFILE="${ECC_HOOK_PROFILE:-standard}"
+HOOK_NAME="sql-injection-check"
+case "$PROFILE" in
+  minimal)  [[ "$HOOK_NAME" != "block-dangerous" && "$HOOK_NAME" != "block-env-writes" ]] && exit 0 ;;
+  standard) [[ "$HOOK_NAME" == "post-edit-test" ]] && exit 0 ;;
+  strict)   ;;
+esac
+echo "${ECC_DISABLED_HOOKS:-}" | grep -q "$HOOK_NAME" && exit 0
+# ------------------------------------------------------------------------
+
 INPUT=$(cat)
 FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 CONTENT=$(echo "$INPUT" | jq -r '.tool_input.content // .tool_input.new_string // empty')
