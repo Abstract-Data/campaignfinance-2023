@@ -28,25 +28,22 @@
         'unified_committees', 'unified_persons', 'unified_addresses'
     ] %}
 
-    {% set drop_indexes = [
-        "DROP INDEX IF EXISTS public.uix_persons_name_state",
-        "DROP INDEX IF EXISTS public.uix_persons_org_state",
-        "DROP INDEX IF EXISTS public.uix_addresses_city_state_zip_nostreet",
-        "DROP INDEX IF EXISTS public.uix_addresses_full",
-        "DROP INDEX IF EXISTS public.uix_txperson_txid_personid_role",
-        "DROP INDEX IF EXISTS public.ix_transactions_source_id",
-        "DROP INDEX IF EXISTS public.uix_entities_type_name_state"
-    ] %}
-
-    {% set create_indexes = [
-        "CREATE UNIQUE INDEX IF NOT EXISTS uix_persons_name_state ON public.unified_persons (lower(first_name), lower(last_name), state_id) WHERE organization IS NULL AND first_name IS NOT NULL AND last_name IS NOT NULL",
-        "CREATE UNIQUE INDEX IF NOT EXISTS uix_persons_org_state ON public.unified_persons (lower(organization), state_id) WHERE organization IS NOT NULL",
-        "CREATE UNIQUE INDEX IF NOT EXISTS uix_addresses_city_state_zip_nostreet ON public.unified_addresses (lower(city), lower(state), zip_code) WHERE street_1 IS NULL",
-        "CREATE UNIQUE INDEX IF NOT EXISTS uix_addresses_full ON public.unified_addresses (lower(street_1), lower(city), lower(state), zip_code) WHERE street_1 IS NOT NULL",
-        "CREATE UNIQUE INDEX IF NOT EXISTS uix_txperson_txid_personid_role ON public.unified_transaction_persons (transaction_id, person_id, role)",
-        "CREATE INDEX IF NOT EXISTS ix_transactions_source_id ON public.unified_transactions (transaction_id, committee_id) WHERE transaction_id IS NOT NULL",
-        "CREATE UNIQUE INDEX IF NOT EXISTS uix_entities_type_name_state ON public.unified_entities (entity_type, normalized_name, state_id) WHERE state_id IS NOT NULL"
-    ] %}
+    {# Capture EVERY non-PK, non-constraint index on the target tables (the uuid/PK
+       unique constraints stay — they back NOT NULL identity). At 25%+ volume the
+       unified_* tables carry many secondary indexes (unified_transactions alone has
+       ~15); maintaining all of them per-row during a 10M-row insert is what made
+       publish take hours. We drop them, bulk-load, and rebuild set-based — the rebuild
+       of the unique dedup indexes still re-validates the dedup invariants. #}
+    {% set tables_csv = "'" ~ delete_order | join("','") ~ "'" %}
+    {% set capture_indexes_sql %}
+        select indexname, indexdef
+        from pg_indexes
+        where schemaname = 'public'
+          and tablename in ({{ tables_csv }})
+          and indexname not in (
+              select conname from pg_constraint where contype in ('p', 'u')
+          )
+    {% endset %}
 
     {# committee_type is an FK to committee_types.code — seed any FILER types we have
        (placeholder title/description) so the committee insert's FK resolves. #}
@@ -171,21 +168,34 @@
     ] %}
 
     {% if execute %}
+        {# Snapshot the secondary-index DDL, then drop those indexes. #}
+        {% set captured = run_query(capture_indexes_sql) %}
+        {% set index_defs = [] %}
+        {% for row in captured.rows %}
+            {% do index_defs.append(row[1]) %}
+            {% do run_query("DROP INDEX IF EXISTS public." ~ row[0]) %}
+        {% endfor %}
+
+        {# Skip per-row FK validation during the bulk load (data is validated in gold;
+           the index rebuild re-checks uniqueness). Superuser-only — that is the spike
+           DB owner. #}
+        {% do run_query("SET session_replication_role = replica") %}
+
         {% for tbl in delete_order %}
             {% do run_query("DELETE FROM public." ~ tbl) %}
         {% endfor %}
-        {% for stmt in drop_indexes %}
-            {% do run_query(stmt) %}
-        {% endfor %}
         {% do run_query(seed_committee_types) %}
-        {{ log("publish_to_unified: cleared tables, dropped dedup indexes, seeded committee_types", info=True) }}
+        {{ log("publish_to_unified: dropped " ~ index_defs | length ~ " secondary indexes, cleared tables, FK checks off", info=True) }}
+
         {% for stmt in inserts %}
             {% do run_query(stmt) %}
         {% endfor %}
+        {% do run_query("SET session_replication_role = origin") %}
         {{ log("publish_to_unified: bulk-inserted gold -> public; rebuilding indexes (revalidates dedup)", info=True) }}
-        {% for stmt in create_indexes %}
-            {% do run_query(stmt) %}
+
+        {% for ddl in index_defs %}
+            {% do run_query(ddl) %}
         {% endfor %}
-        {{ log("publish_to_unified: done (indexes rebuilt)", info=True) }}
+        {{ log("publish_to_unified: done (" ~ index_defs | length ~ " indexes rebuilt)", info=True) }}
     {% endif %}
 {% endmacro %}

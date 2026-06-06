@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -115,10 +116,18 @@ def _append_batch(rows: list[dict], table: str, engine) -> None:
     )
 
 
+def _frac_head(frame, fraction: float | None):
+    """Slice a frame to the first ``fraction`` of its rows (>=1), or return it whole."""
+    if fraction is None:
+        return frame
+    return frame.head(max(1, math.ceil(frame.height * fraction)))
+
+
 def _validate_file(
-    path: Path, record_type: str, *, limit: int | None, engine
+    path: Path, record_type: str, *, limit: int | None, fraction: float | None, engine
 ) -> tuple[int, int, list[str]]:
     """Validate one parquet file and append valid rows to its silver table.
+    ``fraction`` takes the first N% of rows; ``limit`` caps valid rows.
     Returns (valid, rejected, reject_samples)."""
     model, table = SILVER_TARGETS[record_type]
     today = date.today().isoformat()
@@ -127,7 +136,7 @@ def _validate_file(
     batch: list[dict] = []
     origin = path.name
     try:
-        frame = pl.read_parquet(path)
+        frame = _frac_head(pl.read_parquet(path), fraction)
     except Exception as exc:  # noqa: BLE001 — a bad file must not kill the whole run
         return 0, 0, [f"{origin}: FILE READ ERROR: {type(exc).__name__}: {str(exc)[:100]}"]
     for raw in frame.iter_rows(named=True):
@@ -151,11 +160,15 @@ def _validate_file(
 
 
 # Worker entry point for the process pool (must be module-level / picklable).
-def _validate_file_worker(task: tuple[str, str, str, int | None]) -> tuple[str, str, int, int, list[str]]:
-    path_str, record_type, url, limit = task
+def _validate_file_worker(
+    task: tuple[str, str, str, int | None, float | None],
+) -> tuple[str, str, int, int, list[str]]:
+    path_str, record_type, url, limit, fraction = task
     engine = create_engine(url)
     try:
-        valid, rejected, samples = _validate_file(Path(path_str), record_type, limit=limit, engine=engine)
+        valid, rejected, samples = _validate_file(
+            Path(path_str), record_type, limit=limit, fraction=fraction, engine=engine
+        )
     finally:
         engine.dispose()
     return record_type, Path(path_str).name, valid, rejected, samples
@@ -170,7 +183,8 @@ def _files_for(record_type: str, max_files: int | None) -> list[Path]:
 
 
 def load_raw_type(
-    record_type: str, table: str, *, max_files: int | None, limit: int | None, engine
+    record_type: str, table: str, *, max_files: int | None, limit: int | None,
+    fraction: float | None, engine,
 ) -> tuple[int, int]:
     """Land a record type's parquet RAW (all-TEXT) into silver — no validation.
     Returns (files, rows). Single-process (these types are few files)."""
@@ -178,7 +192,7 @@ def load_raw_type(
     today = date.today().isoformat()
     frames = []
     for path in files:
-        frame = pl.read_parquet(path)
+        frame = _frac_head(pl.read_parquet(path), fraction)
         if limit is not None:
             frame = frame.head(limit)
         frame = frame.with_columns([
@@ -240,7 +254,7 @@ def load_filers(engine, *, max_files: int | None = None) -> int:
 
 def run(
     *, max_files: int | None, limit: int | None, bootstrap: bool = True,
-    workers: int = 1,
+    workers: int = 1, fraction: float | None = None,
 ) -> dict:
     """Validate + land TX RCPT/EXPN into silver. ``workers > 1`` fans file
     validation out across processes (the EL bottleneck at full volume)."""
@@ -260,11 +274,11 @@ def run(
     filer_rows = load_filers(engine, max_files=max_files)
 
     results = {rt: LoadResult(record_type=rt, table=SILVER_TARGETS[rt][1]) for rt in SILVER_TARGETS}
-    tasks: list[tuple[str, str, str, int | None]] = []
+    tasks: list[tuple[str, str, str, int | None, float | None]] = []
     for rt in SILVER_TARGETS:
         files = _files_for(rt, max_files)
         results[rt].files = len(files)
-        tasks.extend((str(p), rt, url, limit) for p in files)
+        tasks.extend((str(p), rt, url, limit, fraction) for p in files)
 
     t0 = time.time()
     if workers > 1:
@@ -277,8 +291,10 @@ def run(
                 print(f"  done {rt} {name}: valid={valid:,} rejected={rejected:,} "
                       f"total={r.valid:,} elapsed={time.time() - t0:.0f}s", flush=True)
     else:
-        for path_str, rt, _url, lim in tasks:
-            valid, rejected, samples = _validate_file(Path(path_str), rt, limit=lim, engine=engine)
+        for path_str, rt, _url, lim, frac in tasks:
+            valid, rejected, samples = _validate_file(
+                Path(path_str), rt, limit=lim, fraction=frac, engine=engine
+            )
             r = results[rt]
             r.valid += valid
             r.rejected += rejected
@@ -289,7 +305,9 @@ def run(
     # Raw-typed landing for the remaining transaction record types (no validator).
     raw_rows: dict[str, int] = {}
     for rt, table in RAW_TARGETS.items():
-        nfiles, nrows = load_raw_type(rt, table, max_files=max_files, limit=limit, engine=engine)
+        nfiles, nrows = load_raw_type(
+            rt, table, max_files=max_files, limit=limit, fraction=fraction, engine=engine
+        )
         raw_rows[rt] = nrows
         print(f"  raw  {rt} {table}: files={nfiles} rows={nrows:,} "
               f"elapsed={time.time() - t0:.0f}s", flush=True)
@@ -304,6 +322,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-files", type=int, default=2, help="parquet files per record type")
     parser.add_argument("--all-files", action="store_true", help="load every file (full volume)")
     parser.add_argument("--limit", type=int, default=None, help="cap rows per file")
+    parser.add_argument("--fraction", type=float, default=None,
+                        help="load this fraction (0-1) of each file's rows, e.g. 0.25 for a 25%% load")
     parser.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 4) - 1),
                         help="parallel validation processes (default: cores-1)")
     parser.add_argument("--no-bootstrap", action="store_true", help="skip DB/schema creation")
@@ -311,7 +331,7 @@ def main(argv: list[str] | None = None) -> int:
 
     max_files = None if args.all_files else args.max_files
     summary = run(
-        max_files=max_files, limit=args.limit,
+        max_files=max_files, limit=args.limit, fraction=args.fraction,
         bootstrap=not args.no_bootstrap, workers=args.workers,
     )
     print(f"\nSilver load → {summary['url']}  (state_id={summary['state_id']}, "
