@@ -2,6 +2,18 @@
 # domain-purity-check.sh — PostToolUse hook (matcher: Edit|Write) — WARN
 # Domain/core layers (app/core, app/abcs) model pure data + interfaces.
 # Warn when I/O or scraping frameworks leak into them.
+
+# --- ECC_HOOK_PROFILE guard ---------------------------------------------
+PROFILE="${ECC_HOOK_PROFILE:-standard}"
+HOOK_NAME="domain-purity-check"
+case "$PROFILE" in
+  minimal)  [[ "$HOOK_NAME" != "block-dangerous" && "$HOOK_NAME" != "block-env-writes" ]] && exit 0 ;;
+  standard) [[ "$HOOK_NAME" == "post-edit-test" ]] && exit 0 ;;
+  strict)   ;;
+esac
+echo "${ECC_DISABLED_HOOKS:-}" | grep -q "$HOOK_NAME" && exit 0
+# ------------------------------------------------------------------------
+
 INPUT=$(cat)
 FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 [[ "$FILE" != *.py ]] && exit 0

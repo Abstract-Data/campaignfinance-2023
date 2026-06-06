@@ -1,4 +1,8 @@
 # Prompt: Remediate Adversarial Architecture Review Findings
+# Version: 1.0.0
+# Model: claude-sonnet-4-6
+# Last Updated: 2026-06-06
+# Maintainer: John Eakin / Abstract Data
 
 ## Context
 

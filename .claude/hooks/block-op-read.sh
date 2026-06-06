@@ -3,6 +3,18 @@
 # This project uses the 1Password Environments SDK (onepassword-sdk,
 # app/op.py -> Client.authenticate / secrets.resolve). Block the `op read`
 # CLI so secret resolution stays in the SDK path.
+
+# --- ECC_HOOK_PROFILE guard ---------------------------------------------
+PROFILE="${ECC_HOOK_PROFILE:-standard}"
+HOOK_NAME="block-op-read"
+case "$PROFILE" in
+  minimal)  [[ "$HOOK_NAME" != "block-dangerous" && "$HOOK_NAME" != "block-env-writes" ]] && exit 0 ;;
+  standard) [[ "$HOOK_NAME" == "post-edit-test" ]] && exit 0 ;;
+  strict)   ;;
+esac
+echo "${ECC_DISABLED_HOOKS:-}" | grep -q "$HOOK_NAME" && exit 0
+# ------------------------------------------------------------------------
+
 INPUT=$(cat)
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 

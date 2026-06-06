@@ -45,5 +45,13 @@ dev → staging → prod promotion path as `AGENTS.md`.
 
 ## Version registry
 
-_No standalone agent prompts versioned yet. Add a `##` section per agent here
-(current version, model, last updated) when the first one is created._
+| Prompt | Version | Model | Last Updated |
+|--------|---------|-------|--------------|
+| `elt-unify-refactor` | 1.0.0 | claude-sonnet-4-6 | 2026-06-06 |
+| `fix-architecture-risks` | 1.0.0 | claude-sonnet-4-6 | 2026-06-06 |
+| `fix-ingest-pipeline` | 1.0.0 | claude-sonnet-4-6 | 2026-06-06 |
+| `review-remediation-2026-06` | 1.0.0 | claude-sonnet-4-6 | 2026-06-06 |
+
+> Note: `data-resolution-pipeline/`, `review-remediation/`, `review-remediation-run2/`, and
+> `state-data-cli/` use phase-based task-file structures (not `current.md` versioning) and
+> are not tracked in this registry.
