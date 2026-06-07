@@ -51,6 +51,7 @@ dev → staging → prod promotion path as `AGENTS.md`.
 | `fix-architecture-risks` | 1.0.0 | claude-sonnet-4-6 | 2026-06-06 |
 | `fix-ingest-pipeline` | 1.0.0 | claude-sonnet-4-6 | 2026-06-06 |
 | `review-remediation-2026-06` | 1.0.0 | claude-sonnet-4-6 | 2026-06-06 |
+| `review-response-2026-06-07` | 1.0.0 | claude-sonnet-4-6 | 2026-06-07 |
 
 > Note: `data-resolution-pipeline/`, `review-remediation/`, `review-remediation-run2/`, and
 > `state-data-cli/` use phase-based task-file structures (not `current.md` versioning) and

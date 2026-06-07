@@ -532,16 +532,13 @@ def _predict_exact_pairs(linker: Any, con: Any) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: write scored_pairs straight from DuckDB into Postgres (no Python
-# per-row loop). DuckDB ATTACHes the session's Postgres DB and runs one
-# INSERT…SELECT that joins our staged cand_pairs to the predictions and builds
-# explanation_json entirely in SQL — eliminating the build_explanation +
-# json.dumps + csv encode + per-batch COPY round-trip (~44%+ of the write).
+# Phase 2: write scored_pairs without a Python per-row loop. DuckDB builds
+# explanation_json in SQL and writes each chunk to a CSV (native C++ writer);
+# Postgres COPYs that CSV in (native C++ reader). Measured attribution at 25.87M:
+# JSON build ~4.5min, but DuckDB's own postgres-extension INSERT was ~8min (~10x
+# slower than COPY into an UNLOGGED/index-free table) — so we build with DuckDB
+# and load with COPY, getting the best of both.
 # ---------------------------------------------------------------------------
-
-# Empty DSN → the postgres extension reads PG* env vars (set from the SQLAlchemy
-# URL in _attach_postgres). Keeps the ATTACH SQL fully static (no interpolation).
-_ATTACH_PG_SQL = "ATTACH '' AS pg (TYPE postgres)"
 
 # Narrow the (wide, ~40-col retain_intermediate) prediction to just what
 # explanation_json needs, materialised ONCE as a real table (so predict runs once
@@ -559,29 +556,36 @@ _PRED_NARROW_NOTF_SQL = (
     "match_probability, COLUMNS('^gamma_') FROM pred_out"
 )
 
-# The write is chunked into this many hash buckets on uid_l. A single all-pairs
-# INSERT OOMs at 25M+ because json_group_object aggregates one group per pair and
-# does not spill; chunking bounds the live group count (~n_pairs/16 per chunk).
-_PG_WRITE_CHUNKS = 16
+# The build is chunked into this many hash buckets on uid_l. A single all-pairs
+# build OOMs at 25M+ because json_group_object aggregates one group per pair and
+# does not spill (confirmed: even narrow + preserve_insertion_order=false OOMs at
+# 16GB on 25.87M groups); chunking bounds the live group count (~n_pairs/8). The
+# "% 8" literal in the build SQL must match this value.
+_PG_WRITE_CHUNKS = 8
 
-# One static INSERT…SELECT per bucket (the bucket is bound as ``?`` — no
-# interpolation). Reconstructs explanation_json identically to _build_explanation:
-# to_json(pred_narrow) → unnest gamma_* keys → join comp_meta_lkp → per-comparison
-# entry (gamma always; label/m/u/bf kept, incl. nulls, only when a level matched;
-# bf_tf_adj merged only when non-null via RFC-7396 json_merge_patch null-deletion)
-# → json_group_object back to one object per pair. run_id/entity_type come from the
-# 1-row score_params relation. The "% 16" literal must match _PG_WRITE_CHUNKS.
-# Validated byte-for-structure equal to the Python path.
-_PG_INSERT_SCORED_SQL = (
-    "INSERT INTO pg.scored_pairs "
-    "(run_id, source_a_type, source_a_id, source_b_type, source_b_id, "
-    "entity_type, score, explanation_json) "
+# Fixed path DuckDB writes each chunk's CSV to, then Postgres COPYs it in. Must
+# match the literal in _PG_BUILD_TO_CSV_SQL. Entity types are processed serially
+# so a single reused path is safe; cleaned up after the loop.
+_CHUNK_CSV_PATH = "/tmp/resolve_scored_chunk.csv"
+
+# DuckDB builds one bucket's scored rows and writes them to the chunk CSV (no
+# header, so Postgres COPY reads it directly). Reconstructs explanation_json
+# identically to _build_explanation: to_json(pred_narrow) → unnest gamma_* keys →
+# join comp_meta_lkp → per-comparison entry (gamma always; label/m/u/bf kept,
+# incl. nulls, only when a level matched; bf_tf_adj merged only when non-null via
+# RFC-7396 json_merge_patch null-deletion) → json_group_object back to one object
+# per pair. Column order matches _COPY_SCORED_SQL. run_id/entity_type come from the
+# 1-row score_params relation; the bucket is bound as ``?`` (no interpolation).
+# The "% 8" literal must match _PG_WRITE_CHUNKS. Validated byte-for-structure
+# equal to the Python path.
+_PG_BUILD_TO_CSV_SQL = (
+    "COPY ("
     "WITH j AS ("
     "  SELECT c.a_type, c.a_id, c.b_type, c.b_id, "
     "         p.match_probability AS prob, to_json(p) AS pj "
     "  FROM cand_pairs c JOIN pred_narrow p "
     "    ON p.unique_id_l = c.uid_l AND p.unique_id_r = c.uid_r "
-    "  WHERE abs(hash(c.uid_l)) % 16 = ?"
+    "  WHERE abs(hash(c.uid_l)) % 8 = ?"
     "), g AS ("
     "  SELECT j.a_type, j.a_id, j.b_type, j.b_id, j.prob, "
     "         substr(key, 7) AS col, "
@@ -611,6 +615,7 @@ _PG_INSERT_SCORED_SQL = (
     "SELECT sp.run_id, gr.a_type, gr.a_id, gr.b_type, gr.b_id, sp.entity_type, "
     "       gr.score, gr.explanation_json "
     "FROM grouped gr CROSS JOIN score_params sp"
+    ") TO '/tmp/resolve_scored_chunk.csv' (FORMAT csv, HEADER false)"
 )
 
 # Candidate pairs predict() did not score (≈0 at scale, since the run's capped
@@ -639,29 +644,6 @@ def _comp_meta_rows(comp_meta: dict[str, list[dict[str, Any]]]) -> list[dict[str
     ]
 
 
-def _attach_postgres(con: Any, session: Session) -> None:
-    """LOAD the postgres extension and ATTACH the session's Postgres DB as ``pg``.
-
-    Uses an empty DSN so libpq reads connection params from PG* env vars, set here
-    from the bound SQLAlchemy URL — the ATTACH SQL stays fully static (no
-    interpolation, no ``.env`` read).
-    """
-    url = session.get_bind().url
-    env = {
-        "PGHOST": url.host,
-        "PGPORT": str(url.port) if url.port else None,
-        "PGUSER": url.username,
-        "PGDATABASE": url.database,
-        "PGPASSWORD": url.password,
-    }
-    for key, value in env.items():
-        if value:
-            os.environ[key] = value
-    con.execute("INSTALL postgres")
-    con.execute("LOAD postgres")
-    con.execute(_ATTACH_PG_SQL)
-
-
 def _write_scored_via_pg(
     con: Any,
     session: Session,
@@ -672,8 +654,10 @@ def _write_scored_via_pg(
     entity_type: str,
     n_pairs: int,
 ) -> int:
-    """Write this type's scored pairs by INSERT…SELECT from DuckDB into Postgres.
+    """Write this type's scored pairs: DuckDB builds JSON + CSV, Postgres COPYs it.
 
+    Per hash bucket, DuckDB builds the scored rows and writes them to a CSV with
+    its native writer (``_PG_BUILD_TO_CSV_SQL``), then Postgres COPYs that file in.
     Returns the number of ``scored_pairs`` rows written. ``cand_pairs`` and
     ``pred_out`` must already exist in ``con``.
     """
@@ -693,16 +677,28 @@ def _write_scored_via_pg(
     has_tf = any(c.startswith("bf_tf_adj_") for c in pred_cols)
     con.execute(_PRED_NARROW_TF_SQL if has_tf else _PRED_NARROW_NOTF_SQL)
 
-    _attach_postgres(con, session)
-    # Chunk the write by uid_l hash bucket: a single all-pairs INSERT OOMs because
-    # json_group_object holds one (non-spilling) group per pair. Bucket is bound as
-    # a parameter (no interpolation).
-    for bucket in range(_PG_WRITE_CHUNKS):
-        con.execute(_PG_INSERT_SCORED_SQL, [bucket])
+    # Build + load per bucket: DuckDB writes the chunk CSV, Postgres COPYs it in.
+    # Chunking bounds the (non-spilling) json_group_object group count; bucket is
+    # bound as a parameter (no interpolation).
+    raw = session.connection().connection.driver_connection
+    written = 0
+    try:
+        for bucket in range(_PG_WRITE_CHUNKS):
+            con.execute(_PG_BUILD_TO_CSV_SQL, [bucket])
+            with open(_CHUNK_CSV_PATH) as fh:
+                cur = raw.cursor()
+                try:
+                    cur.copy_expert(_COPY_SCORED_SQL, fh)
+                    written += cur.rowcount
+                finally:
+                    cur.close()
+            session.commit()
+    finally:
+        if os.path.exists(_CHUNK_CSV_PATH):
+            os.remove(_CHUNK_CSV_PATH)
 
     # Fallback for pairs predict() did not cover (≈0 at scale).
     missed = con.execute(_PG_MISSED_PAIRS_SQL).fetchall()
-    written = n_pairs - len(missed)
     if missed:
         LOGGER.info(
             "predict() missed %s/%s pairs for entity_type=%r; using compare_two_records",
@@ -783,7 +779,13 @@ def _score_entity_type_streaming(
         # On-disk DuckDB with bounded memory; spills to tmp_dir at scale.
         con = duckdb.connect(
             os.path.join(tmp_dir, "score.duckdb"),
-            config={"memory_limit": _DUCKDB_MEMORY_LIMIT, "temp_directory": tmp_dir},
+            config={
+                "memory_limit": _DUCKDB_MEMORY_LIMIT,
+                "temp_directory": tmp_dir,
+                # Lower peak memory of the chunked json_group_object build; row
+                # order is irrelevant (scored_pairs has no ordering contract).
+                "preserve_insertion_order": "false",
+            },
         )
         db_api = DuckDBAPI(con)
 
