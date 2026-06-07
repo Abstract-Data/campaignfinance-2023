@@ -743,19 +743,21 @@ def run_score_stage(session: Session, run_id: int, config: dict) -> dict:
         ).all()
     )
 
-    # Clear any previous scored_pairs for this run.
-    session.exec(delete(ScoredPair).where(ScoredPair.run_id == run_id))
-    session.commit()
-
-    # On Postgres, drop the scored_pairs secondary indexes around the bulk load
-    # (publish-style): index maintenance per COPY otherwise dominates at 25M+
-    # rows. Rebuilt in finally so an interrupt never leaves the table unindexed.
+    # On Postgres, drop the scored_pairs secondary indexes around the whole
+    # bulk load (publish-style): index maintenance per COPY otherwise dominates
+    # at 25M+ rows, and it also makes the idempotent delete-of-prior-rows below
+    # far cheaper on re-runs. Rebuilt in finally so an interrupt never leaves the
+    # table unindexed.
     swap_indexes = session.get_bind().dialect.name == "postgresql"
     if swap_indexes:
         _drop_scored_indexes(session)
 
     total_pairs = 0
     try:
+        # Clear any previous scored_pairs for this run (indexes already dropped).
+        session.exec(delete(ScoredPair).where(ScoredPair.run_id == run_id))
+        session.commit()
+
         for entity_type in entity_types:
             cfg = _load_entity_config(entity_type)
             if cfg is None:
