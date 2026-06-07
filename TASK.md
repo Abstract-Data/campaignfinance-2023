@@ -55,11 +55,22 @@ baseline and confirms how much #1 can buy. Evidence: printed per-phase rows/s.
   Python fallback (`compare_two_records`).
 - Non-postgres (sqlite tests) keeps the CURRENT streaming fetchmany path unchanged
   — the DuckDB-ATTACH path is postgres-only (`comp_meta and dialect=='postgresql'`).
+- OOM FIX: a single all-pairs INSERT OOMs at 25M — `json_group_object` holds one
+  non-spilling group per pair, and `to_json` over the wide (~40-col) prediction ×
+  `json_keys` UNNEST = ~1B intermediate rows. Fixed by (a) narrowing the prediction
+  to `unique_id_l/r, match_probability, COLUMNS('^gamma_'), COLUMNS('^bf_tf_adj_')`
+  materialized ONCE (predict runs once; static regex, no per-col interpolation),
+  and (b) chunking the INSERT into `_PG_WRITE_CHUNKS=16` hash buckets on
+  `abs(hash(uid_l)) % 16 = ?` (bound param) so live group count is ~n_pairs/16.
 - EVIDENCE: equiv harness (real person config + forced null-bf) → SQL JSON ==
   Python JSON, 0 mismatches; PG end-to-end on run_id=2 organization → 3,712
   written == 3,712 in DB, 0 misses, scores∈[0,1], full explanation incl bf_tf_adj,
   cross-connection visibility OK. 14 score + 479 resolve tests green; ruff clean.
-- ⏳ PENDING: full run_id=2 perf re-run (target write ~31min → low single-digit min).
+- ✅ FULL run_id=2: **27.5 min (was 37.0)**, 25,873,623 exact, peak RSS 5.8 GB,
+  no OOM. Write/JSON phase ~31min → ~19min; +~2min setup (pred_narrow materialise).
+  Remaining levers (follow-up): tune chunk count (fewer pred_narrow re-scans);
+  UNPIVOT(COLUMNS) instead of to_json; split JSON-build from PG-insert to attribute
+  the ~19min.
 
 ## Files in scope
 - `app/resolve/stages/score.py` — primary (new postgres-only ATTACH write path;

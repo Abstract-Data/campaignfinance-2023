@@ -543,13 +543,35 @@ def _predict_exact_pairs(linker: Any, con: Any) -> Any:
 # URL in _attach_postgres). Keeps the ATTACH SQL fully static (no interpolation).
 _ATTACH_PG_SQL = "ATTACH '' AS pg (TYPE postgres)"
 
-# One static INSERT…SELECT. Reconstructs explanation_json identically to
-# _build_explanation: to_json(pred_out) → unnest gamma_* keys → join the
-# comp_meta_lkp lookup → per-comparison entry (gamma always; label/m/u/bf kept,
-# incl. nulls, only when a level matched; bf_tf_adj merged only when non-null via
-# RFC-7396 json_merge_patch null-deletion) → json_group_object back to one object
-# per pair. run_id/entity_type come from the 1-row score_params relation (no
-# value interpolation). Validated byte-for-structure equal to the Python path.
+# Narrow the (wide, ~40-col retain_intermediate) prediction to just what
+# explanation_json needs, materialised ONCE as a real table (so predict runs once
+# and the chunk loop below re-scans a slim table, not the predict pipeline). The
+# COLUMNS('^…') regexes are static and select the gamma_*/bf_tf_adj_* columns
+# without naming them (no per-column interpolation). Two variants: configs with a
+# TF-adjusted comparison have bf_tf_adj_* columns, others do not (COLUMNS errors
+# on no match, so the no-TF variant omits it).
+_PRED_NARROW_TF_SQL = (
+    "CREATE TABLE pred_narrow AS SELECT unique_id_l, unique_id_r, "
+    "match_probability, COLUMNS('^gamma_'), COLUMNS('^bf_tf_adj_') FROM pred_out"
+)
+_PRED_NARROW_NOTF_SQL = (
+    "CREATE TABLE pred_narrow AS SELECT unique_id_l, unique_id_r, "
+    "match_probability, COLUMNS('^gamma_') FROM pred_out"
+)
+
+# The write is chunked into this many hash buckets on uid_l. A single all-pairs
+# INSERT OOMs at 25M+ because json_group_object aggregates one group per pair and
+# does not spill; chunking bounds the live group count (~n_pairs/16 per chunk).
+_PG_WRITE_CHUNKS = 16
+
+# One static INSERT…SELECT per bucket (the bucket is bound as ``?`` — no
+# interpolation). Reconstructs explanation_json identically to _build_explanation:
+# to_json(pred_narrow) → unnest gamma_* keys → join comp_meta_lkp → per-comparison
+# entry (gamma always; label/m/u/bf kept, incl. nulls, only when a level matched;
+# bf_tf_adj merged only when non-null via RFC-7396 json_merge_patch null-deletion)
+# → json_group_object back to one object per pair. run_id/entity_type come from the
+# 1-row score_params relation. The "% 16" literal must match _PG_WRITE_CHUNKS.
+# Validated byte-for-structure equal to the Python path.
 _PG_INSERT_SCORED_SQL = (
     "INSERT INTO pg.scored_pairs "
     "(run_id, source_a_type, source_a_id, source_b_type, source_b_id, "
@@ -557,8 +579,9 @@ _PG_INSERT_SCORED_SQL = (
     "WITH j AS ("
     "  SELECT c.a_type, c.a_id, c.b_type, c.b_id, "
     "         p.match_probability AS prob, to_json(p) AS pj "
-    "  FROM cand_pairs c JOIN pred_out p "
-    "    ON p.unique_id_l = c.uid_l AND p.unique_id_r = c.uid_r"
+    "  FROM cand_pairs c JOIN pred_narrow p "
+    "    ON p.unique_id_l = c.uid_l AND p.unique_id_r = c.uid_r "
+    "  WHERE abs(hash(c.uid_l)) % 16 = ?"
     "), g AS ("
     "  SELECT j.a_type, j.a_id, j.b_type, j.b_id, j.prob, "
     "         substr(key, 7) AS col, "
@@ -594,7 +617,7 @@ _PG_INSERT_SCORED_SQL = (
 # candidate set is a subset of predict's uncapped re-blocking) → Python fallback.
 _PG_MISSED_PAIRS_SQL = (
     "SELECT c.a_type, c.a_id, c.b_type, c.b_id "
-    "FROM cand_pairs c LEFT JOIN pred_out p "
+    "FROM cand_pairs c LEFT JOIN pred_narrow p "
     "ON p.unique_id_l = c.uid_l AND p.unique_id_r = c.uid_r "
     "WHERE p.match_probability IS NULL"
 )
@@ -662,8 +685,20 @@ def _write_scored_via_pg(
         "score_params",
         pd.DataFrame([{"run_id": run_id, "entity_type": entity_type}]),
     )
+
+    # Materialise the slim prediction once (predict runs once; chunks re-scan a
+    # narrow table, not the predict pipeline). Omit bf_tf_adj_* if the config has
+    # none (COLUMNS('^bf_tf_adj_') errors on no match).
+    pred_cols = [r[0] for r in con.execute("DESCRIBE pred_out").fetchall()]
+    has_tf = any(c.startswith("bf_tf_adj_") for c in pred_cols)
+    con.execute(_PRED_NARROW_TF_SQL if has_tf else _PRED_NARROW_NOTF_SQL)
+
     _attach_postgres(con, session)
-    con.execute(_PG_INSERT_SCORED_SQL)
+    # Chunk the write by uid_l hash bucket: a single all-pairs INSERT OOMs because
+    # json_group_object holds one (non-spilling) group per pair. Bucket is bound as
+    # a parameter (no interpolation).
+    for bucket in range(_PG_WRITE_CHUNKS):
+        con.execute(_PG_INSERT_SCORED_SQL, [bucket])
 
     # Fallback for pairs predict() did not cover (≈0 at scale).
     missed = con.execute(_PG_MISSED_PAIRS_SQL).fetchall()
