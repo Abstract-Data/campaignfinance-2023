@@ -531,6 +531,171 @@ def _predict_exact_pairs(linker: Any, con: Any) -> Any:
     return db_api.sql_pipeline_to_splink_dataframe(pipeline)
 
 
+# ---------------------------------------------------------------------------
+# Phase 2: write scored_pairs straight from DuckDB into Postgres (no Python
+# per-row loop). DuckDB ATTACHes the session's Postgres DB and runs one
+# INSERT…SELECT that joins our staged cand_pairs to the predictions and builds
+# explanation_json entirely in SQL — eliminating the build_explanation +
+# json.dumps + csv encode + per-batch COPY round-trip (~44%+ of the write).
+# ---------------------------------------------------------------------------
+
+# Empty DSN → the postgres extension reads PG* env vars (set from the SQLAlchemy
+# URL in _attach_postgres). Keeps the ATTACH SQL fully static (no interpolation).
+_ATTACH_PG_SQL = "ATTACH '' AS pg (TYPE postgres)"
+
+# One static INSERT…SELECT. Reconstructs explanation_json identically to
+# _build_explanation: to_json(pred_out) → unnest gamma_* keys → join the
+# comp_meta_lkp lookup → per-comparison entry (gamma always; label/m/u/bf kept,
+# incl. nulls, only when a level matched; bf_tf_adj merged only when non-null via
+# RFC-7396 json_merge_patch null-deletion) → json_group_object back to one object
+# per pair. run_id/entity_type come from the 1-row score_params relation (no
+# value interpolation). Validated byte-for-structure equal to the Python path.
+_PG_INSERT_SCORED_SQL = (
+    "INSERT INTO pg.scored_pairs "
+    "(run_id, source_a_type, source_a_id, source_b_type, source_b_id, "
+    "entity_type, score, explanation_json) "
+    "WITH j AS ("
+    "  SELECT c.a_type, c.a_id, c.b_type, c.b_id, "
+    "         p.match_probability AS prob, to_json(p) AS pj "
+    "  FROM cand_pairs c JOIN pred_out p "
+    "    ON p.unique_id_l = c.uid_l AND p.unique_id_r = c.uid_r"
+    "), g AS ("
+    "  SELECT j.a_type, j.a_id, j.b_type, j.b_id, j.prob, "
+    "         substr(key, 7) AS col, "
+    "         json_extract(pj, '$.' || key) AS gamma_j, "
+    "         json_extract(pj, '$.bf_tf_adj_' || substr(key, 7)) AS tf_j "
+    "  FROM j, UNNEST(json_keys(pj)) AS t(key) "
+    "  WHERE key LIKE 'gamma_%'"
+    "), entries AS ("
+    "  SELECT g.a_type, g.a_id, g.b_type, g.b_id, g.prob, g.col, "
+    "    json_merge_patch("
+    "      CASE WHEN m.col IS NOT NULL "
+    "        THEN json_object('gamma', CAST(g.gamma_j AS BIGINT), "
+    "                         'label', m.label, 'm', m.m, 'u', m.u, 'bf', m.bf) "
+    "        ELSE json_object('gamma', CAST(g.gamma_j AS BIGINT)) END, "
+    "      json_object('bf_tf_adj', CASE WHEN g.tf_j IS NULL OR g.tf_j = 'null' "
+    "                  THEN NULL ELSE CAST(g.tf_j AS DOUBLE) END)) AS entry "
+    "  FROM g LEFT JOIN comp_meta_lkp m "
+    "    ON m.col = g.col "
+    "   AND CAST(m.vector_value AS BIGINT) = CAST(g.gamma_j AS BIGINT) "
+    "  WHERE g.gamma_j IS NOT NULL AND g.gamma_j != 'null'"
+    "), grouped AS ("
+    "  SELECT a_type, a_id, b_type, b_id, "
+    "         greatest(0.0, least(1.0, any_value(prob))) AS score, "
+    "         CAST(json_group_object(col, entry) AS VARCHAR) AS explanation_json "
+    "  FROM entries GROUP BY a_type, a_id, b_type, b_id"
+    ") "
+    "SELECT sp.run_id, gr.a_type, gr.a_id, gr.b_type, gr.b_id, sp.entity_type, "
+    "       gr.score, gr.explanation_json "
+    "FROM grouped gr CROSS JOIN score_params sp"
+)
+
+# Candidate pairs predict() did not score (≈0 at scale, since the run's capped
+# candidate set is a subset of predict's uncapped re-blocking) → Python fallback.
+_PG_MISSED_PAIRS_SQL = (
+    "SELECT c.a_type, c.a_id, c.b_type, c.b_id "
+    "FROM cand_pairs c LEFT JOIN pred_out p "
+    "ON p.unique_id_l = c.uid_l AND p.unique_id_r = c.uid_r "
+    "WHERE p.match_probability IS NULL"
+)
+
+
+def _comp_meta_rows(comp_meta: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Flatten comp_meta to comp_meta_lkp rows (col, vector_value, label, m, u, bf)."""
+    return [
+        {
+            "col": col,
+            "vector_value": lvl["vector_value"],
+            "label": lvl["label"],
+            "m": lvl["m"],
+            "u": lvl["u"],
+            "bf": lvl["bf"],
+        }
+        for col, lvls in comp_meta.items()
+        for lvl in lvls
+    ]
+
+
+def _attach_postgres(con: Any, session: Session) -> None:
+    """LOAD the postgres extension and ATTACH the session's Postgres DB as ``pg``.
+
+    Uses an empty DSN so libpq reads connection params from PG* env vars, set here
+    from the bound SQLAlchemy URL — the ATTACH SQL stays fully static (no
+    interpolation, no ``.env`` read).
+    """
+    url = session.get_bind().url
+    env = {
+        "PGHOST": url.host,
+        "PGPORT": str(url.port) if url.port else None,
+        "PGUSER": url.username,
+        "PGDATABASE": url.database,
+        "PGPASSWORD": url.password,
+    }
+    for key, value in env.items():
+        if value:
+            os.environ[key] = value
+    con.execute("INSTALL postgres")
+    con.execute("LOAD postgres")
+    con.execute(_ATTACH_PG_SQL)
+
+
+def _write_scored_via_pg(
+    con: Any,
+    session: Session,
+    linker: Any,
+    comp_meta: dict[str, list[dict[str, Any]]],
+    rec_by_uid: dict[str, dict[str, Any]],
+    run_id: int,
+    entity_type: str,
+    n_pairs: int,
+) -> int:
+    """Write this type's scored pairs by INSERT…SELECT from DuckDB into Postgres.
+
+    Returns the number of ``scored_pairs`` rows written. ``cand_pairs`` and
+    ``pred_out`` must already exist in ``con``.
+    """
+    lkp = pd.DataFrame(_comp_meta_rows(comp_meta))
+    # None → NULL (object dtype) so json_object emits valid JSON null, never NaN.
+    lkp = lkp.astype(object).where(pd.notnull(lkp), None)
+    con.register("comp_meta_lkp", lkp)
+    con.register(
+        "score_params",
+        pd.DataFrame([{"run_id": run_id, "entity_type": entity_type}]),
+    )
+    _attach_postgres(con, session)
+    con.execute(_PG_INSERT_SCORED_SQL)
+
+    # Fallback for pairs predict() did not cover (≈0 at scale).
+    missed = con.execute(_PG_MISSED_PAIRS_SQL).fetchall()
+    written = n_pairs - len(missed)
+    if missed:
+        LOGGER.info(
+            "predict() missed %s/%s pairs for entity_type=%r; using compare_two_records",
+            len(missed),
+            n_pairs,
+            entity_type,
+        )
+        buf: list[dict[str, Any]] = []
+        for a_type, a_id, b_type, b_id in missed:
+            rec_a = rec_by_uid.get(_build_uid(a_type, a_id))
+            rec_b = rec_by_uid.get(_build_uid(b_type, b_id))
+            if rec_a is None or rec_b is None:
+                score, explanation = _FALLBACK_SCORE, {"note": "missing_input_record"}
+            else:
+                score, explanation = _train_and_score_pair(linker, rec_a, rec_b)
+            buf.append(
+                _scored_row(run_id, a_type, a_id, b_type, b_id, entity_type, score, explanation)
+            )
+            if len(buf) >= _SCORED_PAIR_BATCH_SIZE:
+                _bulk_insert_scored(session, buf)
+                written += len(buf)
+                buf.clear()
+        if buf:
+            _bulk_insert_scored(session, buf)
+            written += len(buf)
+    return written
+
+
 def _score_entity_type_streaming(
     session: Session,
     run_id: int,
@@ -627,6 +792,15 @@ def _score_entity_type_streaming(
             )
             pred = linker.inference.predict(threshold_match_probability=0.0)
         con.register("pred_out", pred.as_duckdbpyrelation())
+
+        # 4. Write scored_pairs. On Postgres, INSERT…SELECT straight from DuckDB
+        #    into the attached DB, building explanation_json in SQL — no Python
+        #    per-row loop (Phase 2). On other backends (sqlite tests), stream the
+        #    join out via fetchmany and bulk-insert.
+        if comp_meta and session.get_bind().dialect.name == "postgresql":
+            return _write_scored_via_pg(
+                con, session, linker, comp_meta, rec_by_uid, run_id, entity_type, n_pairs
+            )
 
         # Stream the join with DuckDB-native fetchmany (positional tuples; no
         # pyarrow dependency). Map column names to positions once.

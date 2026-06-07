@@ -41,17 +41,25 @@ baseline and confirms how much #1 can buy. Evidence: printed per-phase rows/s.
 - Evidence: 14 score tests green (sqlite path unaffected); ruff clean. Benefit
   realized on the Postgres path (COPY today, DuckDB INSERT after Phase 2).
 
-## Phase 2 — #1 DuckDB writes directly to Postgres
-- `cand_pairs` DuckDB table gains `run_id` + `entity_type` columns (constant per
-  call) so the final INSERT interpolates nothing.
-- `comp_meta_lkp` materialized via `con.append` from `_extract_comp_meta`.
-- Runtime: derive `PGHOST/PGUSER/PGDATABASE`(+`PGPASSWORD` iff present) from
-  `session.get_bind().url` into `os.environ`; `LOAD postgres`; `ATTACH '' AS pg`.
-- One static `INSERT INTO pg.scored_pairs (<cols>) SELECT …` = validated CTE
-  (cand_pairs ⋈ pred_out → generic JSON build → score clamped `[0,1]`).
-- Rare predict() misses keep the Python `compare_two_records` fallback.
-- Non-postgres (sqlite tests) keeps the CURRENT streaming COPY/executemany path
-  unchanged — the DuckDB-ATTACH path is postgres-only.
+## Phase 2 — #1 DuckDB writes directly to Postgres  ✅ IMPLEMENTED + correctness-validated
+- `run_id`/`entity_type` supplied via a 1-row `score_params` relation (not bloating
+  `cand_pairs`); `comp_meta_lkp` materialized via `con.register` from
+  `_extract_comp_meta` (NaN→None so json_object emits valid null, never NaN).
+- `_attach_postgres`: derive `PGHOST/PGPORT/PGUSER/PGDATABASE`(+`PGPASSWORD` iff
+  present) from `session.get_bind().url` into `os.environ`; `INSTALL/LOAD postgres`;
+  static `ATTACH '' AS pg (TYPE postgres)`.
+- One static `_PG_INSERT_SCORED_SQL` = validated CTE (cand_pairs ⋈ pred_out →
+  `to_json` key-unnest → comp_meta join → CASE-based entry (keeps `bf:null` when
+  matched; `bf_tf_adj` via merge_patch omit-null) → `json_group_object` → score
+  `greatest(0,least(1,prob))`). `_write_scored_via_pg` runs it + the rare-miss
+  Python fallback (`compare_two_records`).
+- Non-postgres (sqlite tests) keeps the CURRENT streaming fetchmany path unchanged
+  — the DuckDB-ATTACH path is postgres-only (`comp_meta and dialect=='postgresql'`).
+- EVIDENCE: equiv harness (real person config + forced null-bf) → SQL JSON ==
+  Python JSON, 0 mismatches; PG end-to-end on run_id=2 organization → 3,712
+  written == 3,712 in DB, 0 misses, scores∈[0,1], full explanation incl bf_tf_adj,
+  cross-connection visibility OK. 14 score + 479 resolve tests green; ruff clean.
+- ⏳ PENDING: full run_id=2 perf re-run (target write ~31min → low single-digit min).
 
 ## Files in scope
 - `app/resolve/stages/score.py` — primary (new postgres-only ATTACH write path;
