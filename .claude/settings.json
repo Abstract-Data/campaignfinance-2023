@@ -69,6 +69,15 @@
             "command": "bash .claude/hooks/goal-gate.sh"
           }
         ]
+      },
+      {
+        "matcher": "gh pr create|gt submit|gt stack submit|but pr new",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pre-pr-review-gate.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -109,6 +118,11 @@
           {
             "type": "agent",
             "prompt": "First run: git diff --name-only HEAD 2>/dev/null | grep '\\.py$' to check if any Python files were modified. If the output is empty, immediately return {\"decision\": \"allow\"}. If Python files were changed: fetch the Python Design Principles Playbook at https://app.notion.com/p/3727d7f56298819cac31c4245e0870a9, read the False Positives section first, evaluate the changed Python files against principles P1-P17 using the scope rules in the playbook, apply the false positive filter. Return {\"decision\": \"block\", \"reason\": \"VIOLATIONS: <summary>\"} if any principles fail, or {\"decision\": \"allow\"} if all pass.",
+            "timeout": 120
+          },
+          {
+            "type": "agent",
+            "prompt": "First run: git diff --name-only HEAD 2>/dev/null | grep '\\.sql$' | grep -v 'dbt_packages/' to check if any project SQL files were modified. If the output is empty, immediately return {\"decision\": \"allow\"}. If SQL files were changed: fetch the PostgreSQL Design Principles Playbook at https://app.notion.com/p/3727d7f562988183b5d6e775ea065d30, read the False Positives section first, determine schema context (OLTP vs analytics \u2014 transform/dbt/ models are analytics: skip P1; tiny tables: P6-P8 advisory), evaluate the changed SQL against principles P1-P17, apply the false positive filter, and respect house conventions (singular table names, 30-char identifier soft cap). Return {\"decision\": \"block\", \"reason\": \"VIOLATIONS: <summary>\"} if any principles fail, or {\"decision\": \"allow\"} if all pass.",
             "timeout": 120
           }
         ]
