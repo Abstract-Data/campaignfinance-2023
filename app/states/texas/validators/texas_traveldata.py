@@ -1,13 +1,14 @@
 from datetime import date, datetime
 from typing import Optional
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import field_validator, model_validator
 from pydantic_core import PydanticCustomError
+from sqlmodel import Field
 
 from .texas_settings import TECSettings
 
 
-class TECTravelData(TECSettings):
+class TECTravelData(TECSettings, table=True):
     __tablename__ = "tx_travel_data"
     __table_args__ = {"schema": "texas"}
 
