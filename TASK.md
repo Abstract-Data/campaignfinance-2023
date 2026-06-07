@@ -1,108 +1,88 @@
-# TASK — Scale the resolve score stage to millions of candidate pairs
+# TASK — Eliminate the ~31 min scored_pairs write (DuckDB→Postgres)
 
 ## Goal
-Rework `app/resolve/stages/score.py::run_score_stage` so it no longer OOMs at
-25% TX scale (run_id=2: 3.2M persons, 25,873,623 candidate_pairs). The current
-implementation materialises the entire run in Python:
-- `list(session.exec(select(CandidatePair)...))` → 25.87M ORM objects (~10GB+)
-- `linker.inference.predict(...).as_pandas_dataframe()` → ~25M-row pandas frame
-  with retained intermediate columns (~40 cols)
-- `_predictions_lookup(...)` → `.iterrows()` over 25M rows building a dict
-  (catastrophically slow *and* a second copy in memory)
+The score stage is now write-bound: full run_id=2 (25,873,623 pairs) is 37 min,
+~31 min of it writing `scored_pairs` via a per-row Python loop
+(fetchmany tuple → `_build_explanation` → `json.dumps` → `csv.writerow` →
+psycopg2 COPY), single-threaded, ×25.87M. Remove that Python per-row cost.
 
-## Approach (validated against splink 4.0.16 / duckdb 1.5.3)
-Keep Splink's `predict()` (DuckDB computes the 25M-pair comparison on-disk fine),
-but **never** call `as_pandas_dataframe()` on it and **never** build an all-pairs
-Python dict. Instead:
-1. Partition by `entity_type` driven from `resolution_input` (few types; person
-   dominates) — do NOT load all candidate_pairs into Python to group them.
-2. Per entity_type: load that type's `resolution_input` rows, train the linker on
-   an **on-disk** `DuckDBAPI` (spills intermediates to disk, not RAM).
-3. `pred = linker.inference.predict(threshold_match_probability=0.0)` → a
-   DuckDB-backed `SplinkDataFrame` (not pandas).
-4. Stream this type's candidate_pairs from the DB (`yield_per`), normalise each to
-   `(min,max)` uid order, bulk-insert into a DuckDB `cand_pairs` table in the
-   linker's own connection.
-5. `SELECT c.*, p.* FROM cand_pairs c LEFT JOIN <pred> p ON p.unique_id_l=c.uid_l
-   AND p.unique_id_r=c.uid_r`, streamed via `fetch_record_batch`. Build one
-   `ScoredPair` per candidate pair; write in batches. (Splink dedupe_only emits
-   pairs with `unique_id_l < unique_id_r` lexically, matching the normalised key.)
-6. Pairs the join misses (`match_probability IS NULL`) fall back to
-   `compare_two_records` — exactly the existing fallback behaviour.
+Approved sequencing: **Phase 0 profile → Phase 1 (#2 UNLOGGED) → Phase 2 (#1 DuckDB ATTACH→Postgres)**.
+`#1` subsumes `#4` (JSON built in SQL) and makes `#3` (parallel Python COPY) moot.
+
+## Validated facts (de-risked before planning)
+- DuckDB 1.5.3 `postgres` extension loads; `ATTACH '' AS pg (TYPE postgres)` with
+  an **empty DSN** authenticates via libpq env vars (`PGHOST/PGUSER/PGDATABASE`) —
+  static SQL, no interpolation, no `.env` read.
+- `INSERT INTO pg.scored_pairs (<explicit cols>) SELECT …` round-trips correctly;
+  PG serial `id` auto-fills.
+- A **generic, static** SQL JSON build (`to_json(pred_out)` → `json_keys` UNNEST →
+  join a `comp_meta_lkp` table → `json_merge_patch` entry → `json_group_object`)
+  reproduces `_build_explanation` EXACTLY: gamma always present; label/m/u/bf only
+  when a comparison level matched; bf_tf_adj only when non-null (RFC-7396
+  null-deletion semantics of `json_merge_patch`). No per-column interpolation →
+  does not trip the sql-injection hook. `comp_meta_lkp` is loaded via `con.append`
+  (pandas, no SQL).
+
+## Phase 0 — Profile (no commit)
+`/tmp` harness times the current write loop on a ~2M person slice: split
+`_build_explanation`+`json.dumps` vs `csv.writerow` vs `copy_expert`. Establishes a
+baseline and confirms how much #1 can buy. Evidence: printed per-phase rows/s.
+
+## Phase 1 — #2 UNLOGGED load target (Postgres only)  ✅ DONE
+- MEASUREMENT (3M-row COPY micro-benchmark, indexes dropped):
+  LOGGED COPY 163k rows/s; UNLOGGED COPY 509k rows/s (**3.12x**); but `SET LOGGED`
+  restore = +24.6s (full-table WAL rewrite) → swap-and-restore is **0.60x (NET
+  SLOWER)**. So the only beneficial form is **permanent UNLOGGED** (no restore).
+- `run_score_stage`: on `dialect == "postgresql"`, `_ensure_scored_unlogged`
+  (`ALTER TABLE scored_pairs SET UNLOGGED`, conditional on `relpersistence='p'` so
+  re-runs don't rewrite) before the bulk-load window. NOT restored to LOGGED.
+  `scored_pairs` is a regenerable resolve intermediate (re-run score to rebuild),
+  consistent with the UNLOGGED `candidate_pairs_stage` the blocking stage uses.
+- Evidence: 14 score tests green (sqlite path unaffected); ruff clean. Benefit
+  realized on the Postgres path (COPY today, DuckDB INSERT after Phase 2).
+
+## Phase 2 — #1 DuckDB writes directly to Postgres
+- `cand_pairs` DuckDB table gains `run_id` + `entity_type` columns (constant per
+  call) so the final INSERT interpolates nothing.
+- `comp_meta_lkp` materialized via `con.append` from `_extract_comp_meta`.
+- Runtime: derive `PGHOST/PGUSER/PGDATABASE`(+`PGPASSWORD` iff present) from
+  `session.get_bind().url` into `os.environ`; `LOAD postgres`; `ATTACH '' AS pg`.
+- One static `INSERT INTO pg.scored_pairs (<cols>) SELECT …` = validated CTE
+  (cand_pairs ⋈ pred_out → generic JSON build → score clamped `[0,1]`).
+- Rare predict() misses keep the Python `compare_two_records` fallback.
+- Non-postgres (sqlite tests) keeps the CURRENT streaming COPY/executemany path
+  unchanged — the DuckDB-ATTACH path is postgres-only.
 
 ## Files in scope
-- `app/resolve/stages/score.py` — the rework (primary).
-- `tests/resolve/test_score.py` — must stay green; add a streaming/large-ish case
-  only if needed to lock the new path (no behavioural change to existing asserts).
+- `app/resolve/stages/score.py` — primary (new postgres-only ATTACH write path;
+  `comp_meta_lkp` builder; env/ATTACH helper; `run_score_stage` UNLOGGED swap).
+- `TASK.md` — this file.
+- No schema/model change (`ScoredPair` unchanged; UNLOGGED is runtime DDL).
 
 ## Behaviour to preserve (locked by tests/resolve/test_score.py)
-- Exactly **one** `scored_pairs` row per candidate_pair (`pairs_compared` == count).
-- `score` in `[0,1]`; `explanation_json` a non-empty dict.
-- Deterministic across repeated runs (same seed).
-- TF adjustment active: `bf_tf_adj` present in the `line_1` explanation; common
-  address has lower `bf_tf_adj` than rare address.
-- Per-entity-type configs (person / organization / committee) used independently.
-- Idempotent: re-run replaces prior `scored_pairs` for the run; runs isolated.
-- Empty candidate_pairs → `{"pairs_compared": 0}`.
+- Exactly one `scored_pairs` row per candidate_pair (`pairs_compared` == count).
+- `score` in `[0,1]`; `explanation_json` a non-empty dict with the SAME structure
+  on both the postgres and sqlite paths.
+- TF adjustment active: `line_1` explanation has `bf_tf_adj`; common address has
+  lower `bf_tf_adj` than rare.
+- Deterministic (same seed); idempotent re-run replaces the run's rows; empty →
+  `{"pairs_compared": 0}`.
 
 ## Checks to run (evidence required before "done")
-1. `uv run pytest tests/resolve/test_score.py -q` → all green (sqlite contract).
-   ✅ DONE — 14 passed. Full resolve suite (67) also green.
-2. `uv run ruff check app/resolve/stages/score.py` → clean. ✅ DONE.
-3. Scaled validation on spike DB `campaignfinance_elt_spike` run_id=2: score stage
-   completes **without OOM**, bounded RSS.
-   ✅ DONE (bounded scale, real data) — scored the `organization` entity_type of
-   run_id=2: 3,712 rows, exact DB-count match, **peak RSS ~1.2 GB (flat)**, predict
-   0.08 s; exercised record streaming, the full 25.87M-pair routing scan, predict(),
-   the streamed join, and Core bulk writes.
-   ⚠️ DEFERRED — the full 25.87M person run was NOT executed: the dev volume had
-   only ~25 GB free (98% full) and predict()'s ~70M wide intermediate could exhaust
-   it, risking the system disk. To run it, free disk or set `RESOLVE_DUCKDB_TMP` to a
-   volume with headroom. Code is proven correct + memory-bounded on real data.
-4. Spot-check: a handful of `scored_pairs` rows have score in range and non-empty
-   explanation incl. a gamma breakdown. ✅ DONE (0.9996 / 0.057 / 0.057 with
-   normalized_org/line_1/city/zip5 breakdowns).
+1. `uv run pytest tests/resolve/test_score.py -q` → 14 green (sqlite path untouched).
+2. Full resolve suite green; `uv run ruff check app/resolve/stages/score.py` clean.
+3. **Structural-equivalence**: on a bounded real slice, the ATTACH-path
+   `explanation_json` parses to the same dict as the current Python path for the
+   same pairs.
+4. Full `run_id=2` spike re-run: `pairs_compared = 25,873,623` exact, bounded RSS,
+   report new wall-clock vs the 37 min baseline (target: write ~31min → low
+   single-digit min).
 
-## Follow-up optimizations (after full-run revealed 15.4h, write+predict bound)
-The full run_id=2 run completed correctly (25,873,623, memory/disk bounded) but
-took 15.4h: ~13.6h writing scored_pairs (executemany ~526 rows/s) + ~85min
-predict() on the uncapped ~70M re-blocking + ~15min EM. Two fixes implemented:
-
-1. **Write via COPY + drop/rebuild indexes** (commits 1bf4f60 + this one).
-   `_bulk_insert_scored` uses PostgreSQL COPY on the postgres dialect (executemany
-   fallback on sqlite); `run_score_stage` drops the scored_pairs secondary indexes
-   (entity_type, run_id) around the bulk-load loop and rebuilds them in a finally.
-   Expected: ~13.6h write → ~minutes.
-2. **Exact-edge-list scoring** (`_predict_exact_pairs`). Replaces predict()'s
-   uncapped re-blocking by feeding our staged candidate pairs straight into
-   Splink's comparison-vector → match-probability pipeline (internals, pinned
-   4.0.16; try/except fallback to full predict()). Scores exactly 25.87M, not
-   ~70M. Expected: ~85min predict → ~half.
-
-Checks: full resolve suite green (479 passed); 14 score unit tests green (they
-now exercise the exact-pair path); ruff clean.
-RESULT — full run_id=2 re-run: **15.4h → 2.24h (6.9x)**, 25,873,623 exact, peak
-RSS 5.8GB. Write 13.6h → ~31min (#1, the dominant win). #2 ran for real (0
-fallbacks, exact 25.87M) and lowered memory/disk but did NOT cut the ~94min
-predict wall-clock — predict isn't pair-count-bound at this scale (next lever =
-trim retain_intermediate columns / TF). Both features implemented + correct.
-
-3. **Candidate-pair staging via DuckDB append, not executemany** (commit 06d8b0a).
-   Profiling the "~94min predict phase" revealed it was NOT predict/EM/retained
-   columns (predict ~2min, EM ~45s, retain True-vs-False 5s-vs-4s) — it was
-   `con.executemany` staging the 25.87M pairs at 4,754 rows/s (~91min). Swapped
-   to `con.append(pandas batch)` = 737k rows/s (~35s), 155x.
-   RESULT — full run_id=2: **37.0 min** (25,873,623 exact, peak RSS 6.0GB), now
-   write-bound (~31min). Cumulative: 15.4h → 2.24h → **37min (25x)**.
-
-## Out of scope (defer, note in handoff)
-- `max_pairs_per_run` cap policy decision (separate; cap is moot for score cost).
-- Running classify/cluster/survivorship end-to-end (next workstream once score scales).
-- The Phase-1 ELT record-type expansion plan (misty-hugging-puzzle.md) — unrelated.
-- EM training time (~15min, pre-existing in _train_linker; not addressed here).
-- Single-pass pair routing (currently one candidate_pairs scan per entity_type).
+## Out of scope
+- `#3` parallel Python COPY (made moot by #1).
+- The per-entity-type full candidate_pairs scan (single-pass router) — separate.
+- Downstream classify/cluster/survivorship.
 
 ## Done =
-Checks 1–4 pass with recorded evidence (tests green, ruff clean, run_id=2 scored
-without OOM at full pair count), task-critic PASS, and the blocking-scale-tuning
-memory updated to mark the score stage fixed.
+Checks 1–4 pass with recorded evidence, task-critic PASS, gate clean, and the
+blocking-scale-tuning memory updated with the write-phase result.
