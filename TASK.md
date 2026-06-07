@@ -87,6 +87,14 @@ fallbacks, exact 25.87M) and lowered memory/disk but did NOT cut the ~94min
 predict wall-clock — predict isn't pair-count-bound at this scale (next lever =
 trim retain_intermediate columns / TF). Both features implemented + correct.
 
+3. **Candidate-pair staging via DuckDB append, not executemany** (commit 06d8b0a).
+   Profiling the "~94min predict phase" revealed it was NOT predict/EM/retained
+   columns (predict ~2min, EM ~45s, retain True-vs-False 5s-vs-4s) — it was
+   `con.executemany` staging the 25.87M pairs at 4,754 rows/s (~91min). Swapped
+   to `con.append(pandas batch)` = 737k rows/s (~35s), 155x.
+   RESULT — full run_id=2: **37.0 min** (25,873,623 exact, peak RSS 6.0GB), now
+   write-bound (~31min). Cumulative: 15.4h → 2.24h → **37min (25x)**.
+
 ## Out of scope (defer, note in handoff)
 - `max_pairs_per_run` cap policy decision (separate; cap is moot for score cost).
 - Running classify/cluster/survivorship end-to-end (next workstream once score scales).
