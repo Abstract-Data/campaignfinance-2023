@@ -80,8 +80,12 @@ predict() on the uncapped ~70M re-blocking + ~15min EM. Two fixes implemented:
    ~70M. Expected: ~85min predict → ~half.
 
 Checks: full resolve suite green (479 passed); 14 score unit tests green (they
-now exercise the exact-pair path); ruff clean; full run_id=2 re-run to confirm
-end-to-end wall-clock + exact count (in progress).
+now exercise the exact-pair path); ruff clean.
+RESULT — full run_id=2 re-run: **15.4h → 2.24h (6.9x)**, 25,873,623 exact, peak
+RSS 5.8GB. Write 13.6h → ~31min (#1, the dominant win). #2 ran for real (0
+fallbacks, exact 25.87M) and lowered memory/disk but did NOT cut the ~94min
+predict wall-clock — predict isn't pair-count-bound at this scale (next lever =
+trim retain_intermediate columns / TF). Both features implemented + correct.
 
 ## Out of scope (defer, note in handoff)
 - `max_pairs_per_run` cap policy decision (separate; cap is moot for score cost).
