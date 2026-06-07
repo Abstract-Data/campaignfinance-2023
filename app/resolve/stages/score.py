@@ -425,7 +425,9 @@ _CREATE_CAND_PAIRS_SQL = (
     "(uid_l VARCHAR, uid_r VARCHAR, "
     "a_type VARCHAR, a_id VARCHAR, b_type VARCHAR, b_id VARCHAR)"
 )
-_INSERT_CAND_PAIRS_SQL = "INSERT INTO cand_pairs VALUES (?, ?, ?, ?, ?, ?)"
+# Column order for cand_pairs — used to build the pandas batch for con.append.
+# DuckDB's append() appends by position, matching the table definition above.
+_CAND_PAIR_COLS = ["uid_l", "uid_r", "a_type", "a_id", "b_type", "b_id"]
 _JOIN_SCORES_SQL = (
     "SELECT c.a_type, c.a_id, c.b_type, c.b_id, p.* "
     "FROM cand_pairs c "
@@ -562,7 +564,10 @@ def _score_entity_type_streaming(
         settings_obj = _linker_settings_obj(linker)
         comp_meta = _extract_comp_meta(settings_obj) if settings_obj is not None else {}
 
-        # 2. Stage this type's candidate pairs into DuckDB (streamed; no Python list).
+        # 2. Stage this type's candidate pairs into DuckDB (streamed; no Python
+        #    list). Uses con.append from pandas batches, NOT executemany —
+        #    DuckDB executemany is ~per-row (~5k rows/s; ~90min at 25.87M),
+        #    append is ~150x faster (measured 738k rows/s; ~35s at 25.87M).
         con.execute(_CREATE_CAND_PAIRS_SQL)
         n_pairs = 0
         stage_buf: list[tuple[str, str, str, str, str, str]] = []
@@ -571,11 +576,11 @@ def _score_entity_type_streaming(
         ):
             stage_buf.append((uid_l, uid_r, a_type, a_id, b_type, b_id))
             if len(stage_buf) >= _PAIR_STREAM_SIZE:
-                con.executemany(_INSERT_CAND_PAIRS_SQL, stage_buf)
+                con.append("cand_pairs", pd.DataFrame(stage_buf, columns=_CAND_PAIR_COLS))
                 n_pairs += len(stage_buf)
                 stage_buf.clear()
         if stage_buf:
-            con.executemany(_INSERT_CAND_PAIRS_SQL, stage_buf)
+            con.append("cand_pairs", pd.DataFrame(stage_buf, columns=_CAND_PAIR_COLS))
             n_pairs += len(stage_buf)
         if n_pairs == 0:
             return 0
