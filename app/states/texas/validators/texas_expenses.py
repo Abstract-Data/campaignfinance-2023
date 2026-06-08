@@ -10,11 +10,6 @@ import app.states.texas.funcs.tx_validation_funcs as tx_funcs
 from ._mixins import format_individual_payee_name, validate_individual_entity_discriminator
 from .texas_settings import TECSettings
 
-# class TECExpenseCategory(TECSettings, table=True):
-#     recordType: str = Field(..., description="Record type code - always EXCAT")
-#     expendCategoryCodeValue: str = Field(..., description="Expenditure category code")
-#     expendCategoryCodeLabel: str = Field(..., description="Expenditure category description")
-
 
 class TECExpense(TECSettings, table=True):
     __tablename__ = "tx_expenses"

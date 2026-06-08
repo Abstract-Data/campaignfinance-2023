@@ -176,11 +176,59 @@ LEFT JOIN (
 LEFT JOIN canonical_campaign cc ON cc.id = cc_pick.id
 """
 
+_CROSS_ROLE_ENTITIES_SELECT = """
+SELECT
+    ce.id AS canonical_entity_id,
+    ce.canonical_name,
+    COALESCE(contrib.contribution_count, 0) AS contribution_count,
+    COALESCE(contrib.contribution_total, 0.0) AS contribution_total,
+    COALESCE(expend.expenditure_count, 0) AS expenditure_count,
+    COALESCE(expend.expenditure_total, 0.0) AS expenditure_total,
+    (COALESCE(contrib.contribution_total, 0.0) + COALESCE(expend.expenditure_total, 0.0))
+        AS total_activity
+FROM canonical_entity ce
+INNER JOIN (
+    SELECT
+        contributor_xw.canonical_entity_id,
+        COUNT(*) AS contribution_count,
+        COALESCE(SUM(uc.amount), 0.0) AS contribution_total
+    FROM unified_contributions uc
+    LEFT JOIN entity_crosswalk contributor_xw
+        ON contributor_xw.source_type = 'unified_entity'
+        AND contributor_xw.source_id = CAST(uc.contributor_entity_id AS TEXT)
+        AND contributor_xw.run_id = (SELECT MAX(run_id) FROM entity_crosswalk)
+    WHERE contributor_xw.canonical_entity_id IS NOT NULL
+    GROUP BY contributor_xw.canonical_entity_id
+) contrib ON contrib.canonical_entity_id = ce.id
+INNER JOIN (
+    SELECT
+        payee_xw.canonical_entity_id,
+        COUNT(*) AS expenditure_count,
+        COALESCE(SUM(ut.amount), 0.0) AS expenditure_total
+    FROM unified_transactions ut
+    LEFT JOIN (
+        SELECT transaction_id, MIN(entity_id) AS entity_id
+        FROM unified_transaction_persons
+        WHERE lower(CAST(role AS VARCHAR)) = 'payee'
+        GROUP BY transaction_id
+    ) payee_role ON payee_role.transaction_id = ut.id
+    LEFT JOIN entity_crosswalk payee_xw
+        ON payee_xw.source_type = 'unified_entity'
+        AND payee_xw.source_id = CAST(payee_role.entity_id AS TEXT)
+        AND payee_xw.run_id = (SELECT MAX(run_id) FROM entity_crosswalk)
+    WHERE lower(CAST(ut.transaction_type AS VARCHAR)) = 'expenditure'
+      AND payee_xw.canonical_entity_id IS NOT NULL
+    GROUP BY payee_xw.canonical_entity_id
+) expend ON expend.canonical_entity_id = ce.id
+ORDER BY total_activity DESC
+"""
+
 _VIEW_SELECTS: tuple[tuple[str, str], ...] = (
     ("resolved_transactions", _RESOLVED_TRANSACTIONS_SELECT),
     ("resolved_contributions", _RESOLVED_CONTRIBUTIONS_SELECT),
     ("resolved_expenditures", _RESOLVED_EXPENDITURES_SELECT),
     ("resolved_reports", _RESOLVED_REPORTS_SELECT),
+    ("cross_role_entities", _CROSS_ROLE_ENTITIES_SELECT),
 )
 
 _DROP_SQLITE_VIEW_SQL = {
@@ -188,6 +236,7 @@ _DROP_SQLITE_VIEW_SQL = {
     "resolved_contributions": "DROP VIEW IF EXISTS resolved_contributions",
     "resolved_expenditures": "DROP VIEW IF EXISTS resolved_expenditures",
     "resolved_reports": "DROP VIEW IF EXISTS resolved_reports",
+    "cross_role_entities": "DROP VIEW IF EXISTS cross_role_entities",
 }
 
 _CREATE_SQLITE_VIEW_SQL = {
@@ -195,6 +244,7 @@ _CREATE_SQLITE_VIEW_SQL = {
     "resolved_contributions": f"CREATE VIEW resolved_contributions AS {_RESOLVED_CONTRIBUTIONS_SELECT}",
     "resolved_expenditures": f"CREATE VIEW resolved_expenditures AS {_RESOLVED_EXPENDITURES_SELECT}",
     "resolved_reports": f"CREATE VIEW resolved_reports AS {_RESOLVED_REPORTS_SELECT}",
+    "cross_role_entities": f"CREATE VIEW cross_role_entities AS {_CROSS_ROLE_ENTITIES_SELECT}",
 }
 
 _CREATE_POSTGRES_VIEW_SQL = {
@@ -210,6 +260,9 @@ _CREATE_POSTGRES_VIEW_SQL = {
     "resolved_reports": (
         f"CREATE OR REPLACE VIEW resolved_reports AS {_RESOLVED_REPORTS_SELECT}"
     ),
+    "cross_role_entities": (
+        f"CREATE OR REPLACE VIEW cross_role_entities AS {_CROSS_ROLE_ENTITIES_SELECT}"
+    ),
 }
 
 _DROP_POSTGRES_MAT_VIEW_SQL = {
@@ -217,6 +270,7 @@ _DROP_POSTGRES_MAT_VIEW_SQL = {
     "resolved_contributions": "DROP MATERIALIZED VIEW IF EXISTS resolved_contributions",
     "resolved_expenditures": "DROP MATERIALIZED VIEW IF EXISTS resolved_expenditures",
     "resolved_reports": "DROP MATERIALIZED VIEW IF EXISTS resolved_reports",
+    "cross_role_entities": "DROP MATERIALIZED VIEW IF EXISTS cross_role_entities",
 }
 
 _CREATE_POSTGRES_MAT_VIEW_SQL = {
@@ -231,6 +285,9 @@ _CREATE_POSTGRES_MAT_VIEW_SQL = {
     ),
     "resolved_reports": (
         f"CREATE MATERIALIZED VIEW resolved_reports AS {_RESOLVED_REPORTS_SELECT}"
+    ),
+    "cross_role_entities": (
+        f"CREATE MATERIALIZED VIEW cross_role_entities AS {_CROSS_ROLE_ENTITIES_SELECT}"
     ),
 }
 
