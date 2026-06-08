@@ -26,6 +26,7 @@ import json
 import uuid as _uuid_mod
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from sqlalchemy import delete
@@ -181,6 +182,63 @@ def _pick_best_name_row(rows: list[ResolutionInput]) -> ResolutionInput:
     return max(rows, key=lambda r: (_name_completeness(r), r.created_at))
 
 
+def _row_activity_date(row: ResolutionInput) -> date:
+    """Return the best single date for a row: last_activity_date, first_activity_date, or created_at.date()."""
+    if row.last_activity_date is not None:
+        return row.last_activity_date
+    if row.first_activity_date is not None:
+        return row.first_activity_date
+    return row.created_at.date()
+
+
+def _pick_employer(rows: list[ResolutionInput]) -> str | None:
+    """Return the employer from the most-recent row (by activity/created date) that has a non-null, non-blank employer.
+
+    Returns None when no row in the cluster carries an employer.
+    """
+    employer_rows = [r for r in rows if r.employer and r.employer.strip()]
+    if not employer_rows:
+        return None
+    # Pick the most-recent by last_activity_date → first_activity_date → created_at.
+    best = max(employer_rows, key=_row_activity_date)
+    return best.employer
+
+
+def _build_employer_history(rows: list[ResolutionInput]) -> list[dict[str, str]]:
+    """Aggregate per-cluster employer history as a list of dicts.
+
+    Returns one entry per distinct employer value (after stripping whitespace),
+    each with:
+        value      — the employer string
+        first_seen — ISO date string of the earliest date any row with that employer has
+        last_seen  — ISO date string of the latest date any row with that employer has
+
+    Dates use last_activity_date → first_activity_date → created_at fallback.
+    The list is ordered by (first_seen, value) for determinism.
+    Returns an empty list when no row carries an employer.
+    """
+    employer_rows = [r for r in rows if r.employer and r.employer.strip()]
+    if not employer_rows:
+        return []
+
+    by_employer: dict[str, list[date]] = defaultdict(list)
+    for row in employer_rows:
+        by_employer[row.employer.strip()].append(_row_activity_date(row))
+
+    history: list[dict[str, str]] = []
+    for value, dates in by_employer.items():
+        history.append(
+            {
+                "value": value,
+                "first_seen": min(dates).isoformat(),
+                "last_seen": max(dates).isoformat(),
+            }
+        )
+
+    history.sort(key=lambda e: (e["first_seen"], e["value"]))
+    return history
+
+
 def _pick_best_address_row(rows: list[ResolutionInput]) -> ResolutionInput | None:
     """Return the most recent fully-parsed address row, or None if none exist."""
     parsed = [r for r in rows if r.parse_status == "parsed"]
@@ -297,6 +355,12 @@ def build_golden_record(
             "source_id": best_address_row.source_id,
         }
 
+    # Employer survivorship — scalar (most-recent) + history in provenance.
+    employer = _pick_employer(cluster_rows)
+    employer_history = _build_employer_history(cluster_rows)
+    if employer_history:
+        provenance["employer_history"] = employer_history
+
     return CanonicalEntity(
         entity_type=entity_type,
         canonical_name=canonical_name,
@@ -305,6 +369,7 @@ def build_golden_record(
         first_seen_date=first_seen,
         last_seen_date=last_seen,
         source_record_count=len(cluster.members),
+        employer=employer,
         provenance_json=json.dumps(provenance),
     )
 
