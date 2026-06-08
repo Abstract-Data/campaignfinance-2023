@@ -47,6 +47,12 @@ class UnifiedReport(SQLModel, table=True):
         index=True,
     )
 
+    # Cover-sheet snapshot: committee and treasurer names as of filing time.
+    # These are denormalised from raw_data so they remain accurate even if the
+    # filer profile is updated later.
+    committee_name_at_filing: str | None = Field(default=None, max_length=200)
+    treasurer_name_at_filing: str | None = Field(default=None, max_length=200)
+
     # TEC reportInfoIdent — the report's unique identifier used for linking.
     report_ident: str = Field(max_length=20, index=True, unique=True)
 

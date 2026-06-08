@@ -6,6 +6,13 @@ cycle)`` — not something that needs probabilistic resolution.  This maps every
 (committee → canonical committee entity; candidate person → canonical entity),
 deduping by the identity tuple.  Run after the entity pass so the crosswalk is
 populated.
+
+**Sentinel value for missing election year:** When ``election_year`` is NULL
+(officeholder committees, multi-cycle PACs, and other filers with no election
+year), ``election_cycle`` is stored as ``0``.  The identity tuple is therefore
+``(committee_entity, office, 0)`` for such rows.  ``election_cycle == 0`` means
+"no election cycle / officeholder" — it is *not* a real cycle.  The builder is
+delete-and-rebuild each run, so the sentinel cannot drift into an invalid state.
 """
 
 from __future__ import annotations
@@ -73,7 +80,7 @@ def build_canonical_campaigns(
             SELECT id, primary_committee_id, candidate_person_id, election_year,
                    office_sought, name
             FROM unified_campaigns
-            WHERE primary_committee_id IS NOT NULL AND election_year IS NOT NULL
+            WHERE primary_committee_id IS NOT NULL
             """
         )
     ).fetchall()
@@ -89,7 +96,10 @@ def build_canonical_campaigns(
         if committee_entity_id is None:
             continue
         office = _office_normalized(office_sought)
-        key = (committee_entity_id, office, int(election_year))
+        # election_cycle == 0 means "no election cycle / officeholder"; NULL
+        # election_year maps to sentinel 0 so the non-null column stays valid.
+        cycle = int(election_year) if election_year is not None else 0
+        key = (committee_entity_id, office, cycle)
         candidate_entity_id = (
             person_xw.get(str(candidate_person_id))
             if candidate_person_id is not None
@@ -107,7 +117,7 @@ def build_canonical_campaigns(
         by_identity[key] = CanonicalCampaign(
             committee_entity_id=committee_entity_id,
             office_normalized=office,
-            election_cycle=int(election_year),
+            election_cycle=cycle,  # 0 when election_year is NULL (officeholder sentinel)
             candidate_entity_id=candidate_entity_id,
             canonical_name=name,
             state_code=state_code,

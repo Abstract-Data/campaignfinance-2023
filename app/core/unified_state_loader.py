@@ -396,28 +396,29 @@ class UnifiedStateLoader:
         with self._db_manager.get_session() as session:
             _committees, _persons, state_id, state_code = self._load_batch_indexes(session)
 
-            # Guard: skip entire file if already loaded to prevent duplicate rows on
-            # re-runs. FileOrigin uses a SHA-256 key of (state_id, filename) so the
-            # same file always produces the same id.
+            # Provenance: create-or-fetch the FileOrigin for this file so that
+            # file_origin_id can be set on every transaction row.  Idempotency now
+            # rests on the natural-key upsert in _persist_transaction_from_record,
+            # not on skipping the entire file.
+            file_origin_id: str | None = None
             if file_path and state_id is not None:
                 from app.core.models import FileOrigin
                 origin_key = FileOrigin.build_key(state_id, file_name)
                 existing_origin = session.get(FileOrigin, origin_key)
                 if existing_origin is not None:
-                    # Check if there are already transactions from this file
-                    from sqlmodel import select as _select
-                    already_loaded = session.exec(
-                        _select(UnifiedTransaction.id)
-                        .where(UnifiedTransaction.file_origin_id == origin_key)
-                        .limit(1)
-                    ).first()
-                    if already_loaded is not None:
-                        logger.info(
-                            f"Skipping {file_name!r} — already loaded "
-                            f"(origin_id={origin_key[:12]}…)"
-                        )
-                        stats.skipped = len(records)
-                        return stats
+                    logger.info(
+                        f"File {file_name!r} already loaded "
+                        f"(origin_id={origin_key[:12]}…); "
+                        "relying on natural-key upsert for idempotency"
+                    )
+                    file_origin_id = origin_key
+                else:
+                    new_origin = FileOrigin(
+                        id=origin_key, state_id=state_id, filename=file_name
+                    )
+                    session.add(new_origin)
+                    session.flush()
+                    file_origin_id = origin_key
             if state_id is None:
                 msg = (
                     f"State '{self.state}' is not present in the states table; "
@@ -437,6 +438,7 @@ class UnifiedStateLoader:
                             session,
                             state_id=state_id,
                             state_code=state_code,
+                            file_origin_id=file_origin_id,
                         )
                         if transaction is None:
                             stats.skipped += 1
@@ -468,8 +470,17 @@ class UnifiedStateLoader:
         *,
         state_id: int | None,
         state_code: str | None,
+        file_origin_id: str | None = None,
     ) -> UnifiedTransaction | None:
-        """Build and persist one transaction using the batch session."""
+        """Build and persist one transaction using the batch session.
+
+        When the freshly-built transaction has a non-NULL transaction_id the
+        method first checks for an existing row with the same
+        (state_id, transaction_type, transaction_id) natural key.  If found,
+        mutable fields are updated on the EXISTING row and that row is returned
+        — no duplicate INSERT.  This is the select-then-mutate pattern used
+        throughout this function for committee/person dedup.
+        """
         transaction = unified_sql_processor.process_record(
             record,
             self.state,
@@ -477,6 +488,36 @@ class UnifiedStateLoader:
             state_code=state_code,
             session=session,
         )
+
+        # Set file_origin provenance before the natural-key check so that any
+        # upsert update also refreshes the file_origin_id.
+        if file_origin_id is not None:
+            transaction.file_origin_id = file_origin_id
+
+        # ------------------------------------------------------------------
+        # Natural-key upsert: if an existing transaction matches
+        # (state_id, transaction_type, transaction_id) update its mutable
+        # fields and return the persisted row to avoid a duplicate INSERT.
+        # ------------------------------------------------------------------
+        if transaction.transaction_id is not None and state_id is not None:
+            existing_tx: UnifiedTransaction | None = session.exec(
+                select(UnifiedTransaction).where(
+                    UnifiedTransaction.state_id == state_id,
+                    UnifiedTransaction.transaction_type == transaction.transaction_type,
+                    UnifiedTransaction.transaction_id == transaction.transaction_id,
+                )
+            ).first()
+            if existing_tx is not None:
+                # Update mutable fields from the freshly-built transaction.
+                existing_tx.amount = transaction.amount
+                existing_tx.transaction_date = transaction.transaction_date
+                existing_tx.description = transaction.description
+                existing_tx.report_ident = transaction.report_ident
+                if file_origin_id is not None:
+                    existing_tx.file_origin_id = file_origin_id
+                existing_tx.updated_at = transaction.updated_at
+                session.flush()
+                return existing_tx
 
         if transaction.committee:
             filer_id = transaction.committee.filer_id

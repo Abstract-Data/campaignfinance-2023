@@ -78,6 +78,17 @@ def build_report(
     if report_ident is None:
         raise ValueError("CVR1 record is missing reportInfoIdent")
 
+    # Treasurer name snapshot: branch on treasPersentTypeCd.
+    treas_type = _optional_str(raw.get("treasPersentTypeCd"))
+    if treas_type == "ENTITY":
+        treasurer_name = _optional_str(raw.get("treasNameOrganization"))
+    else:
+        # INDIVIDUAL or missing — join first + last, skipping blanks.
+        first = _optional_str(raw.get("treasNameFirst"))
+        last = _optional_str(raw.get("treasNameLast"))
+        parts = [p for p in (first, last) if p]
+        treasurer_name = " ".join(parts) if parts else None
+
     return UnifiedReport(
         state_id=state_id,
         committee_id=_optional_str(raw.get("filerIdent")),
@@ -100,6 +111,8 @@ def build_report(
         cash_on_hand=_parse_amount(raw.get("cashOnHandAmount")),
         file_origin_id=file_origin_id,
         raw_data=json.dumps(dict(raw)),
+        committee_name_at_filing=_optional_str(raw.get("filerName")),
+        treasurer_name_at_filing=treasurer_name,
     )
 
 
@@ -146,6 +159,154 @@ def link_transactions_to_reports(session: Session) -> int:
     result = session.execute(stmt)
     session.commit()
     return result.rowcount
+
+
+def backfill_report_at_filing(session: Session) -> int:
+    """Backfill ``committee_name_at_filing`` and ``treasurer_name_at_filing``
+    for existing ``unified_reports`` rows that have ``raw_data`` but whose
+    at-filing columns are NULL.
+
+    The function is dialect-aware: it uses PostgreSQL JSONB operators when
+    connected to Postgres, and ``json_extract`` for SQLite.  Two UPDATE
+    statements are issued — one for the committee name and one for the
+    treasurer name — and the total rowcount is returned.
+
+    The caller does not need to manage transactions; this function commits
+    internally (mirroring :func:`link_transactions_to_reports`).
+
+    Parameters
+    ----------
+    session:
+        Active SQLModel/SQLAlchemy session bound to either SQLite or PostgreSQL.
+
+    Returns
+    -------
+    int
+        Combined number of rows updated across both UPDATE statements.
+    """
+    dialect = session.get_bind().dialect.name
+
+    if dialect == "postgresql":
+        stmt_committee = text(
+            """
+            UPDATE unified_reports
+            SET committee_name_at_filing = NULLIF(TRIM(raw_data::jsonb ->> 'filerName'), '')
+            WHERE committee_name_at_filing IS NULL
+              AND raw_data IS NOT NULL
+            """
+        )
+        stmt_treasurer = text(
+            """
+            UPDATE unified_reports
+            SET treasurer_name_at_filing = CASE
+                WHEN TRIM(raw_data::jsonb ->> 'treasPersentTypeCd') = 'ENTITY'
+                    THEN NULLIF(TRIM(raw_data::jsonb ->> 'treasNameOrganization'), '')
+                ELSE NULLIF(
+                    TRIM(
+                        CONCAT_WS(' ',
+                            NULLIF(TRIM(raw_data::jsonb ->> 'treasNameFirst'), ''),
+                            NULLIF(TRIM(raw_data::jsonb ->> 'treasNameLast'), '')
+                        )
+                    ),
+                    ''
+                )
+            END
+            WHERE treasurer_name_at_filing IS NULL
+              AND raw_data IS NOT NULL
+            """
+        )
+    else:
+        # SQLite
+        stmt_committee = text(
+            """
+            UPDATE unified_reports
+            SET committee_name_at_filing = NULLIF(TRIM(json_extract(raw_data, '$.filerName')), '')
+            WHERE committee_name_at_filing IS NULL
+              AND raw_data IS NOT NULL
+            """
+        )
+        stmt_treasurer = text(
+            """
+            UPDATE unified_reports
+            SET treasurer_name_at_filing = CASE
+                WHEN TRIM(json_extract(raw_data, '$.treasPersentTypeCd')) = 'ENTITY'
+                    THEN NULLIF(TRIM(json_extract(raw_data, '$.treasNameOrganization')), '')
+                ELSE CASE
+                    WHEN NULLIF(TRIM(json_extract(raw_data, '$.treasNameFirst')), '') IS NOT NULL
+                         AND NULLIF(TRIM(json_extract(raw_data, '$.treasNameLast')), '') IS NOT NULL
+                        THEN TRIM(json_extract(raw_data, '$.treasNameFirst')) || ' '
+                             || TRIM(json_extract(raw_data, '$.treasNameLast'))
+                    WHEN NULLIF(TRIM(json_extract(raw_data, '$.treasNameFirst')), '') IS NOT NULL
+                        THEN TRIM(json_extract(raw_data, '$.treasNameFirst'))
+                    WHEN NULLIF(TRIM(json_extract(raw_data, '$.treasNameLast')), '') IS NOT NULL
+                        THEN TRIM(json_extract(raw_data, '$.treasNameLast'))
+                    ELSE NULL
+                END
+            END
+            WHERE treasurer_name_at_filing IS NULL
+              AND raw_data IS NOT NULL
+            """
+        )
+
+    rowcount = 0
+    rowcount += session.execute(stmt_committee).rowcount
+    rowcount += session.execute(stmt_treasurer).rowcount
+    session.commit()
+    return rowcount
+
+
+def treasurer_for_report(session: Session, report: "UnifiedReport"):
+    """Return the :class:`~app.states.texas.validators.texas_filers.TECTreasurer`
+    whose effective date range covers the report's ``filed_date``.
+
+    The lookup joins through the ``TECTreasurerLink`` association table:
+    ``unified_reports.committee_id`` is matched against
+    ``TECTreasurerLink.filer_identity_id`` (which stores the integer
+    ``filerIdent``), and ``TECTreasurerLink.treasurer_id`` links to
+    ``TECTreasurer.treasId``.
+
+    Date-range logic:
+    - ``TECTreasurer.treasEffStartDt <= report.filed_date``
+    - ``TECTreasurer.treasEffStopDt >= report.filed_date``  OR  stop date is NULL
+      (NULL stop date means the treasurer is still active / open-ended).
+
+    Parameters
+    ----------
+    session:
+        Active SQLModel/SQLAlchemy session (must have the ``texas`` schema
+        attached or be connected to a Postgres database that contains it).
+    report:
+        A :class:`~app.core.source_models.reports.UnifiedReport` instance.
+        ``committee_id`` and ``filed_date`` must be non-NULL for a match
+        to be possible.
+
+    Returns
+    -------
+    TECTreasurer | None
+        The matching treasurer record, or ``None`` if no match is found
+        (e.g. no treasurer link exists, or the report has no ``filed_date``).
+    """
+    from app.states.texas.validators.texas_filers import TECTreasurer, TECTreasurerLink
+
+    if report.committee_id is None or report.filed_date is None:
+        return None
+
+    try:
+        filer_ident = int(report.committee_id)
+    except (ValueError, TypeError):
+        return None
+
+    stmt = (
+        select(TECTreasurer)
+        .join(TECTreasurerLink, TECTreasurerLink.treasurer_id == TECTreasurer.treasId)
+        .where(TECTreasurerLink.filer_identity_id == filer_ident)
+        .where(TECTreasurer.treasEffStartDt <= report.filed_date)
+        .where(
+            (TECTreasurer.treasEffStopDt >= report.filed_date)
+            | (TECTreasurer.treasEffStopDt.is_(None))
+        )
+    )
+    return session.exec(stmt).first()
 
 
 def reconcile_report_totals(

@@ -156,13 +156,21 @@ class UnifiedDatabaseManager:
         CREATE UNIQUE INDEX IF NOT EXISTS uix_txperson_txid_personid_role
         ON unified_transaction_persons (transaction_id, person_id, role);
         """,
-        # NOTE: there is intentionally NO unique index on
-        # unified_transactions (transaction_id, committee_id).  The TEC
-        # ``transaction_id`` (expendInfoId / candidateInfoId / contribInfoId …)
-        # is only unique *within* a record type, so EXPN and CAND rows reuse the
-        # same value for the same committee — a unique constraint there dropped
-        # whole files (cand, credits, assets) as false duplicates.  A plain
-        # (non-unique) index supports report-linking lookups without that.
+        # NOTE: uniqueness on unified_transactions is enforced via
+        # ``uix_transactions_state_type_sourceid`` below, which keys on
+        # (state_id, transaction_type, transaction_id).  Including
+        # ``transaction_type`` is critical: TEC ``transaction_id`` values are only
+        # unique *within* a record type, so EXPN and CAND rows reuse the same id
+        # for the same committee — a two-column (transaction_id, committee_id)
+        # index dropped whole files (cand, credits, assets) as false duplicates.
+        # Adding transaction_type disambiguates those record types, making the
+        # unique constraint safe and correct.  The plain ix_transactions_source_id
+        # index is retained to support fast report-linking lookups.
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uix_transactions_state_type_sourceid
+        ON unified_transactions (state_id, transaction_type, transaction_id)
+        WHERE transaction_id IS NOT NULL;
+        """,
         """
         CREATE INDEX IF NOT EXISTS ix_transactions_source_id
         ON unified_transactions (transaction_id, committee_id)
