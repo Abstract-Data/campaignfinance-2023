@@ -7,6 +7,7 @@ diff_snapshots restricted to ``unified_reports``.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 import polars as pl
@@ -15,6 +16,9 @@ from sqlalchemy import update
 from app.core.ingest_vectorized import common
 from app.core.ingest_vectorized.registry import FamilyContext, register
 from app.core.source_models.reports import UnifiedReport
+from app.logger import Logger
+
+_logger = Logger(__name__)
 
 #: Source columns referenced by the report transform. TEC files omit columns that
 #: are always blank, so any missing one is added as null (mirrors raw.get() -> None).
@@ -47,7 +51,7 @@ def _read(files: list[Path]) -> pl.DataFrame | None:
     return frames[0] if len(frames) == 1 else pl.concat(frames, how="diagonal_relaxed")
 
 
-def _ensure_cols(df: pl.DataFrame, names) -> pl.DataFrame:
+def _ensure_cols(df: pl.DataFrame, names: Iterable[str]) -> pl.DataFrame:
     """Add any referenced source column missing from *df* as a null Utf8 column."""
     missing = [pl.lit(None, dtype=pl.Utf8).alias(n) for n in names if n not in df.columns]
     return df.with_columns(missing) if missing else df
@@ -129,11 +133,26 @@ class ReportsWorker:
             "treasurer_name_at_filing",
         )
         # build_report raises (rejects the row) when reportInfoIdent is missing.
+        before = out.height
         out = out.filter(pl.col("report_ident").is_not_null())
+        dropped = before - out.height
+        if dropped:
+            _logger.warning(
+                "[vectorized.reports] dropped "
+                + str(dropped)
+                + " of "
+                + str(before)
+                + " CVR1 rows with no report ident (ORM rejects these per-row)"
+            )
         return common.write_frame(ctx.session, UnifiedReport, out, conflict_cols=["report_ident"])
 
     def _apply_finl(self, df: pl.DataFrame, ctx: FamilyContext) -> None:
-        """FINL sets is_final=True on the matching report (state_id, report_ident)."""
+        """FINL sets is_final=True on the matching report.
+
+        Scoped by (state_id, report_ident); the ORM build_final_report matches on
+        report_ident alone. Identical in a single-state DB; the state_id scope is a
+        deliberate, safe improvement (won't flip a same-ident report from another state).
+        """
         idents = (
             df.select(common.clean_str("reportInfoIdent").alias("ri"))
             .filter(pl.col("ri").is_not_null())["ri"]

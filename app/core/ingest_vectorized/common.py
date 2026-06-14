@@ -166,5 +166,8 @@ def write_frame(
         return bulk_upsert(
             session, model, rows, conflict_cols=conflict_cols, update_cols=update_cols
         )
+    # Plain insert: commit explicitly (bulk_upsert commits internally; the dispatcher
+    # closes the session in finally with no commit, which would otherwise roll this back).
     session.execute(insert(model.__table__), rows)  # type: ignore[attr-defined]
+    session.commit()
     return len(rows)
