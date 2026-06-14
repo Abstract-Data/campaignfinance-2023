@@ -1,4 +1,8 @@
 # Review Remediation — 2026-06 Hardening Pass
+# Version: 1.0.0
+# Model: claude-sonnet-4-6
+# Last Updated: 2026-06-06
+# Maintainer: John Eakin / Abstract Data
 
 > **For agentic workers:** This is a complete, self-contained remediation prompt
 > pack. Each task below is a work order for **one agent**. Steps use `- [ ]`

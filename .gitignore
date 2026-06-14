@@ -193,3 +193,4 @@ tmp/**/*.parquet
 
 # gate enforcement ledger (per-session, not committed)
 .claude/state/
+.claude/code-reviewer-receipt.json

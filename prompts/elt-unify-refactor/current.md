@@ -1,4 +1,8 @@
 # Prompt: Re-architect the Unify/Load Slice as ELT (dbt-on-Postgres) — Proof-of-Concept First
+# Version: 1.0.0
+# Model: claude-sonnet-4-6
+# Last Updated: 2026-06-06
+# Maintainer: John Eakin / Abstract Data
 
 > Hand this to an implementation agent (or use it yourself). It is scoped as a
 > **strangler-fig proof of concept**, not a big-bang rewrite. Do **not** touch

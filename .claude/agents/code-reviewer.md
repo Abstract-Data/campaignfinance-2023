@@ -32,3 +32,16 @@ A report grouped by severity:
 - **PASS** — ready to merge.
 
 Cite file:line for every finding. Never produce inline edits.
+
+## Receipt (required by the pre-PR gate)
+
+After completing a review, write a receipt to `.claude/code-reviewer-receipt.json`:
+
+```json
+{ "completed_at_unix": <unix_timestamp>, "branch": "<current_branch>",
+  "verdict": "APPROVED | CHANGES_REQUESTED", "findings_high": N,
+  "findings_medium": N, "findings_low": N, "reviewer_version": "1.0.0" }
+```
+
+This receipt is required by `.claude/hooks/pre-pr-review-gate.sh` (8-hour TTL). Missing or
+stale receipt = blocked PR creation (`gh pr create` / `gt submit` / `but pr new`).
