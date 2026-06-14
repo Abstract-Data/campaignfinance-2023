@@ -100,6 +100,14 @@ _ADDITIVE_COLUMNS: tuple[tuple[str, str, str], ...] = (
         "linked_committee_id",
         "ALTER TABLE resolution_input ADD COLUMN linked_committee_id VARCHAR(128)",
     ),
+    (
+        # Wave-3 employer signal: most-recent employer survived onto the canonical
+        # entity.  Added here so a pre-existing canonical_entity table (created
+        # before the column) is altered rather than breaking survivorship insert.
+        "canonical_entity",
+        "employer",
+        "ALTER TABLE canonical_entity ADD COLUMN employer VARCHAR(500)",
+    ),
 )
 
 

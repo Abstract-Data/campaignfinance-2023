@@ -33,8 +33,16 @@ from scripts.loaders.loader_config import (
     get_config,
 )
 
-# Transaction types handled by unified_sql_processor (CAND uses a separate path).
-TRANSACTION_RECORD_TYPES = RECORD_TYPE_CODES | frozenset({"CAND"})
+# Transaction types handled by unified_sql_processor as their own UnifiedTransaction.
+# CAND is intentionally NOT here: a cand_* row is a candidate↔expenditure *linkage*
+# (its expendInfoId IS the expenditure's id; the file holds many candidates per
+# expenditure and overlaps the expend_* files), so loading it as an EXPENDITURE row
+# double-counts and collides on uix_transactions_state_type_sourceid.  CAND is routed
+# to the enrichment path (_persist_cand_link) instead.
+TRANSACTION_RECORD_TYPES = RECORD_TYPE_CODES
+
+# Record types that enrich an EXISTING transaction rather than creating one.
+ENRICHMENT_RECORD_TYPES = frozenset({"CAND"})
 
 # Ingest priority: lower number = processed first.
 # FILER must precede all transaction types so that committee rows exist before
@@ -107,6 +115,12 @@ def _get_session(db_url: str | None = None):
             cursor.close()
 
     SQLModel.metadata.create_all(engine)
+
+    # Add any unified-model columns missing from a pre-existing table (create_all
+    # never alters existing tables).  Dialect-safe + idempotent; runs on sqlite too.
+    from app.core.unified_database import ensure_unified_additive_columns
+
+    ensure_unified_additive_columns(engine)
 
     if not db_url.startswith("sqlite"):
         # Apply the Fix-7 partial unique indexes (raw DDL, idempotent) so dedup is
@@ -485,6 +499,83 @@ def _iter_row_batches(path: Path, batch_size: int):
         yield batch
 
 
+def _persist_cand_link(
+    session: Any,
+    raw: dict[str, Any],
+    *,
+    state: str,
+    state_id: int,
+    state_code: str,
+    cache: Any = None,
+) -> str:
+    """Enrich an existing EXPENDITURE with the candidate a cand_* row names.
+
+    A cand_* row is not a transaction — its ``expendInfoId`` is the id of an
+    expenditure already loaded from the expend_* files.  We resolve the candidate
+    person (deduped, so candidates become resolvable entities) and attach a
+    ``UnifiedTransactionPerson(role=CANDIDATE)`` to that expenditure.  Idempotent on
+    the (transaction_id, person_id, role) natural key.
+
+    Returns a status: ``linked`` / ``unlinked_no_expenditure`` /
+    ``skipped_no_candidate`` / ``skipped_no_id``.
+    """
+    from sqlmodel import select
+
+    from app.core.enums import PersonRole, TransactionType
+    from app.core.models import UnifiedTransaction, UnifiedTransactionPerson
+    from app.core.processor import unified_sql_processor
+
+    expend_id = str(raw.get("expendInfoId") or "").strip() or None
+    if not expend_id:
+        return "skipped_no_id"
+
+    builder = unified_sql_processor.get_builder(
+        state, state_id, state_code, session=session, cache=cache
+    )
+    candidate = builder.build_person(raw, PersonRole.CANDIDATE, field_prefix="candidate")
+    if candidate is None:
+        return "skipped_no_candidate"
+
+    expenditure = session.exec(
+        select(UnifiedTransaction).where(
+            UnifiedTransaction.state_id == state_id,
+            UnifiedTransaction.transaction_type == TransactionType.EXPENDITURE,
+            UnifiedTransaction.transaction_id == expend_id,
+        )
+    ).first()
+    if expenditure is None:
+        # The annotated expenditure isn't loaded (expected for partial/subset
+        # loads where the matching expend_* slice is absent).  Not an error.
+        return "unlinked_no_expenditure"
+
+    # Persist the candidate (find-or-create may return a new, unflushed row) so the
+    # link FK + the dedup pre-check have a real person_id.
+    session.add(candidate)
+    session.flush()
+
+    already = session.exec(
+        select(UnifiedTransactionPerson).where(
+            UnifiedTransactionPerson.transaction_id == expenditure.id,
+            UnifiedTransactionPerson.person_id == candidate.id,
+            UnifiedTransactionPerson.role == PersonRole.CANDIDATE,
+        )
+    ).first()
+    if already is not None:
+        return "linked"  # idempotent: this candidate is already on this expenditure
+
+    session.add(
+        UnifiedTransactionPerson(
+            transaction=expenditure,
+            person=candidate,
+            entity=candidate.entity,
+            state_id=state_id,
+            role=PersonRole.CANDIDATE,
+        )
+    )
+    session.flush()
+    return "linked"
+
+
 def _persist_row(
     session: Any,
     raw: dict[str, Any],
@@ -501,6 +592,13 @@ def _persist_row(
 
     Returns False for an unrecognized record type (so the caller can warn).
     """
+    if effective_type in ENRICHMENT_RECORD_TYPES:
+        # CAND: link the candidate to its existing expenditure (no new transaction).
+        _persist_cand_link(
+            session, raw, state=state, state_id=state_id, state_code=state_code,
+            cache=cache,
+        )
+        return True
     if effective_type in TRANSACTION_RECORD_TYPES:
         if effective_type == "PLDG":
             _persist_pldg_row(
@@ -783,6 +881,7 @@ def _load_file(
 
             if (
                 effective_type in TRANSACTION_RECORD_TYPES
+                or effective_type in ENRICHMENT_RECORD_TYPES
                 or effective_type in RECORD_TYPE_BUILDERS
             ):
                 pending.append((row_dict, effective_type))

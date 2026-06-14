@@ -40,11 +40,55 @@ __all__ = [
     "UnifiedVersionedRepository",
     "UnifiedOfficerRepository",
     "UnifiedAnalyticsService",
+    "ensure_unified_additive_columns",
     "get_db_manager",
     "reset_db_manager_cache",
     "db_manager",
     "_to_json_safe",
 ]
+
+# Unified-layer additive-column migrations (no Alembic — idempotent DDL, mirroring
+# the resolve layer's app/resolve/run.py::_ensure_additive_columns).  ``create_all``
+# only creates *missing tables*; it never adds a column to a pre-existing table.  So
+# any column added to a unified model after a table already exists in a deployed DB
+# must be applied here, or inserts that reference it fail with UndefinedColumn.
+# Each entry is (table, column, constant ALTER statement); VARCHAR is valid on both
+# Postgres and SQLite, so this is dialect-safe.
+_UNIFIED_ADDITIVE_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    (
+        # Wave-2 point-in-time report columns (committee/treasurer name at filing).
+        "unified_reports",
+        "committee_name_at_filing",
+        "ALTER TABLE unified_reports ADD COLUMN committee_name_at_filing VARCHAR(200)",
+    ),
+    (
+        "unified_reports",
+        "treasurer_name_at_filing",
+        "ALTER TABLE unified_reports ADD COLUMN treasurer_name_at_filing VARCHAR(200)",
+    ),
+)
+
+
+def ensure_unified_additive_columns(engine: Any) -> None:
+    """Add unified-model columns missing from a pre-existing table.
+
+    Reflection-guarded, so it is a no-op on a freshly ``create_all``-ed schema
+    (where the column already exists) and only alters an older table that predates
+    the column.  Idempotent; safe to call on every bootstrap.  Runs identically on
+    Postgres and SQLite.
+    """
+    from sqlalchemy import inspect as sa_inspect
+
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    for table, column, ddl in _UNIFIED_ADDITIVE_COLUMNS:
+        if table not in existing_tables:
+            continue
+        if column in {col["name"] for col in inspector.get_columns(table)}:
+            continue
+        with engine.begin() as conn:
+            conn.execute(text(ddl))
+        _logger.info(f"bootstrap: added missing column {table}.{column}")
 
 _REPO_DELEGATES = (
     "update_transaction",
@@ -184,8 +228,10 @@ class UnifiedDatabaseManager:
     )
 
     def bootstrap(self) -> None:
-        """Create tables via SQLModel.metadata.create_all and apply dedup indexes (Fix 7)."""
+        """Create tables via SQLModel.metadata.create_all, add any additive columns
+        missing from pre-existing tables, then apply dedup indexes (Fix 7)."""
         SQLModel.metadata.create_all(self.engine)
+        ensure_unified_additive_columns(self.engine)
         self._apply_dedup_indexes()
 
     def _apply_dedup_indexes(self) -> None:
