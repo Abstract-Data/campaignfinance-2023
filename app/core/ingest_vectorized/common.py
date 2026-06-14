@@ -1,10 +1,15 @@
 """Shared primitives for the vectorized (Polars) ingest engine.
 
-Pure-Polars column expressions that reproduce the ORM parse helpers EXACTLY, plus a
-dialect-safe bulk write helper. The equivalence harness
-(`app/core/ingest_equivalence.py`) is the gate: any divergence from the ORM output is
-a bug. HARD RULE: no ``map_elements`` / ``apply`` (per-row Python UDF) — everything
-here is a native expression so it runs in Polars' Rust engine.
+Pure-Polars column expressions that reproduce the ORM parse helpers on **real
+TEC-shaped inputs** (currency strings, yyyymmdd / sep dates), plus a dialect-safe bulk
+write helper. The equivalence harness (`app/core/ingest_equivalence.py`) is the gate:
+divergence on real data is a bug. HARD RULE: no ``map_elements`` / ``apply`` (per-row
+Python UDF) — everything here is a native expression so it runs in Polars' Rust engine.
+
+Bounded, documented divergences from the ORM on inputs that do NOT occur in TEC data
+(safe; see per-function docstrings): ``tec_amount`` rejects scientific notation /
+Infinity / NaN that ``Decimal()`` would accept; ``tec_date`` returns null (not raise)
+on invalid 8-digit dates where the ORM would raise and reject the row.
 
 Two parse dialects exist in the ORM and must be kept distinct:
 - ``tec_*`` mirrors ``app/core/source_models/reports_ingest.py`` (`_parse_amount`
@@ -34,7 +39,12 @@ _DECIMAL_RE = r"^-?\d+(\.\d*)?$|^-?\.\d+$"
 
 
 def tec_amount(col: str) -> pl.Expr:
-    """Mirror reports_ingest._parse_amount: strip, remove ',' and '$', Decimal else null."""
+    """Mirror reports_ingest._parse_amount: strip, remove ',' and '$', Decimal else null.
+
+    Bounded divergence (safe — absent from TEC currency fields): scientific notation
+    ("1e5"), "Infinity", and "NaN" — which ``Decimal()`` accepts — are rejected to null
+    by the ``_DECIMAL_RE`` guard (which is also what stops Polars casting "." to 0).
+    """
     s = pl.col(col).cast(pl.Utf8).str.strip_chars()
     cleaned = s.str.replace_all(",", "", literal=True).str.replace_all("$", "", literal=True)
     return (
@@ -60,6 +70,11 @@ def tec_date(col: str) -> pl.Expr:
 
     8-digit yyyymmdd first; otherwise a separator split where a>31 => (a,b,c) and
     c>31 => (c,a,b). No 1900-2100 guard (matches the source).
+
+    Bounded divergence: an INVALID 8-digit date (e.g. "20010229", month/day out of
+    range) returns null here, whereas the ORM ``_parse_date`` calls ``date(...)``
+    unguarded and RAISES — which rejects that row at ingest. Callers that require a
+    mandatory date should drop null-date rows so behavior matches the ORM reject.
     """
     s = pl.col(col).cast(pl.Utf8).str.strip_chars()
     eight = (s.str.len_chars() == 8) & s.str.contains(r"^\d{8}$")
