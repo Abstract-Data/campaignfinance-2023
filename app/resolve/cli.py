@@ -319,6 +319,20 @@ def _run_address_stage(session, run_id, config):
     return {"canonical_out": n, "entities_linked": linked}
 
 
+def _run_address_link_stage(session, run_id, config):
+    """Entity-pass tail: same work as the address pass, but returns keys OUTSIDE
+    ``_COUNTER_COLS`` so it does not overwrite survivorship's ``canonical_out``
+    (entity count) in match_run via the left-to-right counter merge."""
+    from app.resolve.publish.addresses import (
+        backfill_entity_addresses,
+        build_canonical_addresses,
+    )
+
+    n = build_canonical_addresses(session, run_id=run_id)
+    linked = backfill_entity_addresses(session)
+    return {"addresses_out": n, "entities_linked": linked}
+
+
 def _run_campaign_stage(session, run_id, config):
     """Campaign pass: deterministically build canonical_campaign + crosswalk.
 
@@ -335,7 +349,10 @@ def _run_campaign_stage(session, run_id, config):
 def _get_run_stages(pass_type: str = "entity"):
     """Return the stage callables for ``run``, dispatched by *pass_type*.
 
-    - ``entity``   — the full Phase 2 entity-resolution pipeline (stages 1→7).
+    - ``entity``   — the full Phase 2 entity-resolution pipeline (stages 1→7)
+      plus an address-link tail so canonical_address + canonical_entity
+      .canonical_address_id (and the address_occupancy view) are populated by a
+      single default run.
     - ``address``  — a single deterministic canonical-address build.
     - ``campaign`` — a single deterministic canonical-campaign build.
     """
@@ -362,6 +379,10 @@ def _get_run_stages(pass_type: str = "entity"):
         run_classify_stage,  # stage 5 — band classification     (2b)
         run_cluster_stage,  # stage 6 — connected components    (2c)
         run_survivorship_stage,  # stage 7 — survivorship + publish  (1g+2d)
+        # stage 8 — build canonical_address + link canonical_entity.canonical_address_id
+        # so address_occupancy is non-empty after a default entity run (previously
+        # needed a separate, easy-to-forget `--pass-type address`).  Idempotent.
+        _run_address_link_stage,
     ]
 
 

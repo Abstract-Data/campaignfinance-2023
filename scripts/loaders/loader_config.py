@@ -103,10 +103,16 @@ class LoaderPresets:
 
     @staticmethod
     def production() -> LoaderConfig:
+        # commit_frequency was 20 — one fsync per 20 rows, which on a real load is
+        # the dominant I/O drag (measured ~74 rows/s at cf=20 vs ~111 rows/s at
+        # cf=5000 on the 2026-06-14 subset run).  Large commits batch INSERTs into
+        # big executemany statements; the ~111 rows/s ceiling beyond that is
+        # CPU-bound per-row ORM object construction (UnifiedTransaction + persons +
+        # detail + entity/address dedup), which only a COPY-based bulk path removes.
         return LoaderConfig(
-            batch_size=500,
+            batch_size=2000,
             max_records=None,
-            commit_frequency=20,
+            commit_frequency=2000,
         )
 
 
