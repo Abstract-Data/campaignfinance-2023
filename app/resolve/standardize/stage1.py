@@ -170,6 +170,7 @@ def _collect_source_rows(session: Session, state_id: int) -> list[dict[str, Any]
             UnifiedPerson.last_name,
             UnifiedPerson.suffix,
             UnifiedPerson.organization,
+            UnifiedPerson.employer,
             UnifiedAddress.street_1,
             UnifiedAddress.street_2,
             UnifiedAddress.city,
@@ -232,6 +233,7 @@ def _collect_source_rows(session: Session, state_id: int) -> list[dict[str, Any]
                 "raw_address": _compose_raw_address(
                     row.street_1, row.street_2, row.city, row.state, row.zip_code
                 ),
+                "employer": row.employer,
                 "first_activity_date": p_first,
                 "last_activity_date": p_last,
             }
@@ -341,8 +343,13 @@ def _compute_features(rows: list[dict[str, Any]], run_id: int) -> list[Resolutio
     linked_ids = [
         (r.get("linked_person_id"), r.get("linked_committee_id")) for r in rows
     ]
+    # Employer is only present on person rows; keep it out of the Polars frame so
+    # that mixed-type schema inference (str | None vs absent key) does not break.
+    # Normalize using the same org-name helper as normalized_org.
+    raw_employers = [r.get("employer") for r in rows]
     _frame_skip = (
         "first_activity_date", "last_activity_date", "linked_person_id", "linked_committee_id",
+        "employer",
     )
     frame_rows = [
         {k: v for k, v in r.items() if k not in _frame_skip}
@@ -379,6 +386,8 @@ def _compute_features(rows: list[dict[str, Any]], run_id: int) -> list[Resolutio
         name_values = _name_fields(row["std_name"])
         address_values = _address_fields(row["std_address"])
         normalized_org = row["normalized_org"] or ""
+        raw_employer = raw_employers[idx]
+        normalized_employer = normalize_org_name(raw_employer) if raw_employer else None
         staged.append(
             ResolutionInput(
                 run_id=run_id,
@@ -389,6 +398,7 @@ def _compute_features(rows: list[dict[str, Any]], run_id: int) -> list[Resolutio
                 org_name_phonetic=phonetic_code(normalized_org.split(" ")[0])
                 if normalized_org
                 else "",
+                employer=normalized_employer or None,
                 raw_name=row["raw_name"],
                 raw_address=row["raw_address"],
                 first_activity_date=first_activity_date,

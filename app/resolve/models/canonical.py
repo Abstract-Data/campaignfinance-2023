@@ -216,10 +216,17 @@ class CanonicalEntity(SQLModel, table=True):
     last_seen_date: Optional[date] = Field(default=None)
     source_record_count: int = Field(default=0)
 
+    # Most-recent employer across cluster rows (non-null/non-blank rows only).
+    # Determined by last_activity_date (fallback: created_at) of the winning row.
+    # Rebuilt each run — no migration needed.
+    employer: Optional[str] = Field(default=None, max_length=500)
+
     # JSON string mapping field name → {source_type, source_id} of the record
     # whose value was selected during survivorship.  Added in Phase 2 (task-2d);
     # the canonical tables are rebuilt each run so the column simply appears on
     # the next freshly-created staging table without a migration.
+    # Also carries "employer_history": list of {value, first_seen, last_seen}
+    # per distinct employer value, ordered by first_seen then value.
     provenance_json: Optional[str] = Field(default=None)
 
     last_run_id: Optional[int] = Field(default=None, index=True)

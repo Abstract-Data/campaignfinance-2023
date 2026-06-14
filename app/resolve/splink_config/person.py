@@ -26,6 +26,13 @@ COMPARISONS = [
     cl.ExactMatch("line_1").configure(term_frequency_adjustments=True),
     cl.ExactMatch("city"),
     cl.ExactMatch("zip5"),
+    # Employer — used as a soft comparison signal only, never a blocking key.
+    # Employers change over time; blocking on employer would split the same
+    # person across filing years.  This field is null-heavy: only
+    # contribution-sourced persons carry it; Splink handles nulls natively via
+    # its null-level gamma bucket.  EM training must re-estimate m/u weights
+    # after this comparison is added.
+    cl.JaroWinklerAtThresholds("employer", [0.88]),
 ]
 
 # ---------------------------------------------------------------------------

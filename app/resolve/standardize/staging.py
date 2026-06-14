@@ -60,6 +60,7 @@ class ResolutionInput(SQLModel, table=True):
     parse_status: str = Field(default="unparsed", sa_column=Column(String(20), nullable=False))
 
     normalized_org: str | None = Field(default=None, sa_column=Column(String(500)))
+    employer: str | None = Field(default=None, sa_column=Column(String(500)))
     first_name_phonetic: str | None = Field(default=None, sa_column=Column(String(50)))
     last_name_phonetic: str | None = Field(default=None, sa_column=Column(String(50)))
     org_name_phonetic: str | None = Field(default=None, sa_column=Column(String(50)))

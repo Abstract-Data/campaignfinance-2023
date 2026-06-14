@@ -120,6 +120,11 @@ def _row_to_dict(row: ResolutionInput) -> dict[str, Any]:
         "last_name": row.last_name or "",
         "last_name_phonetic": row.last_name_phonetic or "",
         "normalized_org": row.normalized_org or "",
+        # Employer feeds the person comparison (splink_config.person). Kept as
+        # None (not "") when absent so Splink treats it as NULL — otherwise two
+        # employer-less people would JaroWinkler-match "" == "" and get a
+        # spurious match boost. Harmless extra column for non-person configs.
+        "employer": row.employer,
         "line_1": row.line_1 or "",
         "city": row.city or "",
         "state": row.state or "",
@@ -769,6 +774,13 @@ def _score_entity_type_streaming(
     if not rec_dicts:
         return 0
     df = pd.DataFrame(rec_dicts)
+    # Force employer to a string dtype so DuckDB types it VARCHAR even when the
+    # whole batch is NULL (every org row, or a person subset with no employers).
+    # An all-None object column infers as INTEGER, and Splink's person comparison
+    # SQL fails to *bind* jaro_winkler_similarity(employer_l, employer_r) — even
+    # though the NULL-level short-circuits at runtime. "string" keeps NA as NULL.
+    if "employer" in df.columns:
+        df["employer"] = df["employer"].astype("string")
     rec_by_uid = {d["unique_id"]: d for d in rec_dicts}
     del rec_dicts
 

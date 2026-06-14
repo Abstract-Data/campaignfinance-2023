@@ -106,6 +106,18 @@ def default_blocking_rules() -> list[BlockingRule]:
             name="org_normalized_zip3",
             fields=("normalized_org", "zip3"),
         ),
+        # Cross-role org blocking: connects the same normalized org across
+        # different addresses (ZIPs) within a state — the D-org case the zip3 rule
+        # misses. Blocks on EXACT normalized_org + state (NOT a first-word
+        # phonetic: (org_name_phonetic, state) measured ~9,200x pair explosion on
+        # real data; (normalized_org, state) is ~1.2x). Fuzzy name variants are
+        # handled by the org JaroWinkler comparison at scoring time.
+        # LOCK-STEP: also in organization.PREDICTION_BLOCKING_RULES and
+        # blocking_sql._RULE_BLOCK_KEY_SQL — update all three together.
+        BlockingRule(
+            name="org_normalized_state",
+            fields=("normalized_org", "state"),
+        ),
     ]
 
 

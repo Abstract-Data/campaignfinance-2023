@@ -60,6 +60,24 @@ _RULE_BLOCK_KEY_SQL: dict[str, str] = {
         "THEN lower(trim(ri.normalized_org)) || '|' || "
         "lower(substr(trim(ri.zip5), 1, 3)) END"
     ),
+    # Cross-role org blocking: connects the same normalized org across different
+    # addresses (ZIPs) within a state — the D-org case the zip3 rule misses. The
+    # entity-type guard keeps person records out of org candidate pairs. Blocks on
+    # EXACT normalized_org + state, NOT a first-word phonetic: measured on real
+    # spike data, (org_name_phonetic, state) exploded pairs ~9,200x (34.1M vs
+    # 3.7k) — org_name_phonetic is only the first token's phonetic and state is
+    # TX-dominated; (normalized_org, state) is ~1.2x (4.4k).
+    # LOCK-STEP: also in blocking.default_blocking_rules() and
+    # organization.PREDICTION_BLOCKING_RULES — update all three together.
+    "org_normalized_state": (
+        "CASE WHEN ri.entity_type IN ('organization', 'committee') "
+        "AND ri.normalized_org IS NOT NULL "
+        "AND trim(ri.normalized_org) <> '' "
+        "AND ri.state IS NOT NULL "
+        "AND trim(ri.state) <> '' "
+        "THEN lower(trim(ri.normalized_org)) || '|' || "
+        "lower(trim(ri.state)) END"
+    ),
 }
 
 _DROP_TEMP_SQL = "DROP TABLE IF EXISTS blocking_keyed_stage"
