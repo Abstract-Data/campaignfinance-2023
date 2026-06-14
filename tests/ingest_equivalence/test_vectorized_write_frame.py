@@ -1,4 +1,5 @@
 """Smoke test for common.write_frame — the Polars-frame -> bulk_upsert -> DB glue."""
+
 from __future__ import annotations
 
 import polars as pl
@@ -35,7 +36,9 @@ def test_write_frame_is_idempotent_on_conflict():
         s.commit()
         # Re-write with an updated description -> upsert, no duplicate row.
         frame2 = pl.DataFrame({"code": ["A1"], "description": ["Advertising (rev)"]})
-        write_frame(s, ExpenditureCategory, frame2, conflict_cols=["code"], update_cols=["description"])
+        write_frame(
+            s, ExpenditureCategory, frame2, conflict_cols=["code"], update_cols=["description"]
+        )
         s.commit()
         rows = s.exec(select(ExpenditureCategory)).all()
     assert len(rows) == 1
@@ -44,6 +47,8 @@ def test_write_frame_is_idempotent_on_conflict():
 
 def test_write_frame_empty_is_noop():
     engine = _engine()
-    empty = pl.DataFrame({"code": [], "description": []}, schema={"code": pl.Utf8, "description": pl.Utf8})
+    empty = pl.DataFrame(
+        {"code": [], "description": []}, schema={"code": pl.Utf8, "description": pl.Utf8}
+    )
     with Session(engine, expire_on_commit=False) as s:
         assert write_frame(s, ExpenditureCategory, empty, conflict_cols=["code"]) == 0

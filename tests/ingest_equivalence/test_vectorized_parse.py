@@ -4,6 +4,7 @@ These are the hardest primitives of the vectorized engine — if a Polars expres
 diverges from the ORM helper on any input, the row-for-row equivalence gate fails.
 We assert exact equality across a battery of inputs (incl. TEC edge cases).
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -18,15 +19,38 @@ from app.core.source_models import reports_ingest as ri
 _B = UnifiedSQLModelBuilder("texas", 1, "TX")
 
 AMOUNT_INPUTS = [
-    None, "", "  ", "0", "90", "90.00", "1000.00", "1,000.00", "$1,000.00",
-    "$1,234,567.89", "-50.5", "abc", "Prime Rate", "NONE", ".", "-", "12.5%",
+    None,
+    "",
+    "  ",
+    "0",
+    "90",
+    "90.00",
+    "1000.00",
+    "1,000.00",
+    "$1,000.00",
+    "$1,234,567.89",
+    "-50.5",
+    "abc",
+    "Prime Rate",
+    "NONE",
+    ".",
+    "-",
+    "12.5%",
 ]
 # Clean, well-defined dates for the tec_* dialect (its ORM helper RAISES on
 # malformed 8-digit input like "20001305", so such values can't be parity-tested
 # here — they reject the row at ingest, an edge absent from clean TEC data).
 TEC_DATE_INPUTS = [
-    None, "", "  ", "20000705", "20120229", "2000-07-05", "07/05/2000",
-    "2000/07/05", "07-05-2000", "garbage",
+    None,
+    "",
+    "  ",
+    "20000705",
+    "20120229",
+    "2000-07-05",
+    "07/05/2000",
+    "2000/07/05",
+    "07-05-2000",
+    "garbage",
 ]
 # builders._parse_date is total (returns None on bad input) so it can take more.
 DATE_INPUTS = TEC_DATE_INPUTS + ["00041110", "20001305"]

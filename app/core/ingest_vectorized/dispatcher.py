@@ -5,6 +5,7 @@ discover source files, then dispatch each registered family worker in FK order. 
 per-family transforms live in `app/core/ingest_vectorized/families/`; importing this
 package registers them.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -52,8 +53,11 @@ def run_vectorized(
     try:
         state_row = _seed(session, state)
         ctx = FamilyContext(
-            session=session, engine=engine, state_id=state_row.id,
-            state_code=state_row.code, state=state,
+            session=session,
+            engine=engine,
+            state_id=state_row.id,
+            state_code=state_row.code,
+            state=state,
         )
         for worker in sorted(FAMILY_WORKERS, key=lambda w: w.priority):
             files = [p for rt in worker.record_types for p in by_type.get(rt, [])]

@@ -6,6 +6,7 @@ A parallel ingest path to the per-row ORM loader, gated by the equivalence harne
 
 See docs/design/vectorized-ingest-plan.md.
 """
+
 from __future__ import annotations
 
 from app.core.ingest_vectorized.dispatcher import run_vectorized

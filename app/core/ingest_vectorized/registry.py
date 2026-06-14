@@ -4,6 +4,7 @@ Each record-type family registers a worker that transforms its source files into
 unified rows. Mirrors `app/core/source_models/__init__.py::RECORD_TYPE_BUILDERS`,
 but workers operate on whole frames (Polars) rather than per-row.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

@@ -18,6 +18,7 @@ Two parse dialects exist in the ORM and must be kept distinct:
 - ``builder_*`` mirrors ``app/core/builders.py`` (`_parse_amount` regex-strips
   ``[^\\d.-]``; `_parse_date` tries a format list with a 1900-2100 year guard).
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -57,7 +58,9 @@ def tec_amount(col: str) -> pl.Expr:
 def builder_amount(col: str) -> pl.Expr:
     """Mirror builders._parse_amount: strip everything except [0-9.-], then Decimal."""
     s = pl.col(col).cast(pl.Utf8).str.replace_all(r"[^\d.-]", "")
-    cleaned = pl.when(s.is_in(["", ".", "-", "-.", "."]).not_() & s.is_not_null()).then(s).otherwise(None)
+    cleaned = (
+        pl.when(s.is_in(["", ".", "-", "-.", "."]).not_() & s.is_not_null()).then(s).otherwise(None)
+    )
     return cleaned.cast(pl.Decimal(38, 4), strict=False)
 
 
@@ -83,8 +86,10 @@ def tec_date(col: str) -> pl.Expr:
     iso = s.str.to_date("%Y-%m-%d", strict=False).fill_null(s.str.to_date("%Y/%m/%d", strict=False))
     us = s.str.to_date("%m/%d/%Y", strict=False).fill_null(s.str.to_date("%m-%d-%Y", strict=False))
     return (
-        pl.when(s.is_null() | (s.str.len_chars() == 0)).then(None)
-        .when(eight).then(d8)
+        pl.when(s.is_null() | (s.str.len_chars() == 0))
+        .then(None)
+        .when(eight)
+        .then(d8)
         .otherwise(iso.fill_null(us))
     )
 
