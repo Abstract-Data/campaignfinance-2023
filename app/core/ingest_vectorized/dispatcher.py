@@ -60,10 +60,10 @@ def run_vectorized(
             state=state,
         )
         for worker in sorted(FAMILY_WORKERS, key=lambda w: w.priority):
-            files = [p for rt in worker.record_types for p in by_type.get(rt, [])]
-            if not files:
+            files_by_type = {rt: by_type[rt] for rt in worker.record_types if rt in by_type}
+            if not files_by_type:
                 continue
-            result = worker.run(files, ctx)
+            result = worker.run(files_by_type, ctx)
             counts["loaded"] += int(result.get("loaded", 0))
             counts["families_run"] += 1
             _logger.info(f"[vectorized] family {sorted(worker.record_types)} -> {result}")

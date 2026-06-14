@@ -120,22 +120,51 @@ def raw_json_expr(columns: list[str], alias: str = "raw_data") -> pl.Expr:
 
 
 # ── writes ───────────────────────────────────────────────────────────────────
+def _inject_auto_columns(model: type, rows: list[dict[str, Any]]) -> None:
+    """Fill ``uuid`` / ``created_at`` / ``updated_at`` that the ORM sets via
+    ``default_factory`` — those Python defaults do NOT fire on a core bulk insert.
+    Values are non-deterministic but are dropped by the equivalence harness
+    (volatile columns); we only need them non-null to satisfy NOT NULL/unique."""
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    cols = set(model.__table__.columns.keys())  # type: ignore[attr-defined]
+    now = datetime.now(timezone.utc)
+    for r in rows:
+        if "uuid" in cols and r.get("uuid") is None:
+            r["uuid"] = str(_uuid.uuid4())
+        if "created_at" in cols and r.get("created_at") is None:
+            r["created_at"] = now
+        if "updated_at" in cols and r.get("updated_at") is None:
+            r["updated_at"] = now
+
+
 def write_frame(
     session: Any,
     model: type,
     frame: pl.DataFrame,
     *,
-    conflict_cols: list[str],
+    conflict_cols: list[str] | None,
     update_cols: list[str] | None = None,
 ) -> int:
-    """Bulk upsert a Polars frame into ``model``'s table (dialect-safe).
+    """Bulk-write a Polars frame into ``model``'s table (dialect-safe).
 
-    Correctness-first via ``app.core.upsert.bulk_upsert`` (works on sqlite + postgres).
-    The Postgres COPY fast-path is a separate perf follow-up.
+    With ``conflict_cols`` -> upsert via ``app.core.upsert.bulk_upsert``; with
+    ``conflict_cols=None`` -> plain core insert (for tables without a natural unique
+    key). Auto-fills uuid/timestamps the ORM would set. Correctness-first; the
+    Postgres COPY fast-path is a separate perf follow-up.
     """
+    from sqlalchemy import insert
+
     from app.core.upsert import bulk_upsert
 
     if frame.is_empty():
         return 0
     rows = frame.to_dicts()
-    return bulk_upsert(session, model, rows, conflict_cols=conflict_cols, update_cols=update_cols)
+    _inject_auto_columns(model, rows)
+    if conflict_cols:
+        return bulk_upsert(
+            session, model, rows, conflict_cols=conflict_cols, update_cols=update_cols
+        )
+    session.execute(insert(model.__table__), rows)  # type: ignore[attr-defined]
+    return len(rows)
