@@ -260,6 +260,7 @@ class TestResolvedViewsIntegration:
             "resolved_contributions",
             "resolved_expenditures",
             "resolved_reports",
+            "cross_role_entities",
         }
 
     def test_resolved_contributions_joins_canonical_entities(self, session):
@@ -406,6 +407,7 @@ class TestPublishAll:
             "resolved_contributions",
             "resolved_expenditures",
             "resolved_reports",
+            "cross_role_entities",
             "address_occupancy",
         }
 

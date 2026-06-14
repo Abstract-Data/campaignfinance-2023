@@ -205,6 +205,7 @@ def test_build_resolved_views_creates_views_and_resolves_contributions(session: 
         "resolved_contributions",
         "resolved_expenditures",
         "resolved_reports",
+        "cross_role_entities",
     }
 
     row = session.execute(

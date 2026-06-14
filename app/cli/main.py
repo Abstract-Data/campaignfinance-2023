@@ -46,3 +46,8 @@ app.command(name="download")(download.download)
 app.command(name="convert")(convert.convert)
 app.command(name="verify")(verify.verify)
 app.command(name="prepare")(prepare.prepare)
+app.command(name="field-coverage")(verify.field_coverage)
+
+
+if __name__ == "__main__":
+    app()
