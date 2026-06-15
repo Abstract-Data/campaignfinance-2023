@@ -21,6 +21,7 @@ Two parse dialects exist in the ORM and must be kept distinct:
 
 from __future__ import annotations
 
+import enum
 from typing import Any
 
 import polars as pl
@@ -145,23 +146,146 @@ def raw_json_expr(columns: list[str], alias: str = "raw_data") -> pl.Expr:
 
 
 # ── writes ───────────────────────────────────────────────────────────────────
-def _inject_auto_columns(model: type, rows: list[dict[str, Any]]) -> None:
-    """Fill ``uuid`` / ``created_at`` / ``updated_at`` that the ORM sets via
-    ``default_factory`` — those Python defaults do NOT fire on a core bulk insert.
-    Values are non-deterministic but are dropped by the equivalence harness
-    (volatile columns); we only need them non-null to satisfy NOT NULL/unique."""
-    import uuid as _uuid
-    from datetime import datetime, timezone
+def _python_default_factories(model: type) -> list[tuple[str, Any]]:
+    """``(column_name, () -> value)`` for every column with a Python-side default
+    (``default=`` / ``default_factory=`` → uuid, created_at/updated_at/last_modified_at,
+    scalar flags like ``is_forgiven=False``). SQLAlchemy fires these on a core insert, so
+    the bulk_upsert path gets them for free; the raw COPY path bypasses SQLAlchemy and must
+    materialize them itself, or NOT-NULL columns the families don't compute would fail."""
+    out: list[tuple[str, Any]] = []
+    for col in model.__table__.columns:  # type: ignore[attr-defined]
+        d = col.default
+        if d is None or not getattr(d, "is_scalar", False) and not getattr(d, "is_callable", False):
+            continue  # no default, or a server/clause default the DB resolves itself
+        if getattr(d, "is_scalar", False):
+            out.append((col.name, lambda _v=d.arg: _v))
+        else:  # callable: SQLAlchemy wraps no-arg factories to take a context arg
+            out.append((col.name, lambda _f=d.arg: _f(None)))
+    return out
 
-    cols = set(model.__table__.columns.keys())  # type: ignore[attr-defined]
-    now = datetime.now(timezone.utc)
+
+def _inject_auto_columns(model: type, rows: list[dict[str, Any]]) -> None:
+    """Materialize every Python-side column default the rows don't already provide, so the
+    Postgres COPY path produces the same rows SQLAlchemy core would. Auto values (uuid,
+    timestamps) are volatile and dropped by the equivalence harness; scalar defaults (flags)
+    match what the ORM stores."""
+    factories = _python_default_factories(model)
+    if not factories:
+        return
     for r in rows:
-        if "uuid" in cols and r.get("uuid") is None:
-            r["uuid"] = str(_uuid.uuid4())
-        if "created_at" in cols and r.get("created_at") is None:
-            r["created_at"] = now
-        if "updated_at" in cols and r.get("updated_at") is None:
-            r["updated_at"] = now
+        for name, make in factories:
+            if r.get(name) is None:
+                r[name] = make()
+
+
+def _copy_columns(model: type, rows: list[dict[str, Any]]) -> list[str]:
+    """Stable COPY column order: the model's declared columns that appear in the rows
+    (after auto-injection), in table-definition order. Restricting to declared columns
+    keeps the COPY/INSERT column list aligned with the target table."""
+    declared = list(model.__table__.columns.keys())  # type: ignore[attr-defined]
+    present = set().union(*(r.keys() for r in rows)) if rows else set()
+    return [c for c in declared if c in present]
+
+
+# COPY CSV NULL sentinel. Must be distinct from "" so an empty STRING round-trips as an
+# empty string (matching bulk_upsert), not NULL — Postgres treats an unquoted empty field
+# as "" only when the NULL marker is non-empty. ``\N`` as a bare unquoted field is the
+# idiomatic COPY null and effectively never occurs as a real (quote-free) data value here.
+_COPY_NULL = "\\N"
+
+
+def _csv_cell(value: Any) -> Any:
+    """One CSV field for COPY: None -> the NULL sentinel; Enum -> its NAME (Postgres native
+    enums use member names, and ``str(enum)`` on a str-mixin enum is the lowercase value
+    which would be rejected); everything else as-is (Decimal/date/datetime/bool/str all
+    round-trip through Postgres input parsing)."""
+    if value is None:
+        return _COPY_NULL
+    if isinstance(value, enum.Enum):
+        return value.name
+    return value
+
+
+def _rows_to_csv_buffer(rows: list[dict[str, Any]], columns: list[str]):
+    """Serialize *rows* to an in-memory CSV buffer for ``COPY ... (FORMAT csv, NULL '\\N')``.
+
+    None -> ``\\N`` (NULL); empty string -> "" (preserved, distinct from NULL). QUOTE_MINIMAL
+    quotes JSON/text containing commas/quotes/newlines so COPY parses them intact.
+    """
+    import csv
+    import io
+
+    buf = io.StringIO()
+    writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
+    for r in rows:
+        writer.writerow([_csv_cell(r.get(c)) for c in columns])
+    buf.seek(0)
+    return buf
+
+
+def _write_frame_postgres(
+    session: Any,
+    model: type,
+    rows: list[dict[str, Any]],
+    *,
+    conflict_cols: list[str] | None,
+    update_cols: list[str] | None,
+) -> int:
+    """Postgres COPY fast-path. Direct COPY when there is no conflict key; otherwise COPY
+    into an ``ON COMMIT DROP`` staging table then ``INSERT ... SELECT ... ON CONFLICT``.
+
+    SQL is composed with ``psycopg2.sql`` — only Table-metadata identifiers are injected
+    (never values; row data rides STDIN), so it is injection-safe by construction.
+    """
+    from psycopg2 import sql
+
+    table_name = model.__table__.name  # type: ignore[attr-defined]
+    columns = _copy_columns(model, rows)
+    col_idents = sql.SQL(", ").join(sql.Identifier(c) for c in columns)
+    buf = _rows_to_csv_buffer(rows, columns)
+    raw = session.connection().connection.driver_connection
+    cur = raw.cursor()
+    try:
+        if not conflict_cols:
+            copy_stmt = sql.SQL("COPY {} ({}) FROM STDIN WITH (FORMAT csv, NULL '\\N')").format(
+                sql.Identifier(table_name), col_idents
+            )
+            cur.copy_expert(copy_stmt.as_string(cur), buf)
+        else:
+            stg = f"_stg_{table_name}"
+            cur.execute(
+                sql.SQL(
+                    "CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS) ON COMMIT DROP"
+                ).format(sql.Identifier(stg), sql.Identifier(table_name))
+            )
+            copy_stmt = sql.SQL("COPY {} ({}) FROM STDIN WITH (FORMAT csv, NULL '\\N')").format(
+                sql.Identifier(stg), col_idents
+            )
+            cur.copy_expert(copy_stmt.as_string(cur), buf)
+            targets = update_cols or [c for c in columns if c not in conflict_cols]
+            if targets:
+                set_clause = sql.SQL(", ").join(
+                    sql.SQL("{0} = EXCLUDED.{0}").format(sql.Identifier(c)) for c in targets
+                )
+                action = sql.SQL("DO UPDATE SET {}").format(set_clause)
+            else:
+                action = sql.SQL("DO NOTHING")
+            cur.execute(
+                sql.SQL(
+                    "INSERT INTO {tbl} ({cols}) SELECT {cols} FROM {stg} "
+                    "ON CONFLICT ({conf}) {act}"
+                ).format(
+                    tbl=sql.Identifier(table_name),
+                    cols=col_idents,
+                    stg=sql.Identifier(stg),
+                    conf=sql.SQL(", ").join(sql.Identifier(c) for c in conflict_cols),
+                    act=action,
+                )
+            )
+    finally:
+        cur.close()
+    session.commit()
+    return len(rows)
 
 
 def write_frame(
@@ -174,11 +298,17 @@ def write_frame(
 ) -> int:
     """Bulk-write a Polars frame into ``model``'s table (dialect-safe).
 
-    With ``conflict_cols`` -> upsert via ``app.core.upsert.bulk_upsert``; with
-    ``conflict_cols=None`` -> plain core insert (for tables without a natural unique
-    key). Auto-fills uuid/timestamps the ORM would set. Correctness-first; the
-    Postgres COPY fast-path is a separate perf follow-up.
+    With ``conflict_cols`` -> upsert; with ``conflict_cols=None`` -> plain insert (for
+    tables without a natural unique key). Auto-fills uuid/timestamps the ORM would set.
+
+    On PostgreSQL this uses a COPY fast-path (direct COPY, or COPY-to-staging +
+    INSERT...ON CONFLICT for upserts) — orders of magnitude faster than executemany at
+    ingest scale. On sqlite / other dialects it uses ``bulk_upsert`` / core insert. The
+    COPY path is proven row-identical to bulk_upsert by the equivalence harness. Set
+    ``VECTORIZED_DISABLE_COPY=1`` to force the legacy path (used to diff COPY vs upsert).
     """
+    import os
+
     from sqlalchemy import insert
 
     from app.core.upsert import bulk_upsert
@@ -187,6 +317,13 @@ def write_frame(
         return 0
     rows = frame.to_dicts()
     _inject_auto_columns(model, rows)
+
+    is_postgres = session.get_bind().dialect.name == "postgresql"
+    if is_postgres and not os.environ.get("VECTORIZED_DISABLE_COPY"):
+        return _write_frame_postgres(
+            session, model, rows, conflict_cols=conflict_cols, update_cols=update_cols
+        )
+
     if conflict_cols:
         return bulk_upsert(
             session, model, rows, conflict_cols=conflict_cols, update_cols=update_cols
