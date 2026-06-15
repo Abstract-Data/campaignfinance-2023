@@ -1,13 +1,12 @@
-"""Gate: the vectorized flat_txns family == the ORM loader for unified_transactions.
+"""Gate: the vectorized flat_txns + flat_txns_dims families == the ORM loader.
 
 Loads ONLY the RCPT (contribs_golden) and EXPN (expend_golden) fixtures via both
-the ORM loader and ``run_vectorized`` (flat_txns family registered), then asserts
-that ``diff_snapshots`` restricted to ``unified_transactions`` is empty.
+the ORM loader and ``run_vectorized`` (flat_txns + flat_txns_dims families registered),
+then asserts that ``diff_snapshots`` restricted to the expected tables is empty.
 
-Foreign-key parent tables (unified_committees, unified_reports, etc.) are NOT
-populated on the vectorized side — ``enforce_fk=False`` is used, mirroring the
-reports-family gate.  The surrogate FK columns (committee_id → int, etc.) are
-dropped by the harness anyway; only the natural-key committee_id string is kept.
+Foreign-key parent tables (unified_reports, etc.) are NOT populated on the
+vectorized side — ``enforce_fk=False`` is used.  Surrogate FK columns are dropped
+by the harness anyway; natural-key columns (committee_id string, etc.) are kept.
 """
 
 from __future__ import annotations
@@ -75,6 +74,23 @@ def _load_golden_rcpt_expn(engine) -> None:
 def _flat_txns_only(snap: dict) -> dict:
     """Restrict a snapshot to unified_transactions only."""
     return {"unified_transactions": snap.get("unified_transactions", [])}
+
+
+# Tables made equivalent by flat_txns_dims — added here in parity order.
+# Dim tables this slice brings to real parity. Detail/junction tables
+# (contributions/expenditures/transaction_persons) are deferred to the linkage slice
+# (real id-joins + harness FK->natural-key resolution), not gated here.
+_DIM_TABLES = (
+    "unified_addresses",
+    "unified_persons",
+    "unified_entities",
+    "unified_committees",
+)
+
+
+def _dims_only(snap: dict) -> dict:
+    """Restrict a snapshot to the dim tables gated by flat_txns_dims."""
+    return {t: snap.get(t, []) for t in _DIM_TABLES}
 
 
 # ---------------------------------------------------------------------------
@@ -147,3 +163,32 @@ def test_flat_txns_expenditure_count(tmp_path: Path):
     txns = snap.get("unified_transactions", [])
     expenditures = [t for t in txns if t.get("transaction_type") == "EXPENDITURE"]
     assert expenditures, "expected EXPENDITURE transactions from EXPN fixture"
+
+
+# ---------------------------------------------------------------------------
+# Dim layer gate (flat_txns_dims family)
+# ---------------------------------------------------------------------------
+
+def test_flat_txns_dims_family_matches_orm(tmp_path: Path):
+    """Dim tables (addresses, persons, entities, committees, contributions,
+    expenditures, transaction_persons) must be row-for-row equal (ORM vs vectorized).
+
+    Uses enforce_fk=False — FK parent tables (unified_reports, etc.) are NOT seeded;
+    surrogate FK columns are dropped by the harness, natural-key columns are compared.
+    """
+    orm_engine = _make_engine(tmp_path / "orm_dims.db", enforce_fk=False)
+    _load_golden_rcpt_expn(orm_engine)
+
+    flat_fixtures = _make_rcpt_expn_fixtures_dir(tmp_path)
+    vec_engine = _make_engine(tmp_path / "vec_dims.db", enforce_fk=False)
+    run_vectorized(vec_engine, flat_fixtures)
+
+    orm = _dims_only(snapshot_unified(orm_engine))
+    vec = _dims_only(snapshot_unified(vec_engine))
+
+    # Sanity: ORM must have produced rows in every dim table
+    for tbl in _DIM_TABLES:
+        assert orm.get(tbl), f"ORM produced no {tbl} rows — fixture/loader problem"
+
+    diffs = diff_snapshots(orm, vec)
+    assert diffs == [], "dim tables diverge from ORM:\n" + "\n".join(diffs)
