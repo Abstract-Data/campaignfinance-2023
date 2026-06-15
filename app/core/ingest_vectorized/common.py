@@ -289,7 +289,15 @@ def _write_frame_postgres(
                 sql.Identifier(stg), col_idents
             )
             cur.copy_expert(copy_stmt.as_string(cur), buf)
-            targets = update_cols or [c for c in columns if c not in conflict_cols]
+            # update_cols=[] means DO NOTHING (caller wants first-occurrence-wins);
+            # update_cols=None means DO UPDATE all non-conflict columns. Distinguish
+            # the two with an explicit None check (an empty list is falsy but NOT the
+            # same intent as None).
+            targets = (
+                [c for c in columns if c not in conflict_cols]
+                if update_cols is None
+                else update_cols
+            )
             if targets:
                 set_clause = sql.SQL(", ").join(
                     sql.SQL("{0} = EXCLUDED.{0}").format(sql.Identifier(c)) for c in targets
@@ -327,6 +335,12 @@ def write_frame(
 
     With ``conflict_cols`` -> upsert; with ``conflict_cols=None`` -> plain insert (for
     tables without a natural unique key). Auto-fills uuid/timestamps the ORM would set.
+
+    ``update_cols`` (only meaningful with ``conflict_cols``) selects the SET columns on
+    conflict: ``None`` (default) updates all non-conflict columns; an explicit ``[]``
+    means ``ON CONFLICT DO NOTHING`` (first-occurrence-wins / backfill-nothing), used by
+    the committee writers so a FILER-authored committee is not clobbered by an incidental
+    transaction ``filerName``.
 
     On PostgreSQL this uses a COPY fast-path (direct COPY, or COPY-to-staging +
     INSERT...ON CONFLICT for upserts) — orders of magnitude faster than executemany at

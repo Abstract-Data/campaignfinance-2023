@@ -674,10 +674,14 @@ class FlatTxnsDimsWorker:
         # 4. Committees
         comm_df = _build_committee_frame(rcpt, expn)
         if comm_df.height > 0:
+            # DO NOTHING on conflict (update_cols=[]): a committee already created by the
+            # FILER family (authoritative name/type/status/address) must NOT be clobbered
+            # by an incidental transaction filerName. FILER runs first (priority 0); this
+            # mirrors the ORM's find-or-create first-occurrence-wins.
             counts["committees"] = common.write_frame(
                 ctx.session, UnifiedCommittee,
                 comm_df.with_columns(pl.lit(ctx.state_id).alias("state_id")),
-                conflict_cols=["filer_id"],
+                conflict_cols=["filer_id"], update_cols=[],
             )
         else:
             counts["committees"] = 0
