@@ -19,6 +19,7 @@ LIMITATION (v1): junction rows whose only non-volatile columns are surrogate FKs
 their remaining natural columns (role, amount) only — gross differences are caught,
 fine-grained mislinkage is not. P1 may add FK->natural-key resolution.
 """
+
 from __future__ import annotations
 
 from collections import Counter
@@ -44,12 +45,32 @@ VOLATILE_COLUMNS: frozenset[str] = frozenset(
 )
 
 
+# Provenance/JSON columns compared STRUCTURALLY (parse + canonical re-dump), not
+# byte-exact: json.dumps (ORM) and Polars json_encode differ on key order/separators,
+# but the logical content must match.
+JSON_COLUMNS: frozenset[str] = frozenset(
+    {"raw_data", "provenance_json", "metadata_json", "explanation_json", "raw_json", "config_json"}
+)
+
+
+def _canonicalize_json(value: Any) -> Any:
+    """Parse a JSON string and re-dump it canonically (sorted keys, no spaces) so two
+    engines that emit equivalent-but-differently-formatted JSON compare equal. Returns
+    the original value unchanged if it is not parseable JSON."""
+    import json
+
+    if value is None:
+        return None
+    try:
+        return json.dumps(json.loads(value), sort_keys=True, separators=(",", ":"), default=str)
+    except (TypeError, ValueError):
+        return value
+
+
 def _target_tables(inspector: Any) -> list[str]:
     """Unified source-layer + canonical resolve-layer tables present in the DB."""
     names = set(inspector.get_table_names())
-    return sorted(
-        t for t in names if t.startswith("unified_") or t.startswith("canonical_")
-    )
+    return sorted(t for t in names if t.startswith("unified_") or t.startswith("canonical_"))
 
 
 def _surrogate_fk_columns(inspector: Any, table: str) -> set[str]:
@@ -69,9 +90,7 @@ def _comparable_columns(inspector: Any, table: str) -> list[str]:
 
 def _row_key(row: dict[str, Any]) -> tuple[tuple[str, str | None], ...]:
     """A hashable, order-independent key for one row (None distinct from '')."""
-    return tuple(
-        sorted((k, None if v is None else str(v)) for k, v in row.items())
-    )
+    return tuple(sorted((k, None if v is None else str(v)) for k, v in row.items()))
 
 
 def _sort_key(row: dict[str, Any]) -> tuple[str, ...]:
@@ -95,8 +114,12 @@ def snapshot_unified(engine: Engine) -> dict[str, list[dict[str, Any]]]:
             continue
         tbl = Table(table, md, autoload_with=engine)
         stmt = select(*[tbl.c[name] for name in keep])
+        json_cols = [c for c in keep if c in JSON_COLUMNS]
         with engine.connect() as conn:
             rows = [dict(m) for m in conn.execute(stmt).mappings().all()]
+        for row in rows:
+            for col in json_cols:
+                row[col] = _canonicalize_json(row[col])
         rows.sort(key=_sort_key)
         snapshot[table] = rows
     return snapshot

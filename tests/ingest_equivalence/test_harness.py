@@ -28,7 +28,10 @@ from app.core.source_models import (  # noqa: F401 — register Phase-0 tables
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "ingest_golden"
 
 
-def _make_engine(db_path: Path):
+def _make_engine(db_path: Path, *, enforce_fk: bool = True):
+    """Build a file-backed sqlite engine. ``enforce_fk=False`` for per-family gate
+    runs that load only one family (its FK-parent tables aren't populated, but the
+    natural-key FK columns are still compared)."""
     from sqlalchemy import create_engine
 
     engine = create_engine(f"sqlite:///{db_path}")
@@ -36,7 +39,7 @@ def _make_engine(db_path: Path):
     @event.listens_for(engine, "connect")
     def _fk(dbapi_conn, _rec):
         cur = dbapi_conn.cursor()
-        cur.execute("PRAGMA foreign_keys=ON")
+        cur.execute("PRAGMA foreign_keys=ON" if enforce_fk else "PRAGMA foreign_keys=OFF")
         cur.close()
 
     # Only non-schema-qualified tables: a plain create_all on sqlite raises

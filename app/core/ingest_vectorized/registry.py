@@ -35,8 +35,8 @@ class FamilyWorker(Protocol):
     #: Lower = earlier (FK ordering), mirroring production_loader._FILE_PRIORITY.
     priority: int
 
-    def run(self, files: list[Path], ctx: FamilyContext) -> dict[str, int]:
-        """Transform + persist this family's files. Returns counters."""
+    def run(self, files_by_type: dict[str, list[Path]], ctx: FamilyContext) -> dict[str, int]:
+        """Transform + persist this family's files, keyed by record type. Returns counters."""
         ...
 
 
