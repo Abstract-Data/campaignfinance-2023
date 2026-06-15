@@ -167,9 +167,13 @@ def _entity_id_map(session, state_id: int) -> pl.DataFrame:
 
 
 def _person_id_map(session, state_id: int) -> pl.DataFrame:
-    """Read persons keyed by (lower first, lower last, lower org), and ALSO carry
-    each person's entity key (entity_type, normalized_name) derived from the
+    """Read persons keyed by (lower first, lower last, lower org, dedup_addr_key), and
+    ALSO carry each person's entity key (entity_type, normalized_name) derived from the
     person's STORED name (incl. middle/suffix the dim layer backfilled).
+
+    The address dimension (``_pk_addr`` = stored ``dedup_addr_key``) is part of the
+    individual key so two same-name people at distinct locations map to distinct ids
+    (matching uix_persons_name_state).
 
     The party (contributor/payee) entity is linked via this STORED entity key —
     not the source row's recomputed name — so a person whose suffix/middle differs
@@ -184,6 +188,7 @@ def _person_id_map(session, state_id: int) -> pl.DataFrame:
             UnifiedPerson.last_name,
             UnifiedPerson.suffix,
             UnifiedPerson.organization,
+            UnifiedPerson.dedup_addr_key,
         ).where(UnifiedPerson.state_id == state_id)
     ).all()
 
@@ -196,6 +201,7 @@ def _person_id_map(session, state_id: int) -> pl.DataFrame:
             "_pk_fn": [_lower_or_null(r[1]) for r in rows],
             "_pk_ln": [_lower_or_null(r[3]) for r in rows],
             "_pk_org": [_lower_or_null(r[5]) for r in rows],
+            "_pk_addr": [r[6] for r in rows],
             "first_name": [r[1] for r in rows],
             "middle_name": [r[2] for r in rows],
             "last_name": [r[3] for r in rows],
@@ -204,11 +210,13 @@ def _person_id_map(session, state_id: int) -> pl.DataFrame:
         },
         schema={
             "_pid": pl.Int64, "_pk_fn": pl.Utf8, "_pk_ln": pl.Utf8, "_pk_org": pl.Utf8,
+            "_pk_addr": pl.Utf8,
             "first_name": pl.Utf8, "middle_name": pl.Utf8, "last_name": pl.Utf8,
             "suffix": pl.Utf8, "organization": pl.Utf8,
         },
-        # Org-persons keyed on lower(org) ALONE (null fn/ln) — matches uix_persons_org_state
-        # and the family-side dedup key, so the id-join finds the single org person.
+        # Org-persons keyed on lower(org) ALONE (null fn/ln/addr) — matches
+        # uix_persons_org_state and the family-side dedup key, so the id-join finds the
+        # single org person.
     ).pipe(common.collapse_org_person_key).with_columns(
         pl.when(_cs("organization").is_not_null())
         .then(pl.lit("ORGANIZATION"))
@@ -224,7 +232,8 @@ def _person_id_map(session, state_id: int) -> pl.DataFrame:
             )
         ).alias("_party_ent_norm"),
     ).select(
-        ["_pid", "_pk_fn", "_pk_ln", "_pk_org", "_party_ent_type", "_party_ent_norm"]
+        ["_pid", "_pk_fn", "_pk_ln", "_pk_org", "_pk_addr",
+         "_party_ent_type", "_party_ent_norm"]
     )
 
 
@@ -334,10 +343,25 @@ def _person_addr_keys(
     org = _cs(org_col)
     ent_name = pl.when(org.is_not_null()).then(org).otherwise(full_name)
     ent_type = pl.when(org.is_not_null()).then(pl.lit("ORGANIZATION")).otherwise(pl.lit("PERSON"))
+    # Address dimension of the individual key (NULL for org-persons so they key on
+    # org alone, matching the dim layer + uix_persons_org_state).
+    addr_key = (
+        pl.when(org.is_not_null())
+        .then(None)
+        .otherwise(
+            common.person_addr_key_expr(
+                pl.lit(None, dtype=pl.Utf8) if s1_col is None else s1_col,
+                city_col,
+                common.upper_str(state_col),
+                zip_col,
+            )
+        )
+    )
     return df.with_columns(
         _cs(org_col).str.to_lowercase().alias("_pk_org"),
         _cs(first_col).str.to_lowercase().alias("_pk_fn"),
         _cs(last_col).str.to_lowercase().alias("_pk_ln"),
+        addr_key.alias("_pk_addr"),
         s1.alias("_ak_s1"),
         _cs(city_col).str.to_lowercase().alias("_ak_city"),
         common.upper_str(state_col).str.to_lowercase().alias("_ak_state"),
@@ -348,17 +372,21 @@ def _person_addr_keys(
         ent_type.alias("_ent_type"),
         _norm_name_expr_from(ent_name).alias("_ent_norm"),
     ).select(
-        ["_pk_org", "_pk_fn", "_pk_ln", "_ak_s1", "_ak_city", "_ak_state",
+        ["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr", "_ak_s1", "_ak_city", "_ak_state",
          "_ak_zip", "_sort_key", "_full_len", "_ent_type", "_ent_norm"]
     )
 
 
 def _first_per_person(rows: pl.DataFrame) -> pl.DataFrame:
-    """First occurrence per (org, fn, ln) by ascending sort key (load order)."""
+    """First occurrence per (org, fn, ln, addr) by ascending sort key (load order)."""
     return (
         rows.filter(pl.col("_full_len") > 0)
         .sort("_sort_key")
-        .unique(subset=["_pk_org", "_pk_fn", "_pk_ln"], keep="first", maintain_order=True)
+        .unique(
+            subset=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
+            keep="first",
+            maintain_order=True,
+        )
     )
 
 
@@ -396,6 +424,19 @@ def _project_rcpt(df: pl.DataFrame) -> pl.DataFrame:
         first.str.to_lowercase().alias("_pk_fn"),
         last.str.to_lowercase().alias("_pk_ln"),
         org.str.to_lowercase().alias("_pk_org"),
+        # Address dimension of the individual key (RCPT has no street_1). NULL for
+        # org participants so they match the org-collapsed person_map (addr NULL).
+        pl.when(org.is_not_null())
+        .then(None)
+        .otherwise(
+            common.person_addr_key_expr(
+                pl.lit(None, dtype=pl.Utf8),
+                "contributorStreetCity",
+                common.upper_str("contributorStreetStateCd"),
+                "contributorStreetPostalCode",
+            )
+        )
+        .alias("_pk_addr"),
         full_name.str.len_chars().alias("_full_len"),
     )
 
@@ -421,6 +462,19 @@ def _project_expn(df: pl.DataFrame) -> pl.DataFrame:
         first.str.to_lowercase().alias("_pk_fn"),
         last.str.to_lowercase().alias("_pk_ln"),
         org.str.to_lowercase().alias("_pk_org"),
+        # Address dimension (EXPN carries street_1). NULL for org payees so they match
+        # the org-collapsed person_map (addr NULL).
+        pl.when(org.is_not_null())
+        .then(None)
+        .otherwise(
+            common.person_addr_key_expr(
+                "payeeStreetAddr1",
+                "payeeStreetCity",
+                common.upper_str("payeeStreetStateCd"),
+                "payeeStreetPostalCode",
+            )
+        )
+        .alias("_pk_addr"),
         full_name.str.len_chars().alias("_full_len"),
     )
 
@@ -437,14 +491,19 @@ def _norm_name_expr_from(name_expr: pl.Expr) -> pl.Expr:
 # ---------------------------------------------------------------------------
 
 def _attach_party_person(proj: pl.DataFrame, person_map: pl.DataFrame) -> pl.DataFrame:
-    """Attach the participant person id (and a built flag) via the name key.
+    """Attach the participant person id (and a built flag) via the name + address key.
 
-    Persons are deduped to (org, fn, ln) within the state; orgs key on org alone
-    (fn/ln null), individuals on (fn, ln) with org null — exactly how
-    _person_id_map keys the read-back rows.
+    Persons are deduped to (org, fn, ln, addr) within the state; orgs key on org alone
+    (fn/ln/addr null), individuals on (fn, ln, addr) with org null — exactly how
+    _person_id_map keys the read-back rows.  The participant's ``_pk_addr`` comes from
+    its own contributor/payee address columns (computed in _project_*), so it resolves
+    to the same address-split person the dim layer created.
     """
     return proj.join(
-        person_map, on=["_pk_fn", "_pk_ln", "_pk_org"], how="left", join_nulls=True
+        person_map,
+        on=["_pk_fn", "_pk_ln", "_pk_org", "_pk_addr"],
+        how="left",
+        join_nulls=True,
     )
 
 
@@ -616,7 +675,10 @@ class FlatTxnsDetailWorker:
 
         # Attach person id and address id to each first-occurrence person.
         first = first.join(
-            person_map, on=["_pk_fn", "_pk_ln", "_pk_org"], how="left", join_nulls=True
+            person_map,
+            on=["_pk_fn", "_pk_ln", "_pk_org", "_pk_addr"],
+            how="left",
+            join_nulls=True,
         )
         first = first.join(
             addr_map, on=["_ak_s1", "_ak_city", "_ak_state", "_ak_zip"],

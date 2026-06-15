@@ -175,14 +175,19 @@ def _project_candidates(df: pl.DataFrame) -> pl.DataFrame:
             "candidateNameLast", "candidateNameFirst", "candidateNameOrganization"
         ).alias("person_type"),
         full_name.str.len_chars().alias("_full_len"),
-        # find-or-create person key
+        # find-or-create person key. Candidate records carry no address columns, so the
+        # address dimension of the key is always NULL (candidate persons get NULL
+        # dedup_addr_key, matching the ORM build_person(CANDIDATE) -> no address).
         pk_org.alias("_pk_org"),
         pk_fn.alias("_pk_fn"),
         pk_ln.alias("_pk_ln"),
+        pl.lit(None, dtype=pl.Utf8).alias("_pk_addr"),
         # entity key
         ent_type.alias("_ent_type"),
         _norm_name_expr_from(ent_name).alias("_ent_norm"),
-        # full-identity key (resolves person id even for non-dedupable names)
+        # full-identity key (resolves person id even for non-dedupable names).
+        # _fk_addr is NULL (candidates carry no address) so the candidate resolves to
+        # the NULL-addr person of that name, not a same-name address-bearing person.
         first.str.to_lowercase().alias("_fk_fn"),
         last.str.to_lowercase().alias("_fk_ln"),
         org_low.alias("_fk_org"),
@@ -190,6 +195,7 @@ def _project_candidates(df: pl.DataFrame) -> pl.DataFrame:
         _person_type_expr(
             "candidateNameLast", "candidateNameFirst", "candidateNameOrganization"
         ).alias("_fk_type"),
+        pl.lit(None, dtype=pl.Utf8).alias("_fk_addr"),
     )
 
 
@@ -200,10 +206,13 @@ def _project_candidates(df: pl.DataFrame) -> pl.DataFrame:
 def _person_id_map(session, state_id: int) -> pl.DataFrame:
     """Read persons keyed by the ORM find-or-create key (id-map for junction linkage).
 
-    org present -> (lower(org)) with fn/ln NULL; else (lower(first), lower(last)) with
-    org NULL — exactly how ``_find_person_by_name_state`` keys its lookup. Called both
-    before the candidate insert (to detect which candidates already exist) and after
-    (to resolve every candidate's person id).
+    org present -> (lower(org)) with fn/ln/addr NULL; else
+    (lower(first), lower(last), dedup_addr_key) with org NULL — exactly how
+    ``_find_person_by_name_state`` keys its lookup (now address-inclusive for
+    individuals).  Candidate persons carry no address, so their ``_pk_addr`` is NULL and
+    they resolve only against same-name persons whose ``dedup_addr_key IS NULL``
+    (matching the ORM).  Called both before the candidate insert (to detect which
+    candidates already exist) and after (to resolve every candidate's person id).
     """
     rows = session.execute(
         select(
@@ -211,33 +220,43 @@ def _person_id_map(session, state_id: int) -> pl.DataFrame:
             UnifiedPerson.first_name,
             UnifiedPerson.last_name,
             UnifiedPerson.organization,
+            UnifiedPerson.dedup_addr_key,
         ).where(UnifiedPerson.state_id == state_id)
     ).all()
 
     def _low(v):
         return v.strip().lower() if isinstance(v, str) and v.strip() else None
 
-    pid, pk_org, pk_fn, pk_ln = [], [], [], []
+    pid, pk_org, pk_fn, pk_ln, pk_addr = [], [], [], [], []
     for r in rows:
         org = _low(r[3])
         pid.append(r[0])
         pk_org.append(org)
         pk_fn.append(None if org is not None else _low(r[1]))
         pk_ln.append(None if org is not None else _low(r[2]))
+        # Org-persons key on org alone (addr NULL); individuals carry dedup_addr_key.
+        pk_addr.append(None if org is not None else r[4])
     return pl.DataFrame(
-        {"_pid": pid, "_pk_org": pk_org, "_pk_fn": pk_fn, "_pk_ln": pk_ln},
-        schema={"_pid": pl.Int64, "_pk_org": pl.Utf8, "_pk_fn": pl.Utf8, "_pk_ln": pl.Utf8},
+        {"_pid": pid, "_pk_org": pk_org, "_pk_fn": pk_fn, "_pk_ln": pk_ln,
+         "_pk_addr": pk_addr},
+        schema={"_pid": pl.Int64, "_pk_org": pl.Utf8, "_pk_fn": pl.Utf8,
+                "_pk_ln": pl.Utf8, "_pk_addr": pl.Utf8},
     )
 
 
 def _person_full_id_map(session, state_id: int) -> pl.DataFrame:
-    """Read persons keyed on their FULL natural identity (first/last/org/suffix/type).
+    """Read persons keyed on their FULL natural identity
+    (first/last/org/suffix/type/dedup_addr_key).
 
     Used to resolve a candidate row's person id for the junction and the entity
     representative. Unlike the find-or-create key (which is None for last-only /
     first-only names), the full identity always resolves a candidate to a person —
     and because structurally-identical persons resolve to the SAME natural snapshot
     under ``resolve_fks=True``, picking ANY matching surrogate id (min) is sufficient.
+
+    ``dedup_addr_key`` is part of the key so a candidate (no address -> NULL key)
+    resolves to the NULL-addr person of that name, NOT a same-name address-bearing
+    contributor/payee the new dedup key now keeps separate (matching the ORM).
     """
     rows = session.execute(
         select(
@@ -247,6 +266,7 @@ def _person_full_id_map(session, state_id: int) -> pl.DataFrame:
             UnifiedPerson.organization,
             UnifiedPerson.suffix,
             UnifiedPerson.person_type,
+            UnifiedPerson.dedup_addr_key,
         ).where(UnifiedPerson.state_id == state_id)
     ).all()
 
@@ -261,17 +281,18 @@ def _person_full_id_map(session, state_id: int) -> pl.DataFrame:
             "_fk_org": [_low(r[3]) for r in rows],
             "_fk_sfx": [_low(r[4]) for r in rows],
             "_fk_type": [getattr(r[5], "name", r[5]) for r in rows],
+            "_fk_addr": [r[6] for r in rows],
         },
         schema={
             "_pid": pl.Int64, "_fk_fn": pl.Utf8, "_fk_ln": pl.Utf8, "_fk_org": pl.Utf8,
-            "_fk_sfx": pl.Utf8, "_fk_type": pl.Utf8,
+            "_fk_sfx": pl.Utf8, "_fk_type": pl.Utf8, "_fk_addr": pl.Utf8,
         },
     )
     # One representative id per full-identity key (structurally identical persons
     # resolve identically under resolve_fks, so the smallest id is a stable pick).
-    return df.group_by(["_fk_fn", "_fk_ln", "_fk_org", "_fk_sfx", "_fk_type"]).agg(
-        pl.col("_pid").min().alias("_pid")
-    )
+    return df.group_by(
+        ["_fk_fn", "_fk_ln", "_fk_org", "_fk_sfx", "_fk_type", "_fk_addr"]
+    ).agg(pl.col("_pid").min().alias("_pid"))
 
 
 def _entity_id_map(session, state_id: int) -> pl.DataFrame:
@@ -386,21 +407,26 @@ class CandWorker:
         Candidate persons carry no address columns, so ``address_id`` stays NULL.
         """
         existing = _person_id_map(ctx.session, ctx.state_id)
-        existing_keys = existing.select(["_pk_org", "_pk_fn", "_pk_ln"]).unique()
+        existing_keys = existing.select(["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"]).unique()
 
         dedupable = pl.col("_pk_org").is_not_null() | (
             pl.col("_pk_fn").is_not_null() & pl.col("_pk_ln").is_not_null()
         )
 
         # Dedupable: first occurrence per person key (row order), drop existing keys.
+        # _pk_addr is NULL for candidates (no address), so they skip only same-name
+        # persons whose dedup_addr_key IS NULL — matching the ORM find-or-create.
         dedup_first = (
             cand_rows.filter(dedupable)
             .sort("_cand_row")
-            .unique(subset=["_pk_org", "_pk_fn", "_pk_ln"], keep="first", maintain_order=True)
+            .unique(
+                subset=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"], keep="first",
+                maintain_order=True,
+            )
         )
         dedup_new = dedup_first.join(
             existing_keys.with_columns(pl.lit(True).alias("_exists")),
-            on=["_pk_org", "_pk_fn", "_pk_ln"],
+            on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
             how="left",
             join_nulls=True,
         ).filter(pl.col("_exists").is_null())
@@ -423,6 +449,8 @@ class CandWorker:
             pl.lit(None, dtype=pl.Utf8).alias("occupation"),
             pl.lit(None, dtype=pl.Utf8).alias("job_title"),
             pl.col("person_type"),
+            # Candidate persons have no address -> NULL dedup key (matches ORM).
+            pl.col("_pk_addr").alias("dedup_addr_key"),
             pl.lit(ctx.state_id).alias("state_id"),
         )
         return common.write_frame(ctx.session, UnifiedPerson, rows, conflict_cols=None)
@@ -488,7 +516,7 @@ class CandWorker:
         rows = (
             cand_rows.join(
                 person_map,
-                on=["_fk_fn", "_fk_ln", "_fk_org", "_fk_sfx", "_fk_type"],
+                on=["_fk_fn", "_fk_ln", "_fk_org", "_fk_sfx", "_fk_type", "_fk_addr"],
                 how="left",
                 join_nulls=True,
             )

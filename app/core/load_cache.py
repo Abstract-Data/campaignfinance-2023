@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 # Key shapes (all lower-cased / normalized at call sites):
-#   person    -> ("org", org, state_id) | ("name", first, last, state_id)
+#   person    -> ("org", org, state_id) | ("name", first, last, state_id, addr_key)
 #   committee -> filer_id
 #   entity    -> (entity_type, normalized_name, state_id)
 #   address   -> (street_1|None, city|None, state|None, zip|None)
@@ -65,12 +65,36 @@ class BuilderCache:
         last_name: str | None,
         organization: str | None,
         state_id: int | None,
+        address_key: str | None = None,
     ) -> PersonKey | None:
+        """Dedup key mirroring ``uix_persons_*``.
+
+        Org-persons key on ``(lower(org), state)`` alone (``address_key`` ignored).
+        Individuals key on ``(lower(first), lower(last), state, address_key)`` so two
+        same-name people at distinct locations stay separate.  ``address_key`` is the
+        denormalized ``dedup_addr_key`` string (see ``address_key_str``) or ``None``
+        when the address has too few fields — then the key degrades to name-only,
+        preserving today's behavior for addressless persons.
+        """
         if organization:
             return ("org", organization.lower(), state_id)
         if first_name and last_name:
-            return ("name", first_name.lower(), last_name.lower(), state_id)
+            return ("name", first_name.lower(), last_name.lower(), state_id, address_key)
         return None
+
+    @staticmethod
+    def address_key_str(address_data: dict[str, Any]) -> str | None:
+        """Denormalized ``dedup_addr_key`` — the ``address_key`` tuple joined by ``|``.
+
+        Returns ``"street|city|state|zip"`` (lowercased street/city/state, zip as-is,
+        empty for missing components) when ≥2 of the four fields are populated, else
+        ``None``.  Stored on ``UnifiedPerson.dedup_addr_key`` so a single-table unique
+        index can enforce the (name + address) dedup key.
+        """
+        key = BuilderCache.address_key(address_data)
+        if key is None:
+            return None
+        return "|".join("" if part is None else str(part) for part in key)
 
     @staticmethod
     def entity_key(

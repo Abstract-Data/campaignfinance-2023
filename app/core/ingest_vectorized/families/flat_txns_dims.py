@@ -212,46 +212,57 @@ def _build_persons_frame_rcpt(df: pl.DataFrame) -> pl.DataFrame:
 
     Returns columns:
         first_name, last_name, middle_name, suffix, organization, employer,
-        occupation, job_title, person_type, _pk_fn, _pk_ln, _pk_org, _sort_key
+        occupation, job_title, person_type, dedup_addr_key,
+        _pk_fn, _pk_ln, _pk_org, _pk_addr, _sort_key
     """
     keyed = df.sort("contributionInfoId").with_columns([
         _nullify_expr(pl.col("contributorNameOrganization").cast(pl.Utf8))
             .str.to_lowercase().alias("_pk_org"),
         _cs("contributorNameFirst").str.to_lowercase().alias("_pk_fn"),
         _cs("contributorNameLast").str.to_lowercase().alias("_pk_ln"),
+        # RCPT has no street_1 — address key is (city, state, zip) only.
+        common.person_addr_key_expr(
+            pl.lit(None, dtype=pl.Utf8),
+            "contributorStreetCity",
+            common.upper_str("contributorStreetStateCd"),
+            "contributorStreetPostalCode",
+        ).alias("_pk_addr"),
         pl.col("contributionInfoId").cast(pl.Int64).alias("_row_id"),
     ])
-    # Org-persons dedup on lower(org) ALONE (null fn/ln) — matches uix_persons_org_state.
+    # Org-persons dedup on lower(org) ALONE (null fn/ln/addr) — matches uix_persons_org_state.
     keyed = common.collapse_org_person_key(keyed)
 
-    # First occurrence per (org_lower, fn_lower, ln_lower): keep all columns via agg().first()
-    first = keyed.group_by(["_pk_org", "_pk_fn", "_pk_ln"]).agg(pl.all().first())
+    # First occurrence per (org, fn, ln, addr): individuals now split by address so two
+    # same-name people at distinct locations get distinct person rows (uix_persons_name_state).
+    first = keyed.group_by(["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"]).agg(pl.all().first())
 
     # Split orgs vs individuals (mirrors _build_persons_frame_expn pattern)
     org_first = first.filter(pl.col("_pk_org").is_not_null())
     ind_first = first.filter(pl.col("_pk_org").is_null())
 
-    # Backfill: first non-null employer/occupation/suffix across all occurrences
-    # (keyed by the same 3-tuple so backfill joins correctly for both orgs and individuals).
+    # Backfill: first non-null employer/occupation/suffix across all occurrences of the
+    # SAME person (keyed by the 4-tuple incl. address so distinct-location persons don't
+    # cross-contaminate; org-persons keep _pk_addr NULL so they still aggregate as one).
+    _pk = ["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"]
     emp_nn = (
         keyed.filter(
             pl.col("contributorEmployer").cast(pl.Utf8).str.strip_chars().str.len_chars() > 0
         )
-        .group_by(["_pk_org", "_pk_fn", "_pk_ln"])
+        .group_by(_pk)
         .agg(pl.first("contributorEmployer").alias("emp_nn"))
     )
     occ_nn = (
         keyed.filter(
             pl.col("contributorOccupation").cast(pl.Utf8).str.strip_chars().str.len_chars() > 0
         )
-        .group_by(["_pk_org", "_pk_fn", "_pk_ln"])
+        .group_by(_pk)
         .agg(pl.first("contributorOccupation").alias("occ_nn"))
     )
     sfx_nn = (
         keyed.filter(
             pl.col("contributorNameSuffixCd").cast(pl.Utf8).str.strip_chars().str.len_chars() > 0
         )
-        .group_by(["_pk_org", "_pk_fn", "_pk_ln"])
+        .group_by(_pk)
         .agg(pl.first("contributorNameSuffixCd").alias("sfx_nn"))
     )
 
@@ -261,18 +272,18 @@ def _build_persons_frame_rcpt(df: pl.DataFrame) -> pl.DataFrame:
             "first_name": pl.Utf8, "last_name": pl.Utf8, "middle_name": pl.Utf8,
             "suffix": pl.Utf8, "organization": pl.Utf8,
             "employer": pl.Utf8, "occupation": pl.Utf8, "job_title": pl.Utf8,
-            "person_type": pl.Utf8,
+            "person_type": pl.Utf8, "dedup_addr_key": pl.Utf8,
             "_pk_fn": pl.Utf8, "_pk_ln": pl.Utf8, "_pk_org": pl.Utf8,
-            "_sort_key": pl.Int64,
+            "_pk_addr": pl.Utf8, "_sort_key": pl.Int64,
         })
 
     combined = pl.concat(parts, how="diagonal_relaxed")
 
     result = (
         combined
-        .join(emp_nn, on=["_pk_org", "_pk_fn", "_pk_ln"], how="left")
-        .join(occ_nn, on=["_pk_org", "_pk_fn", "_pk_ln"], how="left")
-        .join(sfx_nn, on=["_pk_org", "_pk_fn", "_pk_ln"], how="left")
+        .join(emp_nn, on=_pk, how="left")
+        .join(occ_nn, on=_pk, how="left")
+        .join(sfx_nn, on=_pk, how="left")
         .with_columns([
             _cs("contributorNameFirst").alias("first_name"),
             _cs("contributorNameLast").alias("last_name"),
@@ -298,12 +309,15 @@ def _build_persons_frame_rcpt(df: pl.DataFrame) -> pl.DataFrame:
             _person_type_expr(
                 "contributorNameLast", "contributorNameFirst", "contributorNameOrganization"
             ).alias("person_type"),
+            # Persisted dedup key column (NULL for org-persons via collapse).
+            pl.col("_pk_addr").alias("dedup_addr_key"),
             pl.col("_row_id").alias("_sort_key"),
         ])
         .select([
             "first_name", "last_name", "middle_name", "suffix",
             "organization", "employer", "occupation", "job_title", "person_type",
-            "_pk_fn", "_pk_ln", "_pk_org", "_sort_key",
+            "dedup_addr_key",
+            "_pk_fn", "_pk_ln", "_pk_org", "_pk_addr", "_sort_key",
         ])
     )
     return result
@@ -324,22 +338,31 @@ def _build_persons_frame_expn(
             .str.to_lowercase().alias("_pk_org"),
         _cs("payeeNameFirst").str.to_lowercase().alias("_pk_fn"),
         _cs("payeeNameLast").str.to_lowercase().alias("_pk_ln"),
+        # EXPN carries street_1 — full (street, city, state, zip) address key.
+        common.person_addr_key_expr(
+            "payeeStreetAddr1",
+            "payeeStreetCity",
+            common.upper_str("payeeStreetStateCd"),
+            "payeeStreetPostalCode",
+        ).alias("_pk_addr"),
         (pl.col("expendInfoId").cast(pl.Int64) + sort_key_offset).alias("_row_id"),
     ])
-    # Org-persons dedup on lower(org) ALONE (null fn/ln) — matches uix_persons_org_state.
+    # Org-persons dedup on lower(org) ALONE (null fn/ln/addr) — matches uix_persons_org_state.
     keyed = common.collapse_org_person_key(keyed)
-    first = keyed.group_by(["_pk_org", "_pk_fn", "_pk_ln"]).agg(pl.all().first())
+    _pk = ["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"]
+    first = keyed.group_by(_pk).agg(pl.all().first())
 
     # Split orgs vs individuals
     org_first = first.filter(pl.col("_pk_org").is_not_null())
     ind_first = first.filter(pl.col("_pk_org").is_null())
 
-    # Exclude individuals already created by RCPT
+    # Exclude individuals already created by RCPT (keyed on name + address, so the same
+    # name at a different address is a NEW person, matching uix_persons_name_state).
     if rcpt_person_set:
         ind_rows = ind_first.to_dicts()
         ind_new_rows = [
             r for r in ind_rows
-            if (r.get("_pk_fn"), r.get("_pk_ln")) not in rcpt_person_set
+            if (r.get("_pk_fn"), r.get("_pk_ln"), r.get("_pk_addr")) not in rcpt_person_set
         ]
         ind_new = (
             pl.DataFrame(ind_new_rows, schema=ind_first.schema)
@@ -355,25 +378,25 @@ def _build_persons_frame_expn(
             "first_name": pl.Utf8, "last_name": pl.Utf8, "middle_name": pl.Utf8,
             "suffix": pl.Utf8, "organization": pl.Utf8,
             "employer": pl.Utf8, "occupation": pl.Utf8, "job_title": pl.Utf8,
-            "person_type": pl.Utf8,
+            "person_type": pl.Utf8, "dedup_addr_key": pl.Utf8,
             "_pk_fn": pl.Utf8, "_pk_ln": pl.Utf8, "_pk_org": pl.Utf8,
-            "_sort_key": pl.Int64,
+            "_pk_addr": pl.Utf8, "_sort_key": pl.Int64,
         })
 
     combined = pl.concat(parts, how="diagonal_relaxed")
 
-    # Backfill suffix
+    # Backfill suffix (per same person — 4-tuple incl. address).
     sfx_nn = (
         keyed.filter(
             pl.col("payeeNameSuffixCd").cast(pl.Utf8).str.strip_chars().str.len_chars() > 0
         )
-        .group_by(["_pk_org", "_pk_fn", "_pk_ln"])
+        .group_by(_pk)
         .agg(pl.first("payeeNameSuffixCd").alias("sfx_nn"))
     )
 
     result = (
         combined
-        .join(sfx_nn, on=["_pk_org", "_pk_fn", "_pk_ln"], how="left")
+        .join(sfx_nn, on=_pk, how="left")
         .with_columns([
             _cs("payeeNameFirst").alias("first_name"),
             _cs("payeeNameLast").alias("last_name"),
@@ -389,12 +412,14 @@ def _build_persons_frame_expn(
             _person_type_expr(
                 "payeeNameLast", "payeeNameFirst", "payeeNameOrganization"
             ).alias("person_type"),
+            pl.col("_pk_addr").alias("dedup_addr_key"),
             pl.col("_row_id").alias("_sort_key"),
         ])
         .select([
             "first_name", "last_name", "middle_name", "suffix",
             "organization", "employer", "occupation", "job_title", "person_type",
-            "_pk_fn", "_pk_ln", "_pk_org", "_sort_key",
+            "dedup_addr_key",
+            "_pk_fn", "_pk_ln", "_pk_org", "_pk_addr", "_sort_key",
         ])
     )
     return result
@@ -532,7 +557,10 @@ def _build_addresses(
 
     Algorithm:
       1. For each unique person (lower-case key) in RCPT, take their first address.
-         Org contributors key on (lower(org)), individuals on (lower(first), lower(last)).
+         Org contributors key on (lower(org)), individuals on
+         (lower(first), lower(last), addr_key) — so a same-name person at two
+         addresses is two persons contributing both addresses (matching the ORM,
+         which now builds an address per name+address person).
       2. For EXPN persons NOT already seen in RCPT, take their first address.
       3. Filter rows where the person has no name (M3: ORM returns None -> no address).
       4. Dedup addresses by lower-case 4-field key (M1: matches uix_addresses_* indexes).
@@ -541,7 +569,7 @@ def _build_addresses(
     rcpt_person_set: set[tuple] = set()
 
     if rcpt is not None and rcpt.height > 0:
-        # M2: use 3-key grouping (org, fn, ln) matching _build_persons_frame_rcpt.
+        # M2: 4-key grouping (org, fn, ln, addr) matching _build_persons_frame_rcpt.
         # M3: filter rows with no name before taking addresses.
         rcpt_keyed = (
             rcpt.sort("contributionInfoId")
@@ -555,16 +583,27 @@ def _build_addresses(
                     .str.to_lowercase().alias("_pk_org"),
                 _cs("contributorNameFirst").str.to_lowercase().alias("_pk_fn"),
                 _cs("contributorNameLast").str.to_lowercase().alias("_pk_ln"),
+                common.person_addr_key_expr(
+                    pl.lit(None, dtype=pl.Utf8),
+                    "contributorStreetCity",
+                    common.upper_str("contributorStreetStateCd"),
+                    "contributorStreetPostalCode",
+                ).alias("_pk_addr"),
             ])
         )
         rcpt_keyed = common.collapse_org_person_key(rcpt_keyed)
-        rcpt_first = rcpt_keyed.group_by(["_pk_org", "_pk_fn", "_pk_ln"]).agg(pl.all().first())
+        rcpt_pk = ["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"]
+        rcpt_first = rcpt_keyed.group_by(rcpt_pk).agg(pl.all().first())
 
         # Split to collect individual key set for EXPN suppression
         rcpt_org_first = rcpt_first.filter(pl.col("_pk_org").is_not_null())
         rcpt_ind_first = rcpt_first.filter(pl.col("_pk_org").is_null())
         rcpt_person_set = set(
-            zip(rcpt_ind_first["_pk_fn"].to_list(), rcpt_ind_first["_pk_ln"].to_list())
+            zip(
+                rcpt_ind_first["_pk_fn"].to_list(),
+                rcpt_ind_first["_pk_ln"].to_list(),
+                rcpt_ind_first["_pk_addr"].to_list(),
+            )
         )
 
         for part in (rcpt_org_first, rcpt_ind_first):
@@ -583,10 +622,17 @@ def _build_addresses(
                     .str.to_lowercase().alias("_pk_org"),
                 _cs("payeeNameFirst").str.to_lowercase().alias("_pk_fn"),
                 _cs("payeeNameLast").str.to_lowercase().alias("_pk_ln"),
+                common.person_addr_key_expr(
+                    "payeeStreetAddr1",
+                    "payeeStreetCity",
+                    common.upper_str("payeeStreetStateCd"),
+                    "payeeStreetPostalCode",
+                ).alias("_pk_addr"),
             ])
         )
         expn_keyed = common.collapse_org_person_key(expn_keyed)
-        expn_first = expn_keyed.group_by(["_pk_org", "_pk_fn", "_pk_ln"]).agg(pl.all().first())
+        expn_pk = ["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"]
+        expn_first = expn_keyed.group_by(expn_pk).agg(pl.all().first())
 
         org_first = expn_first.filter(pl.col("_pk_org").is_not_null())
         ind_first = expn_first.filter(pl.col("_pk_org").is_null())
@@ -595,7 +641,7 @@ def _build_addresses(
             ind_rows = ind_first.to_dicts()
             ind_new_rows = [
                 r for r in ind_rows
-                if (r.get("_pk_fn"), r.get("_pk_ln")) not in rcpt_person_set
+                if (r.get("_pk_fn"), r.get("_pk_ln"), r.get("_pk_addr")) not in rcpt_person_set
             ]
             ind_new = (
                 pl.DataFrame(ind_new_rows, schema=ind_first.schema)
@@ -655,7 +701,7 @@ class FlatTxnsDimsWorker:
             persons_df.select([
                 "first_name", "last_name", "middle_name", "suffix",
                 "organization", "employer", "occupation", "job_title",
-                "person_type", "state_id",
+                "person_type", "dedup_addr_key", "state_id",
             ]),
             conflict_cols=None,
         )
@@ -714,8 +760,14 @@ class FlatTxnsDimsWorker:
                 "first_name", "middle_name", "last_name", "suffix", "organization"
             )
             rcpt_persons = rcpt_persons.filter(full_name_col.str.len_chars() > 0)
+            # Keyed on (fn, ln, addr) so EXPN suppression splits same-name people by
+            # address (matching uix_persons_name_state).
             rcpt_person_set = set(
-                zip(rcpt_persons["_pk_fn"].to_list(), rcpt_persons["_pk_ln"].to_list())
+                zip(
+                    rcpt_persons["_pk_fn"].to_list(),
+                    rcpt_persons["_pk_ln"].to_list(),
+                    rcpt_persons["_pk_addr"].to_list(),
+                )
             )
             frames.append(rcpt_persons)
 
@@ -750,9 +802,9 @@ class FlatTxnsDimsWorker:
                     "middle_name": pl.Utf8, "suffix": pl.Utf8,
                     "organization": pl.Utf8, "employer": pl.Utf8,
                     "occupation": pl.Utf8, "job_title": pl.Utf8,
-                    "person_type": pl.Utf8,
+                    "person_type": pl.Utf8, "dedup_addr_key": pl.Utf8,
                     "_pk_fn": pl.Utf8, "_pk_ln": pl.Utf8, "_pk_org": pl.Utf8,
-                    "_sort_key": pl.Int64, "state_id": pl.Int64,
+                    "_pk_addr": pl.Utf8, "_sort_key": pl.Int64, "state_id": pl.Int64,
                 }),
                 rcpt_person_set,
             )

@@ -188,9 +188,17 @@ class UnifiedSQLModelBuilder:
         if not name.full_name:
             return None
 
+        # Build the address BEFORE the find-or-create: the individual dedup key now
+        # includes the address (so two same-name people at distinct locations stay
+        # separate, matching uix_persons_name_state).  ``address_key`` is the
+        # denormalized dedup_addr_key string (None when too few address fields ->
+        # name-only key, preserving today's behavior for addressless persons).
+        address = self.build_address(raw_data, role.value, field_prefix=field_prefix)
+        address_key = self._person_dedup_addr_key(address)
+
         # ── Find-or-create: check the DB before building a new row ────────────
         # The DB enforces case-insensitive unique indexes on
-        # (lower(first_name), lower(last_name), state_id) and
+        # (lower(first_name), lower(last_name), state_id, dedup_addr_key) and
         # (lower(organization), state_id).  Without this check every second
         # occurrence of the same person across multiple contribution files
         # raises a UniqueViolation.
@@ -198,6 +206,7 @@ class UnifiedSQLModelBuilder:
             first_name=name.first,
             last_name=name.last,
             organization=name.organization,
+            address_key=address_key,
         )
 
         # Per-occurrence fields that may be absent on the first time a person is
@@ -246,10 +255,14 @@ class UnifiedSQLModelBuilder:
         elif last_name and not first_name:
             person_type = PersonType.UNKNOWN
 
-        address = self.build_address(raw_data, role.value, field_prefix=field_prefix)
-
         person = UnifiedPerson(
-            **person_data, person_type=person_type, state_id=self.state_id, address=address
+            **person_data,
+            person_type=person_type,
+            state_id=self.state_id,
+            address=address,
+            # NULL for org-persons (key on lower(org), state alone) and for addressless
+            # individuals; otherwise the denormalized address key the unique index uses.
+            dedup_addr_key=None if name.organization else address_key,
         )
 
         # Write-through: subsequent rows naming the same person reuse this object
@@ -257,7 +270,7 @@ class UnifiedSQLModelBuilder:
         # uix_persons_* unique indexes).
         if self._cache is not None:
             key = BuilderCache.person_key(
-                name.first, name.last, name.organization, self.state_id
+                name.first, name.last, name.organization, self.state_id, address_key
             )
             if key is not None:
                 self._cache.persons[key] = person
@@ -705,21 +718,46 @@ class UnifiedSQLModelBuilder:
             )
         return campaign
 
+    @staticmethod
+    def _person_dedup_addr_key(address: "UnifiedAddress | None") -> str | None:
+        """Denormalized ``dedup_addr_key`` for an individual person's address.
+
+        Mirrors ``BuilderCache.address_key_str``: requires ≥2 populated address
+        fields, else ``None`` (name-only key).  ``address`` is the ``UnifiedAddress``
+        the person carries (built per-occurrence by ``build_address``).
+        """
+        if address is None:
+            return None
+        return BuilderCache.address_key_str(
+            {
+                "street_1": address.street_1,
+                "city": address.city,
+                "state": address.state,
+                "zip_code": address.zip_code,
+            }
+        )
+
     def _find_person_by_name_state(
         self,
         first_name: str | None,
         last_name: str | None,
         organization: str | None,
+        address_key: str | None = None,
     ) -> UnifiedPerson | None:
         """Find an existing person using the same key as the DB unique indexes.
 
-        Mirrors ``uix_persons_name_state`` (individual) and
-        ``uix_persons_org_state`` (organization) — both use ``lower()`` so the
-        lookup must also be case-insensitive.
+        Mirrors ``uix_persons_name_state`` — now keyed on
+        ``(lower(first), lower(last), state_id, dedup_addr_key)`` — and
+        ``uix_persons_org_state`` (organization); both use ``lower()`` so the
+        lookup must also be case-insensitive.  For individuals the stored
+        ``dedup_addr_key`` column is matched NULL-aware against ``address_key`` so
+        two same-name people at distinct locations resolve to separate rows.
 
         Returns ``None`` if no session is available or no anchor values exist.
         """
-        key = BuilderCache.person_key(first_name, last_name, organization, self.state_id)
+        key = BuilderCache.person_key(
+            first_name, last_name, organization, self.state_id, address_key
+        )
         if self._cache is not None and key is not None:
             if key in self._cache.persons:
                 return self._cache.persons[key]
@@ -738,6 +776,13 @@ class UnifiedSQLModelBuilder:
                     )
                 )
             elif first_name and last_name:
+                # NULL-aware equality on dedup_addr_key: ``is_(None)`` when the address
+                # key is absent (matches the partial index's NULL rows), else ``==``.
+                addr_match = (
+                    UnifiedPerson.dedup_addr_key.is_(None)
+                    if address_key is None
+                    else UnifiedPerson.dedup_addr_key == address_key
+                )
                 stmt = (
                     select(UnifiedPerson)
                     .where(
@@ -745,6 +790,7 @@ class UnifiedSQLModelBuilder:
                         sa_func.lower(UnifiedPerson.last_name) == last_name.lower(),
                         UnifiedPerson.state_id == self.state_id,
                         UnifiedPerson.organization.is_(None),
+                        addr_match,
                     )
                 )
             else:

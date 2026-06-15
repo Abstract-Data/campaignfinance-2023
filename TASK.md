@@ -1,58 +1,52 @@
-# TASK — Blocker #2: one-to-one entity representative assignment (Postgres)
+# TASK — Tighten the individual person dedup key (name + address)
 
-Plan: docs/design/vectorized-ingest-plan.md · 2 of 3 PG default-flip blockers.
+User-AUTHORIZED pipeline change (incl. schema column + dedup-index change).
+Measured: 78% of contributor records are over-merged because distinct-location
+same-name people collapse to one person at ingest. Tighten the individual person
+dedup key so the downstream resolve/Splink stage does the real merging.
 
-## Problem
-`unified_entities.person_id` UNIQUE is violated on real Postgres loads because one
-person (suffix-EXCLUDED dedup key `(lower(first), lower(last))`) is assigned as
-representative of MORE THAN ONE entity (entity `normalized_name` INCLUDES the suffix,
-so "John Anderson" and "John Anderson JR" -> one person id, two entities). Three
-families (`flat_txns_detail`, `detail_children`, `cand`) independently assign each
-entity's representative, so the single shared person lands on both entities ->
-`unified_entities_person_id_key` UniqueViolation.
+## New dedup semantics (ORM is the contract; vectorized engine MUST match)
+- Individual person dedup key -> `(lower(first), lower(last), state, address_key)`
+  where `address_key = BuilderCache.address_key(address_dict)` (≥2 of
+  street/city/state/zip populated, lowercased; None when too few fields -> FALL
+  BACK to name-only, today's behavior, so addressless persons don't fragment).
+- Org-persons UNCHANGED: `(lower(org), state)` with NULL `dedup_addr_key`.
+- `dedup_addr_key` = denormalized "street|city|state|zip" (the address_key tuple
+  joined by `|`) or NULL.
 
 ## Files in scope
-- `app/core/ingest_vectorized/finalize.py` (NEW) — `finalize_entity_representatives(session, state_id)`
-- `app/core/ingest_vectorized/dispatcher.py` — call finalize after the family loop, before close
-- `app/core/ingest_vectorized/families/flat_txns_detail.py` — remove `_apply_entity_links`
-  call + `_entity_representatives`/`ent_updates` computation; KEEP `_apply_person_address`
-- `app/core/ingest_vectorized/families/detail_children.py` — entity INSERT sets person_id/address_id NULL
-- `app/core/ingest_vectorized/families/cand.py` — entity INSERT sets person_id NULL
-- `tests/ingest_equivalence/test_entity_one_to_one.py` (NEW) — PG-gated regression
-
-## Approach (the side-preference / determinism rule)
-A SINGLE deterministic post-load step computes each person's entity key
-(entity_type, normalized_name) EXACTLY as entity creation does — REUSE
-`common.normalize_entity_name(common.full_name_expr(...))` (org path:
-`normalize_entity_name(organization)`); type = ORGANIZATION when org present else
-PERSON. Join persons -> PERSON/ORGANIZATION entities on (entity_type, normalized_name);
-pick ONE rep per entity = MIN(person id) -> one-to-one. Entities with no matching
-person (suffix-variant orphans) keep person_id NULL. COMMITTEE entities untouched
-(keep committee_id). UPDATE via parameterized SQLAlchemy core `update` + `bindparam`
-(NO f-string SQL).
+- `app/core/load_cache.py` — `person_key(... , address_key=None)`; add
+  `address_key_str(address_dict)` denormalizer used by both engines.
+- `app/core/models/tables.py` — `UnifiedPerson.dedup_addr_key: str | None` (nullable VARCHAR).
+- `app/core/builders.py` — `build_person`: build address BEFORE find-or-create;
+  compute address_key; thread into `_find_person_by_name_state` + cache key; set
+  `dedup_addr_key` on new person. `_find_person_by_name_state(..., address_key=None)`
+  matches `dedup_addr_key` (NULL-aware) for individuals.
+- `app/core/unified_database.py` — add `dedup_addr_key` to
+  `_UNIFIED_ADDITIVE_COLUMNS`; change `uix_persons_name_state` to include
+  `dedup_addr_key`.
+- `app/resolve/run.py` — mirror the additive column if it lists persons columns.
+- `app/core/ingest_vectorized/common.py` — `person_addr_key_expr(...)` denormalizer
+  expr; extend `collapse_org_person_key` to also null `_pk_addr` for org-persons.
+- `app/core/ingest_vectorized/families/{flat_txns_dims,detail_children,cand,flat_txns_detail}.py`
+  — person dedup key gains `_pk_addr`; person write-frames set `dedup_addr_key`;
+  `_person_id_map` read-backs key on the address-inclusive key.
 
 ## Behavior to preserve
-- Golden fixture (no suffix-variant case) results unchanged; entity tests stay green.
-- COMMITTEE-entity committee_id assignment unchanged in all three families.
-- PERSON.address_id assignment (flat_txns_detail `_apply_person_address`) kept.
-- Harness `_PRESENCE_ONLY_FKS` keeps entity person_id/address_id presence-only (min-id
-  pick is one valid representative, compatible with presence-only comparison).
+- Org-person dedup unchanged (lower(org), state; NULL dedup_addr_key).
+- `diff_snapshots(ORM, vec)` for dim tables stays `[]` — both engines change identically.
+- Addressless persons (address_key None) stay name-only (no fragmentation).
 
 ## HARD RULES
-- Pure Polars expressions (no map_elements/.apply); parameterized SQLAlchemy core only
-  (no f-string SQL). Reuse common.py helpers. Plain git (isolated worktree). No rm -rf.
+- Pure Polars (no map_elements/.apply). Parameterized SQLAlchemy core only (no
+  f-string SQL). Reuse common.py. Plain git. No rm -rf.
 
-## Checks (evidence required before "done")
-1. `uv run pytest tests/ingest_equivalence -q` -> all green (currently 42).
-2. PG gate harness (FK dropped, uniques + dedup indexes KEPT) at rows 4000 AND 8000:
-   load COMPLETES (no `unified_entities_person_id_key` violation) AND
-   "persons on >1 entity" == 0 AND "committee_id on >1 entity" == 0.
-   (NOTE: requires real `tmp/texas` data; if absent, the golden-fixture-backed
-   regression test is the substitute gate and the PG slice gate is deferred.)
-3. New `tests/ingest_equivalence/test_entity_one_to_one.py` passes (skipif no local PG).
-4. `uv run ruff check app/core/ingest_vectorized tests/ingest_equivalence` -> clean.
-5. code-review skill run; findings fixed.
+## Checks (evidence required before done)
+1. `uv run pytest tests/ingest_equivalence -q` -> green; vec == ORM holds.
+2. `grep -rnE "map_elements|\.apply\(" app/core/ingest_vectorized/` -> none in new code.
+3. `uv run ruff check app/core tests/ingest_equivalence` -> clean.
+4. code-review skill run; findings fixed.
 
-## Next
-Blocker #3: vectorized campaign-build family. After #2, a full constraints-enforced
-PG load + `diff_snapshots(ORM, vec) == []` becomes the combined gate.
+## Cannot run here (no tmp/texas data in this worktree) — report, do not fake
+- Real-Texas person-count ~1.9x increase.
+- PG load with dedup indexes enforced completing without uix_persons_* violation.
