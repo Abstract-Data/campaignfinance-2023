@@ -112,6 +112,31 @@ def bool_expr(col: str) -> pl.Expr:
     return s.is_in(["true", "yes", "y", "1", "t"]).fill_null(False)
 
 
+# ── dim normalization (persons / entities / addresses) ───────────────────────
+def normalize_entity_name(col: str) -> pl.Expr:
+    """Mirror value_objects.normalize_entity_name: strip -> lower -> non-alnum to
+    single spaces -> collapse spaces -> strip. Null/empty -> "" (the ORM returns "").
+    This is the entity dedup key (uix_entities_type_name_state)."""
+    s = pl.col(col).cast(pl.Utf8).str.strip_chars().str.to_lowercase()
+    s = s.str.replace_all(r"[^a-z0-9]+", " ").str.replace_all(r"\s+", " ").str.strip_chars()
+    return s.fill_null("")
+
+
+def full_name_expr(first: str, middle: str, last: str, suffix: str, organization: str) -> pl.Expr:
+    """Mirror PersonName.full_name: organization if present, else first/middle/last/
+    suffix joined by single spaces (skipping blanks). Parts are stripped (_strip)."""
+    org = clean_str(organization)
+    parts = [clean_str(first), clean_str(middle), clean_str(last), clean_str(suffix)]
+    joined = pl.concat_str(parts, separator=" ", ignore_nulls=True)
+    joined = pl.when(joined.str.len_chars() > 0).then(joined).otherwise(pl.lit(""))
+    return pl.when(org.is_not_null()).then(org).otherwise(joined)
+
+
+def upper_str(col: str) -> pl.Expr:
+    """Strip -> upper, null if empty. Mirrors AddressParts.normalized() state handling."""
+    return clean_str(col).str.to_uppercase()
+
+
 # ── provenance ───────────────────────────────────────────────────────────────
 def raw_json_expr(columns: list[str], alias: str = "raw_data") -> pl.Expr:
     """JSON-encode the original columns as provenance. Compared structurally (not
