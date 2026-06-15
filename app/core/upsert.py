@@ -72,7 +72,9 @@ def bulk_upsert(
         Column name(s) to update on conflict.  ``None`` (default) updates
         *all* columns except those listed in *conflict_cols* and any column
         whose name appears in the immutable-column set
-        ``{"created_at", "createdAt"}``.
+        ``{"created_at", "createdAt"}``.  An explicit empty list ``[]`` means
+        ``ON CONFLICT DO NOTHING`` (first-occurrence-wins) — distinct from
+        ``None``, which updates everything.
     chunk_size:
         Number of rows per ``INSERT`` statement.  Defaults to 5 000.
     commit_per_chunk:
@@ -123,17 +125,23 @@ def bulk_upsert(
 
         insert_stmt = _insert(table).values(chunk)
 
-        # Build set_ from excluded pseudo-table so values reference the
-        # incoming row, not a static literal.
-        set_mapping: Dict[str, Any] = {
-            col_name: getattr(insert_stmt.excluded, col_name)
-            for col_name in _update_col_names
-        }
-
-        upsert_stmt = insert_stmt.on_conflict_do_update(
-            index_elements=list(conflict_cols),
-            set_=set_mapping,
-        )
+        # An empty SET clause is invalid SQL: when the caller asked for no update
+        # columns (explicit update_cols=[]) the intent is ON CONFLICT DO NOTHING.
+        if not _update_col_names:
+            upsert_stmt = insert_stmt.on_conflict_do_nothing(
+                index_elements=list(conflict_cols)
+            )
+        else:
+            # Build set_ from excluded pseudo-table so values reference the
+            # incoming row, not a static literal.
+            set_mapping: Dict[str, Any] = {
+                col_name: getattr(insert_stmt.excluded, col_name)
+                for col_name in _update_col_names
+            }
+            upsert_stmt = insert_stmt.on_conflict_do_update(
+                index_elements=list(conflict_cols),
+                set_=set_mapping,
+            )
 
         session.exec(upsert_stmt)  # type: ignore[arg-type]
         total_rows += len(chunk)

@@ -667,8 +667,12 @@ class DetailChildrenWorker:
             pl.lit(None, dtype=pl.Utf8).alias("filer_status"),
             pl.lit(ctx.state_id).alias("state_id"),
         )
+        # DO NOTHING on conflict (update_cols=[]): a committee already created by the
+        # FILER family (authoritative name/type/status/address) must NOT be clobbered by
+        # an incidental transaction filerName. FILER runs first (priority 0); this mirrors
+        # the ORM's find-or-create first-occurrence-wins.
         return common.write_frame(
-            ctx.session, UnifiedCommittee, comb, conflict_cols=["filer_id"]
+            ctx.session, UnifiedCommittee, comb, conflict_cols=["filer_id"], update_cols=[]
         )
 
     # ---- dims (addresses, persons, entities) ----------------------------

@@ -45,6 +45,32 @@ def test_write_frame_is_idempotent_on_conflict():
     assert rows[0].description == "Advertising (rev)"
 
 
+def test_write_frame_do_nothing_keeps_existing_on_conflict():
+    """update_cols=[] -> ON CONFLICT DO NOTHING: the first-written row is kept and a
+    later conflicting write does NOT overwrite it (the FILER-committee-wins rule)."""
+    engine = _engine()
+    with Session(engine, expire_on_commit=False) as s:
+        write_frame(
+            s,
+            ExpenditureCategory,
+            pl.DataFrame({"code": ["A1"], "description": ["original"]}),
+            conflict_cols=["code"],
+        )
+        s.commit()
+        # Re-write the same key with a different description and update_cols=[] (DO NOTHING).
+        write_frame(
+            s,
+            ExpenditureCategory,
+            pl.DataFrame({"code": ["A1"], "description": ["clobbered"]}),
+            conflict_cols=["code"],
+            update_cols=[],
+        )
+        s.commit()
+        rows = s.exec(select(ExpenditureCategory)).all()
+    assert len(rows) == 1
+    assert rows[0].description == "original"
+
+
 def test_write_frame_empty_is_noop():
     engine = _engine()
     empty = pl.DataFrame(

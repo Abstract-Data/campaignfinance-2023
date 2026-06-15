@@ -22,6 +22,11 @@ from pathlib import Path
 import polars as pl
 
 from app.core.ingest_vectorized import common
+from app.core.ingest_vectorized.families.detail_children import (
+    _address_id_map,
+    _entity_id_map,
+    _person_id_map,
+)
 from app.core.ingest_vectorized.registry import FamilyContext, register
 from app.core.models import (
     UnifiedAddress,
@@ -689,16 +694,26 @@ class FlatTxnsDimsWorker:
         counts: dict[str, int] = {}
 
         # 1. Addresses
+        #
+        # FILER (priority 0) now creates committee/officer addresses, persons, and
+        # entities BEFORE this worker runs. This family was originally the first dim
+        # creator and wrote with conflict_cols=None and NO anti-join, so it now
+        # re-inserts rows another family already created -> uix_addresses_full (and
+        # uix_persons_* / uix_entities_*) violations on Postgres. Anti-join existing DB
+        # rows on each table's partial-unique-index key (case-insensitive, matching the
+        # index semantics) before inserting, EXACTLY like detail_children._write_dims.
         addr_df = _build_addresses(rcpt, expn)
+        addr_new = self._anti_join_addresses(addr_df, ctx)
         counts["addresses"] = common.write_frame(
-            ctx.session, UnifiedAddress, addr_df, conflict_cols=None,
+            ctx.session, UnifiedAddress, addr_new, conflict_cols=None,
         )
 
         # 2. Persons
         persons_df, rcpt_person_set = self._build_all_persons(rcpt, expn, ctx)
+        persons_new = self._anti_join_persons(persons_df, ctx)
         counts["persons"] = common.write_frame(
             ctx.session, UnifiedPerson,
-            persons_df.select([
+            persons_new.select([
                 "first_name", "last_name", "middle_name", "suffix",
                 "organization", "employer", "occupation", "job_title",
                 "person_type", "dedup_addr_key", "state_id",
@@ -708,9 +723,10 @@ class FlatTxnsDimsWorker:
 
         # 3. Entities (from persons + committee)
         entity_df = self._build_all_entities(persons_df, rcpt, expn, ctx)
+        entity_new = self._anti_join_entities(entity_df, ctx)
         counts["entities"] = common.write_frame(
             ctx.session, UnifiedEntity,
-            entity_df.select([
+            entity_new.select([
                 "entity_type", "name", "normalized_name", "committee_id",
                 "notes", "state_id",
             ]),
@@ -720,10 +736,14 @@ class FlatTxnsDimsWorker:
         # 4. Committees
         comm_df = _build_committee_frame(rcpt, expn)
         if comm_df.height > 0:
+            # DO NOTHING on conflict (update_cols=[]): a committee already created by the
+            # FILER family (authoritative name/type/status/address) must NOT be clobbered
+            # by an incidental transaction filerName. FILER runs first (priority 0); this
+            # mirrors the ORM's find-or-create first-occurrence-wins.
             counts["committees"] = common.write_frame(
                 ctx.session, UnifiedCommittee,
                 comm_df.with_columns(pl.lit(ctx.state_id).alias("state_id")),
-                conflict_cols=["filer_id"],
+                conflict_cols=["filer_id"], update_cols=[],
             )
         else:
             counts["committees"] = 0
@@ -741,6 +761,59 @@ class FlatTxnsDimsWorker:
             f"[vectorized.flat_txns_dims] loaded {loaded} dim rows: {counts}"
         )
         return {"loaded": loaded, **counts}
+
+    # ---- anti-joins against existing DB rows (shared dims) --------------
+    #
+    # Keyed identically to detail_children's id-maps so the anti-join matches each
+    # partial unique index's semantics case-insensitively:
+    #   addresses -> (lower street_1/city/state, zip); null-street rows match on NULL
+    #                via join_nulls=True (the no-street partition).
+    #   persons   -> the post-#48 (_pk_org, _pk_fn, _pk_ln, _pk_addr) key.
+    #   entities  -> (entity_type, normalized_name).
+
+    @staticmethod
+    def _anti_join_addresses(addr_df: pl.DataFrame, ctx: FamilyContext) -> pl.DataFrame:
+        if addr_df.height == 0:
+            return addr_df
+        existing = _address_id_map(ctx.engine)
+        keyed = addr_df.with_columns(
+            pl.col("street_1").cast(pl.Utf8).str.to_lowercase().alias("_k_s1"),
+            pl.col("city").cast(pl.Utf8).str.to_lowercase().alias("_k_city"),
+            pl.col("state").cast(pl.Utf8).str.to_lowercase().alias("_k_state"),
+            pl.col("zip_code").alias("_k_zip"),
+        )
+        return (
+            keyed.join(
+                existing.select("_k_s1", "_k_city", "_k_state", "_k_zip"),
+                on=["_k_s1", "_k_city", "_k_state", "_k_zip"],
+                how="anti",
+                join_nulls=True,
+            )
+            .drop("_k_s1", "_k_city", "_k_state", "_k_zip")
+        )
+
+    @staticmethod
+    def _anti_join_persons(persons_df: pl.DataFrame, ctx: FamilyContext) -> pl.DataFrame:
+        if persons_df.height == 0:
+            return persons_df
+        existing = _person_id_map(ctx.engine, ctx.state_id)
+        return persons_df.join(
+            existing.select("_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"),
+            on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
+            how="anti",
+            join_nulls=True,
+        )
+
+    @staticmethod
+    def _anti_join_entities(entity_df: pl.DataFrame, ctx: FamilyContext) -> pl.DataFrame:
+        if entity_df.height == 0:
+            return entity_df
+        existing = _entity_id_map(ctx.engine, ctx.state_id)
+        return entity_df.join(
+            existing.select("entity_type", "normalized_name"),
+            on=["entity_type", "normalized_name"],
+            how="anti",
+        )
 
     def _build_all_persons(
         self,
