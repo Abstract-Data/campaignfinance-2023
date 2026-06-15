@@ -10,6 +10,7 @@ from __future__ import annotations
 # Family modules are imported here as they land so the dispatcher registers them.
 from app.core.ingest_vectorized.families import (  # noqa: F401
     flat_txns,
+    flat_txns_detail,
     flat_txns_dims,
     reports,
 )

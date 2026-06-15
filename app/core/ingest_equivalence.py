@@ -136,8 +136,17 @@ def _snapshot_resolved(engine: Engine) -> dict[str, list[dict[str, Any]]]:
         # FK columns are kept here and resolved; the 'id' PK is dropped from output.
         ext_fk = _surrogate_fk_columns(inspector, table) - set(intra[table])
         drop_cols[table] = set(VOLATILE_COLUMNS) | ext_fk
+        # Key rows by the table's own primary key.  Most unified/canonical tables use a
+        # surrogate ``id``, but some (e.g. ``unified_committees``) use a natural PK
+        # (``filer_id``).  Intra-target FK resolution only ever targets ``id`` parents
+        # (see ``_intra_fk_parents``), so non-``id``-PK tables are never resolution
+        # targets — they only need a stable row key here to be snapshotted at all.
+        pk_cols = [c.name for c in tbl.primary_key.columns] or ["id"]
+        pk_col = "id" if "id" in cols else pk_cols[0]
         with engine.connect() as conn:
-            raw[table] = {m["id"]: dict(m) for m in conn.execute(select(tbl)).mappings().all()}
+            raw[table] = {
+                m[pk_col]: dict(m) for m in conn.execute(select(tbl)).mappings().all()
+            }
 
     memo: dict[tuple[str, Any], Any] = {}
 
