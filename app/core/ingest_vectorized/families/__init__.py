@@ -11,6 +11,7 @@ from __future__ import annotations
 from app.core.ingest_vectorized.families import (  # noqa: F401
     cand,
     detail_children,
+    filer,
     flat_txns,
     flat_txns_detail,
     flat_txns_dims,
