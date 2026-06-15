@@ -67,10 +67,21 @@ def _canonicalize_json(value: Any) -> Any:
         return value
 
 
+# Snapshot-target tables that don't match the unified_/canonical_ prefix but are
+# still part of the ingest output we gate (e.g. the loan/debt guarantor child).
+_EXTRA_TARGET_TABLES: frozenset[str] = frozenset({"loan_guarantors"})
+
+
 def _target_tables(inspector: Any) -> list[str]:
     """Unified source-layer + canonical resolve-layer tables present in the DB."""
     names = set(inspector.get_table_names())
-    return sorted(t for t in names if t.startswith("unified_") or t.startswith("canonical_"))
+    return sorted(
+        t
+        for t in names
+        if t.startswith("unified_")
+        or t.startswith("canonical_")
+        or t in _EXTRA_TARGET_TABLES
+    )
 
 
 def _surrogate_fk_columns(inspector: Any, table: str) -> set[str]:
@@ -127,17 +138,26 @@ def _snapshot_resolved(engine: Engine) -> dict[str, list[dict[str, Any]]]:
     intra: dict[str, dict[str, str]] = {}
     drop_cols: dict[str, set[str]] = {}
     cols_by_table: dict[str, list[str]] = {}
+    has_surrogate_id: dict[str, bool] = {}
     for table in targets:
         tbl = Table(table, md, autoload_with=engine)
         cols = [c.name for c in tbl.columns]
         cols_by_table[table] = cols
+        # Some target tables key on a natural column (e.g. unified_committees.filer_id)
+        # and have no surrogate 'id'. They can never be an intra-target FK parent
+        # (FKs resolve to '.id'), so index their rows positionally for output only.
+        has_surrogate_id[table] = "id" in cols
         intra[table] = _intra_fk_parents(inspector, table, targets)
         # Drop: volatile + surrogate FKs to NON-target parents (provenance). Intra-target
         # FK columns are kept here and resolved; the 'id' PK is dropped from output.
         ext_fk = _surrogate_fk_columns(inspector, table) - set(intra[table])
         drop_cols[table] = set(VOLATILE_COLUMNS) | ext_fk
         with engine.connect() as conn:
-            raw[table] = {m["id"]: dict(m) for m in conn.execute(select(tbl)).mappings().all()}
+            mappings = conn.execute(select(tbl)).mappings().all()
+        if has_surrogate_id[table]:
+            raw[table] = {m["id"]: dict(m) for m in mappings}
+        else:
+            raw[table] = {f"_pos_{i}": dict(m) for i, m in enumerate(mappings)}
 
     memo: dict[tuple[str, Any], Any] = {}
 
