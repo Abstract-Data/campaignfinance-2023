@@ -87,44 +87,47 @@ def _fresh_database(pg_base: str, db_name: str):
     yield f"{pg_base}/{db_name}"
 
 
+# When False (``--enforce-uniques``), only FK is dropped and the one-to-one UNIQUE
+# constraints + dim dedup indexes stay ENFORCED — the go/no-go mode, now that the engine
+# respects them. FK is always dropped: a capped slice has dangling refs the ORM nulls in
+# app logic, so dropping FK just lets the vectorized side load the same incoherent slice.
+_DROP_UNIQUES = True
+
+# Static, non-interpolated query variants (identifiers come from pg_catalog via format()).
+_SQL_DROP_FK_AND_UNIQUE = (
+    "SELECT format('ALTER TABLE %s DROP CONSTRAINT %I', conrelid::regclass, conname) "
+    "FROM pg_constraint "
+    "WHERE contype IN ('f', 'u') AND connamespace = 'public'::regnamespace"
+)
+_SQL_DROP_FK_ONLY = (
+    "SELECT format('ALTER TABLE %s DROP CONSTRAINT %I', conrelid::regclass, conname) "
+    "FROM pg_constraint "
+    "WHERE contype = 'f' AND connamespace = 'public'::regnamespace"
+)
+_SQL_DROP_UIX = (
+    "SELECT format('DROP INDEX %I', indexname) FROM pg_indexes "
+    "WHERE schemaname = 'public' AND indexname LIKE 'uix_%'"
+)
+
+
 def _relax_constraints(engine) -> None:
-    """Drop FK ('f') and one-to-one UNIQUE ('u') constraints so the benchmark can load an
-    arbitrary slice and surface throughput, without DB-enforcement noise the equivalence
-    harness doesn't depend on:
+    """Drop constraints so the benchmark can load a capped (referentially incomplete) slice.
 
-      * FK: a capped slice has dangling refs; the ORM nulls them in app logic, so this just
-        lets the vectorized side load the same incoherent slice.
-      * one-to-one UNIQUE (unified_entities.person_id/committee_id, detail transaction_id):
-        the vectorized engine currently violates unified_entities.person_id on real data
-        (assigns one representative person to >1 entity) — a SEPARATE, pre-existing bug,
-        identical under COPY and bulk_upsert, NOT introduced here. See bench notes.
-
-    The dedup conflict targets the upserts need (uix_entities_type_name_state, etc.) are
-    unique INDEXES, not type-'u' constraints, so they are preserved. DDL is generated
-    server-side via ``format(... %I ...)`` so identifiers are quoted safely."""
+    Always drops FK. When ``_DROP_UNIQUES`` (default), also drops one-to-one UNIQUE
+    constraints + the dim dedup partial-unique indexes (uix_*) — to measure raw throughput
+    without dedup enforcement. With ``--enforce-uniques`` those stay ON, so the run proves
+    the engine satisfies them on real data AND the ORM-vs-vec diff is deterministic."""
     raw = engine.raw_connection()
     try:
         pg = raw.driver_connection
         cur = pg.cursor()
-        cur.execute(
-            "SELECT format('ALTER TABLE %s DROP CONSTRAINT %I', conrelid::regclass, conname) "
-            "FROM pg_constraint "
-            "WHERE contype IN ('f', 'u') AND connamespace = 'public'::regnamespace"
-        )
+        cur.execute(_SQL_DROP_FK_AND_UNIQUE if _DROP_UNIQUES else _SQL_DROP_FK_ONLY)
         for (stmt,) in cur.fetchall():
             cur.execute(stmt)
-        # Drop the dim dedup partial-unique INDEXES (uix_*). No family uses them as an
-        # ON CONFLICT target (every dim write is conflict_cols=None + in-frame dedup; only
-        # committees/filer_id and reports/report_ident use ON CONFLICT), so dropping them is
-        # safe for the upserts. The engine's in-frame dedup does NOT perfectly match their
-        # PG semantics (e.g. case-folded org) — a SEPARATE pre-existing correctness gap; the
-        # benchmark relaxes them to measure throughput. See bench notes.
-        cur.execute(
-            "SELECT format('DROP INDEX %I', indexname) FROM pg_indexes "
-            "WHERE schemaname = 'public' AND indexname LIKE 'uix_%'"
-        )
-        for (stmt,) in cur.fetchall():
-            cur.execute(stmt)
+        if _DROP_UNIQUES:
+            cur.execute(_SQL_DROP_UIX)
+            for (stmt,) in cur.fetchall():
+                cur.execute(stmt)
         pg.commit()
         cur.close()
     finally:
@@ -210,10 +213,22 @@ def main() -> None:
         help="Postgres URL base (db name is appended)",
     )
     ap.add_argument("--no-orm", action="store_true", help="skip the ORM baseline (vec only)")
+    ap.add_argument(
+        "--enforce-uniques",
+        action="store_true",
+        help="keep dedup + one-to-one unique constraints ENFORCED (drop only FK) — the "
+        "go/no-go mode: proves the engine satisfies them on real data and makes the "
+        "ORM-vs-vec diff deterministic",
+    )
     args = ap.parse_args()
+
+    global _DROP_UNIQUES
+    _DROP_UNIQUES = not args.enforce_uniques
 
     source_dir = Path(args.source_dir)
     slice_dir = Path(args.slice_dir)
+    mode = "constraints ENFORCED (FK off, uniques on)" if args.enforce_uniques else "relaxed"
+    print(f"== Mode: {mode} ==")
 
     print(f"== Building slice (<= {args.rows:,} rows/file) from {source_dir} ==")
     source_rows = _build_slice(source_dir, slice_dir, args.rows)
@@ -256,14 +271,21 @@ def main() -> None:
     )
     print()
 
+    orm_diff: list[str] = []
     if not args.no_orm:
-        print("== Parity (informational): ORM vs vectorized+COPY ==")
+        label = (
+            "GO/NO-GO PARITY: ORM vs vectorized+COPY (constraints enforced)"
+            if args.enforce_uniques
+            else "Parity (informational): ORM vs vectorized+COPY"
+        )
+        print(f"== {label} ==")
         orm_diff = _diff(orm_url_final, copy_url_final)
         if not orm_diff:
-            print("  EQUAL ✓")
+            print("  EQUAL ✓  (row-for-row, resolve_fks=True, all unified/canonical tables)")
         else:
-            print(f"  {len(orm_diff)} diff line(s) (expected: tracked real-data edge cases):")
-            print("    " + "\n    ".join(orm_diff[:20]))
+            print(f"  {len(orm_diff)} diff line(s) (expected residual: campaigns ORM⊆vec superset"
+                  " + tracked edge cases):")
+            print("    " + "\n    ".join(orm_diff[:30]))
         print()
 
     print("== Summary ==")
