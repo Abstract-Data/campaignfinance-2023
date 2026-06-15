@@ -1,12 +1,14 @@
-"""Vectorized dim layer for RCPT/EXPN: addresses, persons, entities, committees,
-contributions, expenditures, and transaction_persons.
+"""Vectorized dim layer for RCPT/EXPN: addresses, persons, entities, and committees.
 
 Reproduces the ORM's ``build_person``, ``build_address``, ``build_committee``,
-``_get_or_create_entity``, ``_build_contribution_detail``, ``_build_expenditure_detail``,
-and ``_attach_transaction_persons`` paths columnar (pure Polars, no map_elements).
+and ``_get_or_create_entity`` paths columnar (pure Polars, no map_elements).
 
-Gated by ``diff_snapshots`` restricted to these tables in
+Gated by ``diff_snapshots`` restricted to the 4 dim tables
+(unified_addresses, unified_persons, unified_entities, unified_committees) in
 ``tests/ingest_equivalence/test_flat_txns_family.py``.
+
+Detail/junction tables (contributions, expenditures, transaction_persons) are
+deferred to a future linkage slice that performs real surrogate-id joins.
 
 Priority 9 ensures dim tables exist before the flat_txns worker (priority 10)
 writes unified_transactions (which references committees by natural FK).
@@ -139,23 +141,32 @@ def _address_valid(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def _address_dedup(df: pl.DataFrame) -> pl.DataFrame:
-    """Dedup addresses using case-insensitive keys (mirrors ORM _find_address_by_fields)."""
+    """Dedup addresses on the 4-field ORM key (mirrors _find_address_by_fields).
+
+    The DB unique indexes key on (lower(street_1), lower(city), lower(state), zip_code)
+    when street_1 IS NOT NULL, and on (lower(city), lower(state), zip_code) when
+    street_1 IS NULL.  Both collapse to the same 4-field natural key:
+    (street_1, city, state, zip_code).
+
+    Deduping on the extra fields (street_2, country, county) causes a spurious
+    second row when two records share the same (street_1,city,state,zip) but
+    differ on street_2/country/county — then plain INSERT hits the unique index
+    and fails.  Keeping only the first occurrence preserves the ORM's
+    "first-found address wins" behaviour.
+    """
     return (
         df.with_columns([
-            pl.col("street_1").str.to_lowercase().alias("_k_s1"),
-            pl.col("street_2").str.to_lowercase().alias("_k_s2"),
-            pl.col("city").str.to_lowercase().alias("_k_city"),
-            pl.col("state").str.to_lowercase().alias("_k_state"),
+            pl.col("street_1").cast(pl.Utf8).str.to_lowercase().alias("_k_s1"),
+            pl.col("city").cast(pl.Utf8).str.to_lowercase().alias("_k_city"),
+            pl.col("state").cast(pl.Utf8).str.to_lowercase().alias("_k_state"),
             pl.col("zip_code").alias("_k_zip"),
-            pl.col("country").str.to_lowercase().alias("_k_country"),
-            pl.col("county").str.to_lowercase().alias("_k_county"),
         ])
         .unique(
-            subset=["_k_s1", "_k_s2", "_k_city", "_k_state", "_k_zip", "_k_country", "_k_county"],
+            subset=["_k_s1", "_k_city", "_k_state", "_k_zip"],
             keep="first",
             maintain_order=True,
         )
-        .drop(["_k_s1", "_k_s2", "_k_city", "_k_state", "_k_zip", "_k_country", "_k_county"])
+        .drop(["_k_s1", "_k_city", "_k_state", "_k_zip"])
     )
 
 
@@ -193,48 +204,73 @@ def _person_type_expr(last_col: str, first_col: str, org_col: str) -> pl.Expr:
 def _build_persons_frame_rcpt(df: pl.DataFrame) -> pl.DataFrame:
     """Build a person frame from RCPT contributors.
 
+    Mirrors the ORM's build_person / _find_person_by_name_state key logic:
+    - When contributorNameOrganization is non-null -> ORGANIZATION person, keyed on
+      (lower(org), state_id) with organization set.  This matches uix_persons_org_state.
+    - Otherwise -> INDIVIDUAL (or UNKNOWN), keyed on (lower(first), lower(last)).
+      This matches uix_persons_name_state.
+
     Returns columns:
         first_name, last_name, middle_name, suffix, organization, employer,
         occupation, job_title, person_type, _pk_fn, _pk_ln, _pk_org, _sort_key
     """
     keyed = df.sort("contributionInfoId").with_columns([
-        pl.lit(None, dtype=pl.Utf8).alias("_pk_org"),
+        _nullify_expr(pl.col("contributorNameOrganization").cast(pl.Utf8))
+            .str.to_lowercase().alias("_pk_org"),
         _cs("contributorNameFirst").str.to_lowercase().alias("_pk_fn"),
         _cs("contributorNameLast").str.to_lowercase().alias("_pk_ln"),
         pl.col("contributionInfoId").cast(pl.Int64).alias("_row_id"),
     ])
 
-    # First occurrence per (fn_lower, ln_lower): keep all columns via agg().first()
-    first = keyed.group_by(["_pk_fn", "_pk_ln"]).agg(pl.all().first())
+    # First occurrence per (org_lower, fn_lower, ln_lower): keep all columns via agg().first()
+    first = keyed.group_by(["_pk_org", "_pk_fn", "_pk_ln"]).agg(pl.all().first())
 
-    # Backfill: first non-null employer/occupation/suffix across all occurrences.
+    # Split orgs vs individuals (mirrors _build_persons_frame_expn pattern)
+    org_first = first.filter(pl.col("_pk_org").is_not_null())
+    ind_first = first.filter(pl.col("_pk_org").is_null())
+
+    # Backfill: first non-null employer/occupation/suffix across all occurrences
+    # (keyed by the same 3-tuple so backfill joins correctly for both orgs and individuals).
     emp_nn = (
         keyed.filter(
             pl.col("contributorEmployer").cast(pl.Utf8).str.strip_chars().str.len_chars() > 0
         )
-        .group_by(["_pk_fn", "_pk_ln"])
+        .group_by(["_pk_org", "_pk_fn", "_pk_ln"])
         .agg(pl.first("contributorEmployer").alias("emp_nn"))
     )
     occ_nn = (
         keyed.filter(
             pl.col("contributorOccupation").cast(pl.Utf8).str.strip_chars().str.len_chars() > 0
         )
-        .group_by(["_pk_fn", "_pk_ln"])
+        .group_by(["_pk_org", "_pk_fn", "_pk_ln"])
         .agg(pl.first("contributorOccupation").alias("occ_nn"))
     )
     sfx_nn = (
         keyed.filter(
             pl.col("contributorNameSuffixCd").cast(pl.Utf8).str.strip_chars().str.len_chars() > 0
         )
-        .group_by(["_pk_fn", "_pk_ln"])
+        .group_by(["_pk_org", "_pk_fn", "_pk_ln"])
         .agg(pl.first("contributorNameSuffixCd").alias("sfx_nn"))
     )
 
+    parts = [p for p in (org_first, ind_first) if p.height > 0]
+    if not parts:
+        return pl.DataFrame(schema={
+            "first_name": pl.Utf8, "last_name": pl.Utf8, "middle_name": pl.Utf8,
+            "suffix": pl.Utf8, "organization": pl.Utf8,
+            "employer": pl.Utf8, "occupation": pl.Utf8, "job_title": pl.Utf8,
+            "person_type": pl.Utf8,
+            "_pk_fn": pl.Utf8, "_pk_ln": pl.Utf8, "_pk_org": pl.Utf8,
+            "_sort_key": pl.Int64,
+        })
+
+    combined = pl.concat(parts, how="diagonal_relaxed")
+
     result = (
-        first
-        .join(emp_nn, on=["_pk_fn", "_pk_ln"], how="left")
-        .join(occ_nn, on=["_pk_fn", "_pk_ln"], how="left")
-        .join(sfx_nn, on=["_pk_fn", "_pk_ln"], how="left")
+        combined
+        .join(emp_nn, on=["_pk_org", "_pk_fn", "_pk_ln"], how="left")
+        .join(occ_nn, on=["_pk_org", "_pk_fn", "_pk_ln"], how="left")
+        .join(sfx_nn, on=["_pk_org", "_pk_fn", "_pk_ln"], how="left")
         .with_columns([
             _cs("contributorNameFirst").alias("first_name"),
             _cs("contributorNameLast").alias("last_name"),
@@ -244,7 +280,8 @@ def _build_persons_frame_rcpt(df: pl.DataFrame) -> pl.DataFrame:
                     .replace("", None),  # first non-null suffix
                 _cs("contributorNameSuffixCd"),
             ]).alias("suffix"),
-            pl.lit(None, dtype=pl.Utf8).alias("organization"),
+            # organization: set from source column for org contributors; null for individuals
+            _cs("contributorNameOrganization").alias("organization"),
             pl.coalesce([
                 pl.col("emp_nn").cast(pl.Utf8).str.strip_chars()
                     .replace("", None),
@@ -467,6 +504,18 @@ def _build_committee_frame(rcpt: pl.DataFrame | None, expn: pl.DataFrame | None)
 # Addresses
 # ---------------------------------------------------------------------------
 
+def _has_name(first_col: str, last_col: str, org_col: str) -> pl.Expr:
+    """Return True for rows where the ORM's build_person would produce a person
+    (i.e. name.full_name is non-empty).  Mirrors PersonName.full_name logic:
+    full_name is non-empty when org is non-null OR at least one of first/last
+    is non-null.  Filters the row BEFORE address-taking (M3).
+    """
+    org = _cs(org_col)
+    first = _cs(first_col)
+    last = _cs(last_col)
+    return org.is_not_null() | first.is_not_null() | last.is_not_null()
+
+
 def _build_addresses(
     rcpt: pl.DataFrame | None,
     expn: pl.DataFrame | None,
@@ -479,31 +528,58 @@ def _build_addresses(
 
     Algorithm:
       1. For each unique person (lower-case key) in RCPT, take their first address.
+         Org contributors key on (lower(org)), individuals on (lower(first), lower(last)).
       2. For EXPN persons NOT already seen in RCPT, take their first address.
-      3. Dedup addresses by lower-case keys (ORM case-insensitive lookup).
+      3. Filter rows where the person has no name (M3: ORM returns None -> no address).
+      4. Dedup addresses by lower-case 4-field key (M1: matches uix_addresses_* indexes).
     """
     frames: list[pl.DataFrame] = []
     rcpt_person_set: set[tuple] = set()
 
     if rcpt is not None and rcpt.height > 0:
-        rcpt_keyed = rcpt.sort("contributionInfoId").with_columns([
-            pl.lit(None, dtype=pl.Utf8).alias("_pk_org"),
-            _cs("contributorNameFirst").str.to_lowercase().alias("_pk_fn"),
-            _cs("contributorNameLast").str.to_lowercase().alias("_pk_ln"),
-        ])
-        rcpt_first = rcpt_keyed.group_by(["_pk_fn", "_pk_ln"]).agg(pl.all().first())
-        rcpt_person_set = set(
-            zip(rcpt_first["_pk_fn"].to_list(), rcpt_first["_pk_ln"].to_list())
+        # M2: use 3-key grouping (org, fn, ln) matching _build_persons_frame_rcpt.
+        # M3: filter rows with no name before taking addresses.
+        rcpt_keyed = (
+            rcpt.sort("contributionInfoId")
+            .filter(
+                _has_name(
+                    "contributorNameFirst", "contributorNameLast", "contributorNameOrganization"
+                )
+            )
+            .with_columns([
+                _nullify_expr(pl.col("contributorNameOrganization").cast(pl.Utf8))
+                    .str.to_lowercase().alias("_pk_org"),
+                _cs("contributorNameFirst").str.to_lowercase().alias("_pk_fn"),
+                _cs("contributorNameLast").str.to_lowercase().alias("_pk_ln"),
+            ])
         )
-        frames.append(_address_valid(_address_frame_rcpt(rcpt_first)))
+        rcpt_first = rcpt_keyed.group_by(["_pk_org", "_pk_fn", "_pk_ln"]).agg(pl.all().first())
+
+        # Split to collect individual key set for EXPN suppression
+        rcpt_org_first = rcpt_first.filter(pl.col("_pk_org").is_not_null())
+        rcpt_ind_first = rcpt_first.filter(pl.col("_pk_org").is_null())
+        rcpt_person_set = set(
+            zip(rcpt_ind_first["_pk_fn"].to_list(), rcpt_ind_first["_pk_ln"].to_list())
+        )
+
+        for part in (rcpt_org_first, rcpt_ind_first):
+            if part.height > 0:
+                frames.append(_address_valid(_address_frame_rcpt(part)))
 
     if expn is not None and expn.height > 0:
-        expn_keyed = expn.sort("expendInfoId").with_columns([
-            _nullify_expr(pl.col("payeeNameOrganization").cast(pl.Utf8))
-                .str.to_lowercase().alias("_pk_org"),
-            _cs("payeeNameFirst").str.to_lowercase().alias("_pk_fn"),
-            _cs("payeeNameLast").str.to_lowercase().alias("_pk_ln"),
-        ])
+        # M3: filter rows with no name before taking addresses.
+        expn_keyed = (
+            expn.sort("expendInfoId")
+            .filter(
+                _has_name("payeeNameFirst", "payeeNameLast", "payeeNameOrganization")
+            )
+            .with_columns([
+                _nullify_expr(pl.col("payeeNameOrganization").cast(pl.Utf8))
+                    .str.to_lowercase().alias("_pk_org"),
+                _cs("payeeNameFirst").str.to_lowercase().alias("_pk_fn"),
+                _cs("payeeNameLast").str.to_lowercase().alias("_pk_ln"),
+            ])
+        )
         expn_first = expn_keyed.group_by(["_pk_org", "_pk_fn", "_pk_ln"]).agg(pl.all().first())
 
         org_first = expn_first.filter(pl.col("_pk_org").is_not_null())
@@ -626,6 +702,12 @@ class FlatTxnsDimsWorker:
 
         if rcpt is not None and rcpt.height > 0:
             rcpt_persons = _build_persons_frame_rcpt(rcpt)
+            # M3: filter rows where full_name is empty — mirrors ORM build_person returning
+            # None when name.full_name is "" (no org, no first+last+suffix).
+            full_name_col = common.full_name_expr(
+                "first_name", "middle_name", "last_name", "suffix", "organization"
+            )
+            rcpt_persons = rcpt_persons.filter(full_name_col.str.len_chars() > 0)
             rcpt_person_set = set(
                 zip(rcpt_persons["_pk_fn"].to_list(), rcpt_persons["_pk_ln"].to_list())
             )
@@ -646,6 +728,12 @@ class FlatTxnsDimsWorker:
             expn_persons = _build_persons_frame_expn(
                 expn, rcpt_person_set, sort_key_offset=rcpt_max_id + 10_000_000
             )
+            if expn_persons.height > 0:
+                # M3: filter rows where full_name is empty (mirrors ORM build_person -> None).
+                full_name_col_expn = common.full_name_expr(
+                    "first_name", "middle_name", "last_name", "suffix", "organization"
+                )
+                expn_persons = expn_persons.filter(full_name_col_expn.str.len_chars() > 0)
             if expn_persons.height > 0:
                 frames.append(expn_persons)
 

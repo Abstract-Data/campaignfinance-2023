@@ -170,8 +170,13 @@ def test_flat_txns_expenditure_count(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 def test_flat_txns_dims_family_matches_orm(tmp_path: Path):
-    """Dim tables (addresses, persons, entities, committees, contributions,
-    expenditures, transaction_persons) must be row-for-row equal (ORM vs vectorized).
+    """The 4 dim tables (unified_addresses, unified_persons, unified_entities,
+    unified_committees) must be row-for-row equal (ORM vs vectorized).
+
+    Scope is restricted to the 4 tables in ``_DIM_TABLES``.  Detail/junction
+    tables (contributions, expenditures, transaction_persons) are NOT gated here
+    — they belong to a future linkage slice that performs real id-joins and adds
+    FK->natural-key resolution to the harness.
 
     Uses enforce_fk=False — FK parent tables (unified_reports, etc.) are NOT seeded;
     surrogate FK columns are dropped by the harness, natural-key columns are compared.
