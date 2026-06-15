@@ -99,12 +99,96 @@ def _sort_key(row: dict[str, Any]) -> tuple[str, ...]:
     return tuple("" if v is None else str(v) for _k, v in sorted(row.items()))
 
 
-def snapshot_unified(engine: Engine) -> dict[str, list[dict[str, Any]]]:
+def _intra_fk_parents(inspector: Any, table: str, targets: set[str]) -> dict[str, str]:
+    """{column: parent_table} for surrogate FKs (-> parent.id) whose parent is itself
+    a snapshot target (unified_/canonical_). These get RESOLVED to the parent's natural
+    key in resolve_fks mode (instead of dropped). FKs to non-target tables
+    (file_origins, states) stay dropped — they are provenance, not logical linkage."""
+    out: dict[str, str] = {}
+    for fk in inspector.get_foreign_keys(table):
+        if fk.get("referred_columns") == ["id"] and fk.get("referred_table") in targets:
+            for cc in fk.get("constrained_columns", []):
+                out[cc] = fk["referred_table"]
+    return out
+
+
+def _snapshot_resolved(engine: Engine) -> dict[str, list[dict[str, Any]]]:
+    """snapshot_unified with surrogate FKs RESOLVED to parent natural keys.
+
+    Lets the gate verify relational LINKAGE (e.g. a contribution's contributor entity)
+    instead of dropping surrogate ids. Recursive (entity -> person -> address), memoized,
+    cycle-guarded. Only intra-target FKs are resolved; provenance FKs and volatile cols
+    are dropped exactly as in the default snapshot.
+    """
+    inspector = inspect(engine)
+    targets = set(_target_tables(inspector))
+    md = MetaData()
+    raw: dict[str, dict[Any, dict[str, Any]]] = {}
+    intra: dict[str, dict[str, str]] = {}
+    drop_cols: dict[str, set[str]] = {}
+    cols_by_table: dict[str, list[str]] = {}
+    for table in targets:
+        tbl = Table(table, md, autoload_with=engine)
+        cols = [c.name for c in tbl.columns]
+        cols_by_table[table] = cols
+        intra[table] = _intra_fk_parents(inspector, table, targets)
+        # Drop: volatile + surrogate FKs to NON-target parents (provenance). Intra-target
+        # FK columns are kept here and resolved; the 'id' PK is dropped from output.
+        ext_fk = _surrogate_fk_columns(inspector, table) - set(intra[table])
+        drop_cols[table] = set(VOLATILE_COLUMNS) | ext_fk
+        with engine.connect() as conn:
+            raw[table] = {m["id"]: dict(m) for m in conn.execute(select(tbl)).mappings().all()}
+
+    memo: dict[tuple[str, Any], Any] = {}
+
+    def resolve(table: str, fk_id: Any, stack: frozenset) -> Any:
+        if fk_id is None:
+            return None
+        key = (table, fk_id)
+        if key in memo:
+            return memo[key]
+        if key in stack or table not in raw or fk_id not in raw[table]:
+            return f"<unresolved:{table}:{fk_id}>"
+        nat = natural(table, raw[table][fk_id], stack | {key})
+        memo[key] = nat
+        return nat
+
+    def natural(table: str, row: dict[str, Any], stack: frozenset) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for col in cols_by_table[table]:
+            if col == "id" or col in drop_cols[table]:
+                continue
+            if col in intra[table]:
+                out[col] = resolve(intra[table][col], row.get(col), stack)
+            elif col in JSON_COLUMNS:
+                out[col] = _canonicalize_json(row.get(col))
+            else:
+                v = row.get(col)
+                out[col] = None if v is None else str(v)
+        return out
+
+    snapshot: dict[str, list[dict[str, Any]]] = {}
+    for table in targets:
+        rows = [natural(table, r, frozenset()) for r in raw[table].values()]
+        rows.sort(key=_sort_key)
+        snapshot[table] = rows
+    return snapshot
+
+
+def snapshot_unified(
+    engine: Engine, *, resolve_fks: bool = False
+) -> dict[str, list[dict[str, Any]]]:
     """Return {table: [normalized row dicts]} for every unified/canonical table.
 
     Volatile + surrogate-FK columns are dropped; rows are deterministically sorted.
     Built with SQLAlchemy core ``select`` over reflected tables (no string SQL).
+
+    ``resolve_fks=True`` resolves intra-target surrogate FKs to the parent's natural key
+    (recursively) so the gate can verify relational linkage — opt-in, since it is
+    strictly stricter than the default drop-surrogate-FK behavior.
     """
+    if resolve_fks:
+        return _snapshot_resolved(engine)
     inspector = inspect(engine)
     snapshot: dict[str, list[dict[str, Any]]] = {}
     md = MetaData()
