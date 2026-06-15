@@ -144,25 +144,74 @@ def upper_str(col: str) -> pl.Expr:
     return clean_str(col).str.to_uppercase()
 
 
+def person_addr_key_expr(
+    s1_col: str | pl.Expr,
+    city_col: str | pl.Expr,
+    state_col: str | pl.Expr,
+    zip_col: str | pl.Expr,
+) -> pl.Expr:
+    """Denormalized ``dedup_addr_key`` expression: ``"street|city|state|zip"`` or null.
+
+    Mirrors ``BuilderCache.address_key`` / ``address_key_str``: street/city/state are
+    lowered, zip kept as-is, components joined by ``|`` (empty for a missing part).  The
+    key is null unless ≥2 of the four fields are populated — so an addressless or
+    barely-addressed individual degrades to a name-only dedup key (today's behavior),
+    while two same-name people at distinct locations get distinct keys.
+
+    Inputs may be column names (cleaned via ``clean_str``) or already-built expressions
+    (e.g. ``upper_str`` for state); pass expressions when the caller normalizes a field.
+    """
+    def _expr(c: str | pl.Expr) -> pl.Expr:
+        return clean_str(c) if isinstance(c, str) else c
+
+    s1 = _expr(s1_col).str.to_lowercase()
+    city = _expr(city_col).str.to_lowercase()
+    state = _expr(state_col).str.to_lowercase()
+    zip_ = _expr(zip_col)  # zip is stored as-is (matches address_key)
+    populated = (
+        s1.is_not_null().cast(pl.Int32)
+        + city.is_not_null().cast(pl.Int32)
+        + state.is_not_null().cast(pl.Int32)
+        + zip_.is_not_null().cast(pl.Int32)
+    )
+    joined = pl.concat_str(
+        [
+            s1.fill_null(""),
+            city.fill_null(""),
+            state.fill_null(""),
+            zip_.fill_null(""),
+        ],
+        separator="|",
+    )
+    return pl.when(populated >= 2).then(joined).otherwise(None)
+
+
 def collapse_org_person_key(frame: pl.DataFrame) -> pl.DataFrame:
-    """Null ``_pk_fn``/``_pk_ln`` on rows where ``_pk_org`` is set, so an org-person is
-    deduped/looked-up on ``lower(org)`` ALONE.
+    """Null ``_pk_fn``/``_pk_ln``/``_pk_addr`` on rows where ``_pk_org`` is set, so an
+    org-person is deduped/looked-up on ``lower(org)`` ALONE.
 
     Mirrors the ORM ``BuilderCache.person_key`` (org present -> ``("org", lower(org),
-    state)``, ignoring first/last) and the partial index ``uix_persons_org_state`` on
-    ``(lower(organization), state_id) WHERE organization IS NOT NULL``. Without this, two
-    org rows with the same org but different incidental first/last names survive the
-    engine's 3-key dedup yet collide on the org-only unique index on Postgres.
+    state)``, ignoring first/last/address) and the partial index ``uix_persons_org_state``
+    on ``(lower(organization), state_id) WHERE organization IS NOT NULL``. Without this,
+    two org rows with the same org but different incidental first/last names survive the
+    engine's dedup yet collide on the org-only unique index on Postgres.
 
-    Apply once, right after building ``_pk_org``/``_pk_fn``/``_pk_ln`` and before any
-    group_by / unique / id-map join on those keys, so every downstream use is consistent.
-    The stored ``first_name``/``last_name`` columns are untouched — only the dedup KEY.
+    Apply once, right after building ``_pk_org``/``_pk_fn``/``_pk_ln`` (and ``_pk_addr``
+    where present) and before any group_by / unique / id-map join on those keys, so every
+    downstream use is consistent. The stored ``first_name``/``last_name`` columns are
+    untouched — only the dedup KEY. ``_pk_addr`` is nulled only when the frame carries it
+    (the participant-projection frames in flat_txns_detail key on name alone).
     """
     has_org = pl.col("_pk_org").is_not_null()
-    return frame.with_columns(
+    updates = [
         pl.when(has_org).then(None).otherwise(pl.col("_pk_fn")).alias("_pk_fn"),
         pl.when(has_org).then(None).otherwise(pl.col("_pk_ln")).alias("_pk_ln"),
-    )
+    ]
+    if "_pk_addr" in frame.columns:
+        updates.append(
+            pl.when(has_org).then(None).otherwise(pl.col("_pk_addr")).alias("_pk_addr")
+        )
+    return frame.with_columns(updates)
 
 
 # ── provenance ───────────────────────────────────────────────────────────────

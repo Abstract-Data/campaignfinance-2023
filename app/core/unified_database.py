@@ -66,6 +66,15 @@ _UNIFIED_ADDITIVE_COLUMNS: tuple[tuple[str, str, str], ...] = (
         "treasurer_name_at_filing",
         "ALTER TABLE unified_reports ADD COLUMN treasurer_name_at_filing VARCHAR(200)",
     ),
+    (
+        # Denormalized "street|city|state|zip" key for the (name + address) individual
+        # person dedup index (uix_persons_name_state).  NULL for org-persons and
+        # addressless individuals.  Must exist before the new index is applied, or the
+        # CREATE INDEX referencing it fails on a pre-existing table.
+        "unified_persons",
+        "dedup_addr_key",
+        "ALTER TABLE unified_persons ADD COLUMN dedup_addr_key VARCHAR(600)",
+    ),
 )
 
 
@@ -176,7 +185,7 @@ class UnifiedDatabaseManager:
     _DEDUP_INDEXES: tuple[str, ...] = (
         """
         CREATE UNIQUE INDEX IF NOT EXISTS uix_persons_name_state
-        ON unified_persons (lower(first_name), lower(last_name), state_id)
+        ON unified_persons (lower(first_name), lower(last_name), state_id, dedup_addr_key)
         WHERE organization IS NULL
           AND first_name IS NOT NULL
           AND last_name IS NOT NULL;

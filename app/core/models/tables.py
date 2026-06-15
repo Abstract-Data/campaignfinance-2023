@@ -168,6 +168,12 @@ class UnifiedPerson(SQLModel, table=True):
     job_title: str | None = Field(default=None, sa_column=Column(String(500)))
     person_type: PersonType = Field(default=PersonType.UNKNOWN)
 
+    # Denormalized "street|city|state|zip" (lowercased) or None — the persisted form
+    # of BuilderCache.address_key, so the (name + address) individual dedup key can be
+    # enforced by a single-table partial unique index (uix_persons_name_state).  NULL
+    # for org-persons and for individuals whose address has too few fields to key on.
+    dedup_addr_key: str | None = Field(default=None, sa_column=Column(String(600)))
+
     # Foreign keys
     address_id: int | None = Field(default=None, foreign_key="unified_addresses.id")
     state_id: int | None = Field(default=None, foreign_key="states.id")

@@ -354,7 +354,7 @@ def _spec_party_frame(df: pl.DataFrame, spec: TypeSpec, sort_offset: int) -> pl.
     Columns:
         first_name, last_name, suffix, organization, person_type,
         a_street_1, a_street_2, a_city, a_state, a_zip, a_country, a_county,
-        has_address, _pk_org, _pk_fn, _pk_ln, _sort_key
+        has_address, _pk_org, _pk_fn, _pk_ln, _pk_addr, _sort_key
     """
     first = _opt_col(df, spec.name_first)
     last = _opt_col(df, spec.name_last)
@@ -389,10 +389,15 @@ def _spec_party_frame(df: pl.DataFrame, spec: TypeSpec, sort_offset: int) -> pl.
             org.str.to_lowercase().alias("_pk_org"),
             first.str.to_lowercase().alias("_pk_fn"),
             last.str.to_lowercase().alias("_pk_ln"),
+            # Address dimension of the individual dedup key (these record types carry no
+            # street_1). collapse_org_person_key nulls it for org-persons below.
+            common.person_addr_key_expr(
+                pl.lit(None, dtype=pl.Utf8), city, state, zip_code
+            ).alias("_pk_addr"),
             row_id,
         ]
     )
-    # Org-persons dedup on lower(org) ALONE (null fn/ln) — matches uix_persons_org_state.
+    # Org-persons dedup on lower(org) ALONE (null fn/ln/addr) — matches uix_persons_org_state.
     out = common.collapse_org_person_key(out)
     # Keep only rows that produce a person (full_name non-empty).
     fn = _full_name(
@@ -415,6 +420,7 @@ def _spec_party_frame(df: pl.DataFrame, spec: TypeSpec, sort_offset: int) -> pl.
         "_pk_org",
         "_pk_fn",
         "_pk_ln",
+        "_pk_addr",
         "_sort_key",
     )
 
@@ -492,11 +498,13 @@ def _address_id_map(engine: Any) -> pl.DataFrame:
 
 
 def _person_id_map(engine: Any, state_id: int) -> pl.DataFrame:
-    """{_pk_org, _pk_fn, _pk_ln} -> person id for this state (lower-cased keys; org-persons
-    keyed on lower(org) ALONE via collapse_org_person_key, matching uix_persons_org_state)."""
+    """{_pk_org, _pk_fn, _pk_ln, _pk_addr} -> person id for this state (lower-cased keys;
+    org-persons keyed on lower(org) ALONE via collapse_org_person_key, matching
+    uix_persons_org_state; individuals split by dedup_addr_key per uix_persons_name_state)."""
     tbl = _reflect(engine, "unified_persons")
     stmt = select(
-        tbl.c.id, tbl.c.first_name, tbl.c.last_name, tbl.c.organization
+        tbl.c.id, tbl.c.first_name, tbl.c.last_name, tbl.c.organization,
+        tbl.c.dedup_addr_key,
     ).where(tbl.c.state_id == state_id)
     with engine.connect() as conn:
         rows = [dict(m) for m in conn.execute(stmt).mappings().all()]
@@ -506,12 +514,14 @@ def _person_id_map(engine: Any, state_id: int) -> pl.DataFrame:
             "_pk_org": [_lower_or_none(r["organization"]) for r in rows],
             "_pk_fn": [_lower_or_none(r["first_name"]) for r in rows],
             "_pk_ln": [_lower_or_none(r["last_name"]) for r in rows],
+            "_pk_addr": [r["dedup_addr_key"] for r in rows],
         },
         schema={
             "person_id": pl.Int64,
             "_pk_org": pl.Utf8,
             "_pk_fn": pl.Utf8,
             "_pk_ln": pl.Utf8,
+            "_pk_addr": pl.Utf8,
         },
     )
     return common.collapse_org_person_key(frame)
@@ -693,6 +703,7 @@ class DetailChildrenWorker:
                     "_pk_org": pl.Utf8,
                     "_pk_fn": pl.Utf8,
                     "_pk_ln": pl.Utf8,
+                    "_pk_addr": pl.Utf8,
                     "_sort_key": pl.Int64,
                 }
             )
@@ -705,9 +716,12 @@ class DetailChildrenWorker:
         if parties.height == 0:
             return 0, 0, 0
 
-        # Deduped persons: first occurrence per (org, fn, ln) key in load order.
+        # Deduped persons: first occurrence per (org, fn, ln, addr) key in load order.
+        # The address dimension splits same-name individuals at distinct locations
+        # (matching uix_persons_name_state); org-persons keep _pk_addr NULL.
         persons = parties.unique(
-            subset=["_pk_org", "_pk_fn", "_pk_ln"], keep="first", maintain_order=True
+            subset=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"], keep="first",
+            maintain_order=True,
         )
         # Each deduped person carries the 4-field address key of its first address
         # (null key components when no address anchor).
@@ -756,8 +770,8 @@ class DetailChildrenWorker:
         # ``persons_new`` is the subset to actually insert.
         existing_persons = _person_id_map(ctx.engine, ctx.state_id)
         persons_new = persons.join(
-            existing_persons.select("_pk_org", "_pk_fn", "_pk_ln"),
-            on=["_pk_org", "_pk_fn", "_pk_ln"],
+            existing_persons.select("_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"),
+            on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
             how="anti",
             join_nulls=True,
         )
@@ -768,6 +782,7 @@ class DetailChildrenWorker:
             pl.lit(None, dtype=pl.Utf8).alias("employer"),
             pl.lit(None, dtype=pl.Utf8).alias("occupation"),
             pl.lit(None, dtype=pl.Utf8).alias("job_title"),
+            pl.col("_pk_addr").alias("dedup_addr_key"),
             pl.lit(ctx.state_id).alias("state_id"),
         ).select(
             "first_name",
@@ -779,6 +794,7 @@ class DetailChildrenWorker:
             "occupation",
             "job_title",
             "person_type",
+            "dedup_addr_key",
             "address_id",
             "state_id",
         )
@@ -1004,6 +1020,13 @@ class DetailChildrenWorker:
         first = _opt_col(df, spec.name_first)
         last = _opt_col(df, spec.name_last)
         org = _opt_col(df, spec.name_org)
+        city = _opt_col(df, spec.addr_city)
+        state = (
+            _opt_col(df, spec.addr_state).str.to_uppercase()
+            if spec.addr_state
+            else pl.lit(None, dtype=pl.Utf8)
+        )
+        zip_code = _opt_col(df, spec.addr_zip)
         txn_id = (
             pl.col(spec.id_col).cast(pl.Utf8)
             if spec.id_col in df.columns
@@ -1014,6 +1037,12 @@ class DetailChildrenWorker:
                 org.str.to_lowercase().alias("_pk_org"),
                 first.str.to_lowercase().alias("_pk_fn"),
                 last.str.to_lowercase().alias("_pk_ln"),
+                # Address dimension of the individual key (these types carry no street_1);
+                # collapse_org_person_key nulls it for org-parties. Keeps the person_map
+                # join 1:1 now that a name maps to one person PER address.
+                common.person_addr_key_expr(
+                    pl.lit(None, dtype=pl.Utf8), city, state, zip_code
+                ).alias("_pk_addr"),
                 _full_name(first, last, _opt_col(df, spec.name_suffix), org).alias("_full_name"),
                 txn_id.alias("_txn_id"),
             )
@@ -1022,7 +1051,10 @@ class DetailChildrenWorker:
     def _join_party_entity(self, keyed: pl.DataFrame, person_map: pl.DataFrame,
                            entity_map: pl.DataFrame) -> pl.DataFrame:
         """Resolve party -> person id -> entity id (PERSON or ORGANIZATION entity)."""
-        joined = keyed.join(person_map, on=["_pk_org", "_pk_fn", "_pk_ln"], how="left", join_nulls=True)
+        joined = keyed.join(
+            person_map, on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"], how="left",
+            join_nulls=True,
+        )
         # The party's entity normalized_name == normalize(org) for orgs else
         # normalize(full_name); entity_type ORGANIZATION vs PERSON.
         joined = joined.with_columns(
