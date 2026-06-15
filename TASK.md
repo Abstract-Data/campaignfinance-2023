@@ -1,43 +1,45 @@
-# TASK — Vectorized detail_children family (LOAN/DEBT/CRED/TRVL/ASSET/PLDG)
+# TASK — Vectorized flat_txns detail/junction family (+ harness determinism fix)
+
+Plan: docs/design/vectorized-ingest-plan.md · Gate: app/core/ingest_equivalence.py
 
 ## Goal
-Extend the foundation-first vectorized ingest engine with the `detail_children`
-family: a Polars-vectorized, row-for-row-equivalent (to the ORM loader) transform
-for TEC record types LOAN, DEBT, CRED, TRVL, ASSET, PLDG — including the dim rows
-they imply, their `unified_transactions` rows, their detail child rows, and
-`loan_guarantors` for LOAN/DEBT.
+Land the vectorized **flat_txns detail/junction** family (RCPT/EXPN →
+unified_contributions / unified_expenditures / unified_transaction_persons) with real
+surrogate-id linkage, gated row-for-row against the ORM loader under `resolve_fks=True`.
+This is the conflict-resolved integration of PR #41 onto the post-#40 base (its redundant
+harness edit dropped; #40's superset harness kept).
 
 ## Files in scope
-- `app/core/ingest_vectorized/families/detail_children.py` (new) — the family worker.
-- `app/core/ingest_vectorized/families/__init__.py` — register the family (import).
-- `app/core/ingest_equivalence.py` — harness fixes so `resolve_fks=True` works for
-  id-less target tables (`unified_committees`) and gates `loan_guarantors`.
-- `tests/ingest_equivalence/test_detail_children_family.py` (new) — the gate.
+- `app/core/ingest_vectorized/families/flat_txns_detail.py` (new) — pure-Polars worker,
+  priority 11; contributions/expenditures/junction; FKs filled by id-joins against the
+  already-written dim + transaction tables (parameterized SQLAlchemy core; no f-string SQL;
+  no map_elements/.apply).
+- `app/core/ingest_vectorized/families/__init__.py` — register the family.
+- `app/core/ingest_equivalence.py` — `_PRESENCE_ONLY_FKS`: reduce the non-deterministic
+  `unified_entities.person_id` (entity's REPRESENTATIVE person, flush/hash-seed dependent)
+  to a presence marker in `resolve_fks` output. Fixes pre-existing flakiness that the merged
+  detail_children gate (#40) only passed under a lucky hash seed. Entity identity + address
+  and the junction's DIRECT participant person stay strictly compared.
+- `tests/ingest_equivalence/test_flat_txns_detail_family.py` (new) — the gate (relies on the
+  harness fix; bespoke per-test canonicalization removed).
 
 ## Behavior to preserve
-- Pure Polars column expressions only. NO `map_elements`, NO `.apply()`. Guarantors
-  via `struct`/`explode`.
-- No f-string / concatenated SQL — SQLAlchemy core parameterized/reflected only.
-- Existing families (`reports`, `flat_txns`, `flat_txns_dims`) must still pass their
-  gates in a full `run_vectorized` over the golden fixtures (shared dims must not
-  collide — dim writes anti-join existing rows).
-- ORM builder semantics replicated exactly: per-type field-resolution order
-  (`_get_field_value`), `builder_date`/`builder_amount` dialect + fallbacks, debt/
-  asset date fallback to `receivedDt`, travel amount/date from `parentAmount`/
-  `parentDt`, travel `traveler_person_id` always NULL (traveller is a PAYEE role,
-  detail reads CONTRIBUTOR), PLDG via `build_pledge` (NULL pledgor/recipient entity),
-  detail rows skipped when the required entity is absent (loan/debt/credit).
+- Linkage mirrors the ORM builders/processor exactly (contributor/recipient/payer/payee
+  entity resolution; junction person+entity).
+- No map_elements/.apply; no f-string SQL; FK-ordered writes; shared foundation reused.
 
-## Checks to run
-1. `uv run pytest tests/ingest_equivalence -q` — all green.
-2. The detail_children gate: `diff_snapshots(resolve_fks=True)` restricted to the
-   family's tables (the 6 detail tables + `loan_guarantors` + `unified_transactions`
-   filtered to these record types) == `[]`, both sides non-empty.
-3. `grep -rnE "map_elements|\.apply\(" app/core/ingest_vectorized/families/detail_children.py`
-   → no code matches (docstring mention only).
-4. `uv run ruff check app/core/ingest_vectorized tests/ingest_equivalence` → clean.
+## Checks (green)
+- `uv run pytest tests/ingest_equivalence -q` → 35 passed, deterministic across
+  PYTHONHASHSEED in {0, 12345, 999}.
+- `diff_snapshots(resolve_fks=True)` over (unified_contributions, unified_expenditures,
+  unified_transaction_persons) == [], both sides non-empty.
+- ruff clean; no map_elements/.apply in the family.
 
 ## Done when
-All four checks pass and the family is registered (runs after the dim family,
-priority 11) so a full vectorized run produces its dims + transactions + details
-with FK linkage verified under `resolve_fks=True`.
+flat_txns_detail registered + gated green deterministically, harness determinism fix in,
+code-review clean, PR opened.
+
+## Next — last family
+cand (CAND enrichment: candidate<->expenditure link). Now unblocked — expenditures exist via
+this family. Fan it out as the final gated PR, then run the Postgres COPY throughput
+benchmark before any default flip.
