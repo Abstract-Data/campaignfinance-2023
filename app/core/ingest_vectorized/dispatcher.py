@@ -77,6 +77,15 @@ def run_vectorized(
         linked = finalize_entity_representatives(session, ctx.state_id)
         counts["entity_reps_linked"] = linked
         _logger.info(f"[vectorized] finalize_entity_representatives -> {linked}")
+
+        # Build campaigns + campaign_entities last: they need committees, COMMITTEE
+        # entities, and transactions all in place (see campaigns.finalize_campaigns).
+        from app.core.ingest_vectorized.campaigns import finalize_campaigns
+
+        camp_counts = finalize_campaigns(session, ctx.state_id)
+        counts["campaigns"] = camp_counts["campaigns"]
+        counts["campaign_entities"] = camp_counts["campaign_entities"]
+        _logger.info(f"[vectorized] finalize_campaigns -> {camp_counts}")
     finally:
         session.close()
     return counts
