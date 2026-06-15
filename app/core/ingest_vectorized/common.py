@@ -114,13 +114,19 @@ def bool_expr(col: str) -> pl.Expr:
 
 
 # ── dim normalization (persons / entities / addresses) ───────────────────────
-def normalize_entity_name(col: str) -> pl.Expr:
-    """Mirror value_objects.normalize_entity_name: strip -> lower -> non-alnum to
-    single spaces -> collapse spaces -> strip. Null/empty -> "" (the ORM returns "").
-    This is the entity dedup key (uix_entities_type_name_state)."""
-    s = pl.col(col).cast(pl.Utf8).str.strip_chars().str.to_lowercase()
+def normalize_entity_name_expr(name_expr: pl.Expr) -> pl.Expr:
+    """``normalize_entity_name`` applied to an arbitrary string EXPRESSION (not a column
+    name). Mirror value_objects.normalize_entity_name: strip -> lower -> non-alnum to single
+    spaces -> collapse spaces -> strip. Null/empty -> "" (the ORM returns "")."""
+    s = name_expr.cast(pl.Utf8).str.strip_chars().str.to_lowercase()
     s = s.str.replace_all(r"[^a-z0-9]+", " ").str.replace_all(r"\s+", " ").str.strip_chars()
     return s.fill_null("")
+
+
+def normalize_entity_name(col: str) -> pl.Expr:
+    """Mirror value_objects.normalize_entity_name on a COLUMN by name. Null/empty -> "".
+    This is the entity dedup key (uix_entities_type_name_state)."""
+    return normalize_entity_name_expr(pl.col(col))
 
 
 def full_name_expr(first: str, middle: str, last: str, suffix: str, organization: str) -> pl.Expr:

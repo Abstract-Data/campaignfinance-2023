@@ -432,27 +432,19 @@ class CandWorker:
     def _insert_new_entities(self, cand_rows: pl.DataFrame, ctx: FamilyContext) -> int:
         """Insert candidate entities whose (entity_type, normalized_name) is not present.
 
-        The entity's representative ``person_id`` is the candidate person resolved for
-        the FIRST CAND row (row order) that created that entity name. ``address_id``
-        stays NULL (candidate rows have no address). Empty normalized names never
-        create an entity (mirrors ``_get_or_create_entity`` returning None).
+        The entity's representative ``person_id`` / ``address_id`` are NOT set here — they
+        are assigned once, deterministically, by ``finalize_entity_representatives`` after
+        all families run (a person can map to >1 entity via suffix-variant normalized names,
+        so a per-family entity-rep assignment violates the one-to-one
+        ``unified_entities.person_id`` unique). Empty normalized names never create an entity
+        (mirrors ``_get_or_create_entity`` returning None).
         """
         existing = _entity_id_map(ctx.session, ctx.state_id)
         existing_keys = existing.select(["_ent_type", "_ent_norm"]).unique()
-        # Resolve every candidate row's person id (persons now include the new ones).
-        # Use the full-identity map so non-dedupable names (last-only / first-only)
-        # still resolve a representative person id.
-        person_map = _person_full_id_map(ctx.session, ctx.state_id)
-        with_pid = cand_rows.join(
-            person_map,
-            on=["_fk_fn", "_fk_ln", "_fk_org", "_fk_sfx", "_fk_type"],
-            how="left",
-            join_nulls=True,
-        )
 
-        # First candidate row per entity key (row order) -> representative person.
+        # First candidate row per entity key (row order) -> the display-name source row.
         first = (
-            with_pid.filter((pl.col("_ent_norm") != "") & pl.col("_pid").is_not_null())
+            cand_rows.filter(pl.col("_ent_norm") != "")
             .sort("_cand_row")
             .unique(subset=["_ent_type", "_ent_norm"], keep="first", maintain_order=True)
         )
@@ -474,7 +466,7 @@ class CandWorker:
             pl.col("_ent_type").alias("entity_type"),
             pl.col("name"),
             pl.col("_ent_norm").alias("normalized_name"),
-            pl.col("_pid").alias("person_id"),
+            pl.lit(None, dtype=pl.Int64).alias("person_id"),
             pl.lit(None, dtype=pl.Utf8).alias("committee_id"),
             pl.lit(None, dtype=pl.Utf8).alias("notes"),
             pl.lit(ctx.state_id).alias("state_id"),
