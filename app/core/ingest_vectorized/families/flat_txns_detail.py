@@ -207,7 +207,9 @@ def _person_id_map(session, state_id: int) -> pl.DataFrame:
             "first_name": pl.Utf8, "middle_name": pl.Utf8, "last_name": pl.Utf8,
             "suffix": pl.Utf8, "organization": pl.Utf8,
         },
-    ).with_columns(
+        # Org-persons keyed on lower(org) ALONE (null fn/ln) — matches uix_persons_org_state
+        # and the family-side dedup key, so the id-join finds the single org person.
+    ).pipe(common.collapse_org_person_key).with_columns(
         pl.when(_cs("organization").is_not_null())
         .then(pl.lit("ORGANIZATION"))
         .otherwise(pl.lit("PERSON"))

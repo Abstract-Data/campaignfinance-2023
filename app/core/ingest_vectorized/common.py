@@ -138,6 +138,27 @@ def upper_str(col: str) -> pl.Expr:
     return clean_str(col).str.to_uppercase()
 
 
+def collapse_org_person_key(frame: pl.DataFrame) -> pl.DataFrame:
+    """Null ``_pk_fn``/``_pk_ln`` on rows where ``_pk_org`` is set, so an org-person is
+    deduped/looked-up on ``lower(org)`` ALONE.
+
+    Mirrors the ORM ``BuilderCache.person_key`` (org present -> ``("org", lower(org),
+    state)``, ignoring first/last) and the partial index ``uix_persons_org_state`` on
+    ``(lower(organization), state_id) WHERE organization IS NOT NULL``. Without this, two
+    org rows with the same org but different incidental first/last names survive the
+    engine's 3-key dedup yet collide on the org-only unique index on Postgres.
+
+    Apply once, right after building ``_pk_org``/``_pk_fn``/``_pk_ln`` and before any
+    group_by / unique / id-map join on those keys, so every downstream use is consistent.
+    The stored ``first_name``/``last_name`` columns are untouched — only the dedup KEY.
+    """
+    has_org = pl.col("_pk_org").is_not_null()
+    return frame.with_columns(
+        pl.when(has_org).then(None).otherwise(pl.col("_pk_fn")).alias("_pk_fn"),
+        pl.when(has_org).then(None).otherwise(pl.col("_pk_ln")).alias("_pk_ln"),
+    )
+
+
 # ── provenance ───────────────────────────────────────────────────────────────
 def raw_json_expr(columns: list[str], alias: str = "raw_data") -> pl.Expr:
     """JSON-encode the original columns as provenance. Compared structurally (not

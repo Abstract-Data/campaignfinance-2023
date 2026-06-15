@@ -221,6 +221,8 @@ def _build_persons_frame_rcpt(df: pl.DataFrame) -> pl.DataFrame:
         _cs("contributorNameLast").str.to_lowercase().alias("_pk_ln"),
         pl.col("contributionInfoId").cast(pl.Int64).alias("_row_id"),
     ])
+    # Org-persons dedup on lower(org) ALONE (null fn/ln) — matches uix_persons_org_state.
+    keyed = common.collapse_org_person_key(keyed)
 
     # First occurrence per (org_lower, fn_lower, ln_lower): keep all columns via agg().first()
     first = keyed.group_by(["_pk_org", "_pk_fn", "_pk_ln"]).agg(pl.all().first())
@@ -324,6 +326,8 @@ def _build_persons_frame_expn(
         _cs("payeeNameLast").str.to_lowercase().alias("_pk_ln"),
         (pl.col("expendInfoId").cast(pl.Int64) + sort_key_offset).alias("_row_id"),
     ])
+    # Org-persons dedup on lower(org) ALONE (null fn/ln) — matches uix_persons_org_state.
+    keyed = common.collapse_org_person_key(keyed)
     first = keyed.group_by(["_pk_org", "_pk_fn", "_pk_ln"]).agg(pl.all().first())
 
     # Split orgs vs individuals
@@ -553,6 +557,7 @@ def _build_addresses(
                 _cs("contributorNameLast").str.to_lowercase().alias("_pk_ln"),
             ])
         )
+        rcpt_keyed = common.collapse_org_person_key(rcpt_keyed)
         rcpt_first = rcpt_keyed.group_by(["_pk_org", "_pk_fn", "_pk_ln"]).agg(pl.all().first())
 
         # Split to collect individual key set for EXPN suppression
@@ -580,6 +585,7 @@ def _build_addresses(
                 _cs("payeeNameLast").str.to_lowercase().alias("_pk_ln"),
             ])
         )
+        expn_keyed = common.collapse_org_person_key(expn_keyed)
         expn_first = expn_keyed.group_by(["_pk_org", "_pk_fn", "_pk_ln"]).agg(pl.all().first())
 
         org_first = expn_first.filter(pl.col("_pk_org").is_not_null())

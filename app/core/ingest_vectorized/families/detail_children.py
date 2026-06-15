@@ -392,6 +392,8 @@ def _spec_party_frame(df: pl.DataFrame, spec: TypeSpec, sort_offset: int) -> pl.
             row_id,
         ]
     )
+    # Org-persons dedup on lower(org) ALONE (null fn/ln) — matches uix_persons_org_state.
+    out = common.collapse_org_person_key(out)
     # Keep only rows that produce a person (full_name non-empty).
     fn = _full_name(
         pl.col("first_name"), pl.col("last_name"), pl.col("suffix"), pl.col("organization")
@@ -490,14 +492,15 @@ def _address_id_map(engine: Any) -> pl.DataFrame:
 
 
 def _person_id_map(engine: Any, state_id: int) -> pl.DataFrame:
-    """{_pk_org, _pk_fn, _pk_ln} -> person id for this state (lower-cased keys)."""
+    """{_pk_org, _pk_fn, _pk_ln} -> person id for this state (lower-cased keys; org-persons
+    keyed on lower(org) ALONE via collapse_org_person_key, matching uix_persons_org_state)."""
     tbl = _reflect(engine, "unified_persons")
     stmt = select(
         tbl.c.id, tbl.c.first_name, tbl.c.last_name, tbl.c.organization
     ).where(tbl.c.state_id == state_id)
     with engine.connect() as conn:
         rows = [dict(m) for m in conn.execute(stmt).mappings().all()]
-    return pl.DataFrame(
+    frame = pl.DataFrame(
         {
             "person_id": [r["id"] for r in rows],
             "_pk_org": [_lower_or_none(r["organization"]) for r in rows],
@@ -511,6 +514,7 @@ def _person_id_map(engine: Any, state_id: int) -> pl.DataFrame:
             "_pk_ln": pl.Utf8,
         },
     )
+    return common.collapse_org_person_key(frame)
 
 
 def _txn_id_map(engine: Any, state_id: int, record_types: list[str]) -> pl.DataFrame:
@@ -1003,12 +1007,14 @@ class DetailChildrenWorker:
             if spec.id_col in df.columns
             else pl.lit(None, dtype=pl.Utf8)
         )
-        return df.with_columns(
-            org.str.to_lowercase().alias("_pk_org"),
-            first.str.to_lowercase().alias("_pk_fn"),
-            last.str.to_lowercase().alias("_pk_ln"),
-            _full_name(first, last, _opt_col(df, spec.name_suffix), org).alias("_full_name"),
-            txn_id.alias("_txn_id"),
+        return common.collapse_org_person_key(
+            df.with_columns(
+                org.str.to_lowercase().alias("_pk_org"),
+                first.str.to_lowercase().alias("_pk_fn"),
+                last.str.to_lowercase().alias("_pk_ln"),
+                _full_name(first, last, _opt_col(df, spec.name_suffix), org).alias("_full_name"),
+                txn_id.alias("_txn_id"),
+            )
         )
 
     def _join_party_entity(self, keyed: pl.DataFrame, person_map: pl.DataFrame,
