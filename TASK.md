@@ -1,58 +1,53 @@
-# TASK — Blocker #2: one-to-one entity representative assignment (Postgres)
+# TASK — Blocker #3: vectorized campaign-build family
 
-Plan: docs/design/vectorized-ingest-plan.md · 2 of 3 PG default-flip blockers.
+Plan: docs/design/vectorized-ingest-plan.md · 3 of 3 PG default-flip blockers.
 
 ## Problem
-`unified_entities.person_id` UNIQUE is violated on real Postgres loads because one
-person (suffix-EXCLUDED dedup key `(lower(first), lower(last))`) is assigned as
-representative of MORE THAN ONE entity (entity `normalized_name` INCLUDES the suffix,
-so "John Anderson" and "John Anderson JR" -> one person id, two entities). Three
-families (`flat_txns_detail`, `detail_children`, `cand`) independently assign each
-entity's representative, so the single shared person lands on both entities ->
-`unified_entities_person_id_key` UniqueViolation.
+The vectorized engine builds NO `unified_campaigns` / `unified_campaign_entities`;
+the ORM builds them. Add a vectorized campaign-build step matching the ORM's data
+semantics.
 
 ## Files in scope
-- `app/core/ingest_vectorized/finalize.py` (NEW) — `finalize_entity_representatives(session, state_id)`
-- `app/core/ingest_vectorized/dispatcher.py` — call finalize after the family loop, before close
-- `app/core/ingest_vectorized/families/flat_txns_detail.py` — remove `_apply_entity_links`
-  call + `_entity_representatives`/`ent_updates` computation; KEEP `_apply_person_address`
-- `app/core/ingest_vectorized/families/detail_children.py` — entity INSERT sets person_id/address_id NULL
-- `app/core/ingest_vectorized/families/cand.py` — entity INSERT sets person_id NULL
-- `tests/ingest_equivalence/test_entity_one_to_one.py` (NEW) — PG-gated regression
+- `app/core/ingest_vectorized/campaigns.py` (NEW) — `finalize_campaigns(session, state_id)`
+  building campaigns + COMMITTEE campaign_entities with pure Polars + parameterized
+  SQLAlchemy core.
+- `app/core/ingest_vectorized/dispatcher.py` — call `finalize_campaigns` AFTER the
+  family loop AND after `finalize_entity_representatives`.
+- `tests/ingest_equivalence/test_campaigns_family.py` (NEW) — golden-fixture gate.
 
-## Approach (the side-preference / determinism rule)
-A SINGLE deterministic post-load step computes each person's entity key
-(entity_type, normalized_name) EXACTLY as entity creation does — REUSE
-`common.normalize_entity_name(common.full_name_expr(...))` (org path:
-`normalize_entity_name(organization)`); type = ORGANIZATION when org present else
-PERSON. Join persons -> PERSON/ORGANIZATION entities on (entity_type, normalized_name);
-pick ONE rep per entity = MIN(person id) -> one-to-one. Entities with no matching
-person (suffix-variant orphans) keep person_id NULL. COMMITTEE entities untouched
-(keep committee_id). UPDATE via parameterized SQLAlchemy core `update` + `bindparam`
-(NO f-string SQL).
+## ORM data semantics replicated (build_campaign / _find_campaign / campaign_key)
+- `campaign_name` = candidate.full_name (None for TX) -> committee.name. normalized_name
+  = normalize_entity_name(campaign_name); skip if empty.
+- `election_year` = transaction_date.year (else None).
+- `office_sought` <- candidateHoldOfficeCd then candidateSeekOfficeCd (None for TX
+  record types — those columns are absent). `district` <- candidateHold/SeekOfficeDistrict.
+- candidate is ALWAYS None for the record types that build campaigns (RCPT/EXPN/LOAN/
+  DEBT/CRED/TRVL/ASSET/PLDG): no record type populates the CANDIDATE role, and CAND
+  rows are routed to enrichment (no build_campaign). So candidate_person_id is NULL and
+  campaign_entities carry only the COMMITTEE entity (is_primary=True).
+- Dedup key = (normalized_name, committee_filer_id, candidate_id=None, election_year).
+- COMMITTEE campaign_entity only when the committee has a COMMITTEE entity.
 
-## Behavior to preserve
-- Golden fixture (no suffix-variant case) results unchanged; entity tests stay green.
-- COMMITTEE-entity committee_id assignment unchanged in all three families.
-- PERSON.address_id assignment (flat_txns_detail `_apply_person_address`) kept.
-- Harness `_PRESENCE_ONLY_FKS` keeps entity person_id/address_id presence-only (min-id
-  pick is one valid representative, compatible with presence-only comparison).
+## KNOWN RESIDUAL (documented, not hidden)
+The ORM persists only a FLUSH-ORDER-DEPENDENT SUBSET of the principled campaigns:
+it severs `transaction.campaign` before `session.add`, so a campaign survives only
+opportunistically via its persistent committee's `.campaigns` cascade across per-file
+1000-row commit batches. On the golden fixture the ORM persists 10 campaigns of the
+~72 principled distinct (normalized_name, committee, year) keys — an emergent
+SQLAlchemy unit-of-work artifact, NOT a data-level rule (proven: not derivable from
+batch boundaries). The vectorized engine emits the principled deterministic SUPERSET
+(every distinct key for a committee with a non-empty name). The gate therefore asserts
+ORM-campaigns ⊆ vectorized-campaigns (linkage FK-resolved, both non-empty), and the
+residual superset is documented here and in the PR.
 
 ## HARD RULES
 - Pure Polars expressions (no map_elements/.apply); parameterized SQLAlchemy core only
   (no f-string SQL). Reuse common.py helpers. Plain git (isolated worktree). No rm -rf.
 
 ## Checks (evidence required before "done")
-1. `uv run pytest tests/ingest_equivalence -q` -> all green (currently 42).
-2. PG gate harness (FK dropped, uniques + dedup indexes KEPT) at rows 4000 AND 8000:
-   load COMPLETES (no `unified_entities_person_id_key` violation) AND
-   "persons on >1 entity" == 0 AND "committee_id on >1 entity" == 0.
-   (NOTE: requires real `tmp/texas` data; if absent, the golden-fixture-backed
-   regression test is the substitute gate and the PG slice gate is deferred.)
-3. New `tests/ingest_equivalence/test_entity_one_to_one.py` passes (skipif no local PG).
+1. `uv run pytest tests/ingest_equivalence -q` -> all green (was 43; +1 new test).
+2. New `tests/ingest_equivalence/test_campaigns_family.py`: ORM campaigns/entities
+   (FK-resolved) are a subset of the vectorized output; both sides non-empty.
+3. `grep -rnE "map_elements|\.apply\(" app/core/ingest_vectorized/` (new code) -> none.
 4. `uv run ruff check app/core/ingest_vectorized tests/ingest_equivalence` -> clean.
 5. code-review skill run; findings fixed.
-
-## Next
-Blocker #3: vectorized campaign-build family. After #2, a full constraints-enforced
-PG load + `diff_snapshots(ORM, vec) == []` becomes the combined gate.
