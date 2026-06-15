@@ -192,10 +192,13 @@ def _build_transactions(
     return df.with_columns(
         [
             pl.lit(ctx.state_id).alias("state_id"),
-            common.clean_str(id_col).alias("transaction_id"),
+            # transaction_id / description: build_transaction assigns the raw
+            # _get_field_value result UNSTRIPPED (no clean_str) — match exactly so a
+            # whitespace/empty value isn't normalized to null on the vectorized side.
+            pl.col(id_col).cast(pl.Utf8).alias("transaction_id"),
             common.builder_amount(amount_col).alias("amount"),
             _transaction_date_expr(date_col).alias("transaction_date"),
-            common.clean_str(descr_col).alias("description"),
+            pl.col(descr_col).cast(pl.Utf8).alias("description"),
             pl.lit(transaction_type).alias("transaction_type"),
             # committee_id: filerIdent (_finalize_transaction_for_persist)
             common.clean_str("filerIdent").alias("committee_id"),
@@ -237,6 +240,7 @@ class FlatTxnsWorker:
         if expn is not None:
             loaded += self._load_expn(expn, ctx)
 
+        _logger.info("[vectorized.flat_txns] loaded " + str(loaded) + " transactions")
         return {"loaded": loaded}
 
     def _load_rcpt(self, df: pl.DataFrame, ctx: FamilyContext) -> int:
@@ -252,9 +256,7 @@ class FlatTxnsWorker:
             orig_cols=orig_cols,
             ctx=ctx,
         )
-        return common.write_frame(
-            ctx.session, UnifiedTransaction, out, conflict_cols=None
-        )
+        return common.write_frame(ctx.session, UnifiedTransaction, out, conflict_cols=None)
 
     def _load_expn(self, df: pl.DataFrame, ctx: FamilyContext) -> int:
         orig_cols = df.columns
@@ -269,9 +271,7 @@ class FlatTxnsWorker:
             orig_cols=orig_cols,
             ctx=ctx,
         )
-        return common.write_frame(
-            ctx.session, UnifiedTransaction, out, conflict_cols=None
-        )
+        return common.write_frame(ctx.session, UnifiedTransaction, out, conflict_cols=None)
 
 
 register(FlatTxnsWorker())
