@@ -575,7 +575,6 @@ class FlatTxnsDetailWorker:
         """
         person_map = _person_id_map(ctx.session, ctx.state_id)
         addr_map = _address_id_map(ctx.session, ctx.state_id)
-        entity_map = _entity_id_map(ctx.session, ctx.state_id)
 
         # 1. Per-person first-occurrence address key (load order: RCPT then EXPN).
         per_row_parts: list[pl.DataFrame] = []
@@ -625,51 +624,15 @@ class FlatTxnsDetailWorker:
         )
 
         # 2. person.address_id update set (persons with a resolved address).
+        #    Entity.person_id / entity.address_id are NOT set here — that is done once,
+        #    deterministically, by finalize_entity_representatives after all families run
+        #    (a person can map to >1 entity via suffix-variant normalized names, so a
+        #    per-family entity-rep assignment violates the one-to-one person_id unique).
         person_addr = (
             first.filter(pl.col("_pid").is_not_null() & pl.col("_aid").is_not_null())
             .select(pl.col("_pid").alias("pid"), pl.col("_aid").alias("aid"))
         )
         self._apply_person_address(ctx.session, person_addr)
-
-        # 3. entity.person_id / entity.address_id: the entity's representative person
-        #    is the FIRST person (by sort key) with that entity's normalized name.
-        #    `first` already carries _ent_type / _ent_norm from _person_addr_keys.
-        entity_rep = self._entity_representatives(first)
-        entity_rep = entity_rep.join(
-            entity_map.filter(pl.col("_ent_type") != "COMMITTEE"),
-            on=["_ent_type", "_ent_norm"], how="left",
-        )
-        ent_updates = entity_rep.filter(pl.col("_ent_id").is_not_null()).select(
-            pl.col("_ent_id").alias("eid"),
-            pl.col("_pid").alias("pid"),
-            pl.col("_aid").alias("aid"),
-        )
-        self._apply_entity_links(ctx.session, ent_updates)
-
-    @staticmethod
-    def _entity_representatives(first: pl.DataFrame) -> pl.DataFrame:
-        """Per (entity_type, normalized entity name): the FIRST person (min sort key)
-        and that person's address.
-
-        The entity is created by the first build_person call for a normalized name,
-        which sets the entity's ``name`` AND ``address`` (the dims family already
-        wrote ``name``/``normalized_name`` from this same first person). We link
-        ``person_id``/``address_id`` to that same first person so the vec graph is
-        internally consistent with the entity row dims already wrote.
-
-        NOTE: the ORM additionally REASSIGNS ``entity.person`` via
-        ``person.entity = entity`` on later same-normalized-name persons, and that
-        reassignment is FLUSH-ORDER dependent — the ORM is non-deterministic here
-        (ORM-vs-ORM differs run to run). The equivalence harness canonicalizes this
-        (``_PRESENCE_ONLY_FKS`` reduces ``unified_entities.person_id``/``address_id`` to
-        a presence marker) so the rest of the linkage is gated strictly.
-        """
-        present = first.filter(pl.col("_pid").is_not_null())
-        return (
-            present.sort("_sort_key")
-            .unique(subset=["_ent_type", "_ent_norm"], keep="first", maintain_order=True)
-            .select(["_ent_type", "_ent_norm", "_pid", "_aid"])
-        )
 
     @staticmethod
     def _apply_person_address(session, frame: pl.DataFrame) -> None:
@@ -683,24 +646,6 @@ class FlatTxnsDetailWorker:
             .values(address_id=bindparam("b_aid"))
         )
         params = [{"b_pid": r["pid"], "b_aid": r["aid"]} for r in frame.to_dicts()]
-        session.connection().execute(stmt, params)
-        session.commit()
-
-    @staticmethod
-    def _apply_entity_links(session, frame: pl.DataFrame) -> None:
-        from sqlalchemy import bindparam, update
-
-        if frame.is_empty():
-            return
-        stmt = (
-            update(UnifiedEntity.__table__)
-            .where(UnifiedEntity.__table__.c.id == bindparam("b_eid"))
-            .values(person_id=bindparam("b_pid"), address_id=bindparam("b_aid"))
-        )
-        params = [
-            {"b_eid": r["eid"], "b_pid": r["pid"], "b_aid": r["aid"]}
-            for r in frame.to_dicts()
-        ]
         session.connection().execute(stmt, params)
         session.commit()
 

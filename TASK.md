@@ -1,37 +1,58 @@
-# TASK — Blocker #1: org-person dedup parity (Postgres partial-unique indexes)
+# TASK — Blocker #2: one-to-one entity representative assignment (Postgres)
 
-Plan: docs/design/vectorized-ingest-plan.md · 1 of 3 PG default-flip blockers.
+Plan: docs/design/vectorized-ingest-plan.md · 2 of 3 PG default-flip blockers.
 
-## Goal
-Make the vectorized engine's person dedup match the ORM `BuilderCache.person_key` / the
-`uix_persons_org_state` partial index, so it no longer inserts org-person duplicates that
-collide on Postgres (the #1 blocker surfaced by the throughput benchmark, PR #44).
+## Problem
+`unified_entities.person_id` UNIQUE is violated on real Postgres loads because one
+person (suffix-EXCLUDED dedup key `(lower(first), lower(last))`) is assigned as
+representative of MORE THAN ONE entity (entity `normalized_name` INCLUDES the suffix,
+so "John Anderson" and "John Anderson JR" -> one person id, two entities). Three
+families (`flat_txns_detail`, `detail_children`, `cand`) independently assign each
+entity's representative, so the single shared person lands on both entities ->
+`unified_entities_person_id_key` UniqueViolation.
 
-## Root cause
-Families keyed persons on `(lower(org), lower(first), lower(last))`. But an org-person is
-unique on `lower(org)` ALONE (`uix_persons_org_state … WHERE organization IS NOT NULL`; ORM
-`person_key` → `("org", lower(org), state)`, ignoring first/last). Two org rows with the same
-org but different incidental contact names survived the 3-key dedup yet collided on the
-org-only index → UniqueViolation on a real PG load.
+## Files in scope
+- `app/core/ingest_vectorized/finalize.py` (NEW) — `finalize_entity_representatives(session, state_id)`
+- `app/core/ingest_vectorized/dispatcher.py` — call finalize after the family loop, before close
+- `app/core/ingest_vectorized/families/flat_txns_detail.py` — remove `_apply_entity_links`
+  call + `_entity_representatives`/`ent_updates` computation; KEEP `_apply_person_address`
+- `app/core/ingest_vectorized/families/detail_children.py` — entity INSERT sets person_id/address_id NULL
+- `app/core/ingest_vectorized/families/cand.py` — entity INSERT sets person_id NULL
+- `tests/ingest_equivalence/test_entity_one_to_one.py` (NEW) — PG-gated regression
 
-## Fix (files in scope)
-- `app/core/ingest_vectorized/common.py`: `collapse_org_person_key(frame)` — nulls
-  `_pk_fn`/`_pk_ln` where `_pk_org` is set (stored first/last untouched; only the dedup KEY).
-- Applied after every person-key build / before every group_by/unique/id-map join:
-  `flat_txns_dims` (RCPT, EXPN, RCPT-addr, EXPN-addr builders), `detail_children`
-  (2 party builders + `_person_id_map`), `flat_txns_detail` (`_person_id_map`). `cand`
-  already keyed org-persons on org alone (no change).
+## Approach (the side-preference / determinism rule)
+A SINGLE deterministic post-load step computes each person's entity key
+(entity_type, normalized_name) EXACTLY as entity creation does — REUSE
+`common.normalize_entity_name(common.full_name_expr(...))` (org path:
+`normalize_entity_name(organization)`); type = ORGANIZATION when org present else
+PERSON. Join persons -> PERSON/ORGANIZATION entities on (entity_type, normalized_name);
+pick ONE rep per entity = MIN(person id) -> one-to-one. Entities with no matching
+person (suffix-variant orphans) keep person_id NULL. COMMITTEE entities untouched
+(keep committee_id). UPDATE via parameterized SQLAlchemy core `update` + `bindparam`
+(NO f-string SQL).
 
-## Checks / evidence
-- `tests/ingest_equivalence/test_org_person_dedup.py`: helper nulls fn/ln for org rows only;
-  org case-variants with differing incidental names dedup to ONE; individuals unaffected.
-- sqlite equivalence suite: 39 passed (no regression). ruff clean.
-- PG (unique indexes ENFORCED, FK off): the `uix_persons_org_state`/`uix_persons_name_state`
-  violation is ELIMINATED — the load now progresses past person dedup to the entity
-  one-to-one constraint (blocker #2).
+## Behavior to preserve
+- Golden fixture (no suffix-variant case) results unchanged; entity tests stay green.
+- COMMITTEE-entity committee_id assignment unchanged in all three families.
+- PERSON.address_id assignment (flat_txns_detail `_apply_person_address`) kept.
+- Harness `_PRESENCE_ONLY_FKS` keeps entity person_id/address_id presence-only (min-id
+  pick is one valid representative, compatible with presence-only comparison).
+
+## HARD RULES
+- Pure Polars expressions (no map_elements/.apply); parameterized SQLAlchemy core only
+  (no f-string SQL). Reuse common.py helpers. Plain git (isolated worktree). No rm -rf.
+
+## Checks (evidence required before "done")
+1. `uv run pytest tests/ingest_equivalence -q` -> all green (currently 42).
+2. PG gate harness (FK dropped, uniques + dedup indexes KEPT) at rows 4000 AND 8000:
+   load COMPLETES (no `unified_entities_person_id_key` violation) AND
+   "persons on >1 entity" == 0 AND "committee_id on >1 entity" == 0.
+   (NOTE: requires real `tmp/texas` data; if absent, the golden-fixture-backed
+   regression test is the substitute gate and the PG slice gate is deferred.)
+3. New `tests/ingest_equivalence/test_entity_one_to_one.py` passes (skipif no local PG).
+4. `uv run ruff check app/core/ingest_vectorized tests/ingest_equivalence` -> clean.
+5. code-review skill run; findings fixed.
 
 ## Next
-Blocker #2: `unified_entities.person_id`/`committee_id` one-to-one — three families
-independently assign an entity's representative person; a shared person gets assigned to
->1 entity. Then blocker #3: vectorized campaign-build family. After #2, a full
-constraints-enforced PG load + `diff_snapshots(ORM, vec) == []` becomes the combined gate.
+Blocker #3: vectorized campaign-build family. After #2, a full constraints-enforced
+PG load + `diff_snapshots(ORM, vec) == []` becomes the combined gate.

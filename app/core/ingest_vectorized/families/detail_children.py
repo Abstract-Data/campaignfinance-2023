@@ -786,17 +786,17 @@ class DetailChildrenWorker:
             ctx.session, UnifiedPerson, persons_out, conflict_cols=None
         )
 
-        # person_id map: (org, fn, ln) -> surrogate id (for entity.person_id linkage).
-        person_map = _person_id_map(ctx.engine, ctx.state_id)
-
-        # Entities: person entities (carry person_id + address_id) + committee entities
-        # (carry committee_id), deduped on (entity_type, normalized_name) first-seen.
+        # Entities: person entities + committee entities (carry committee_id), deduped on
+        # (entity_type, normalized_name) first-seen. The entity's representative person_id /
+        # address_id are NOT set here — they are assigned once, deterministically, by
+        # finalize_entity_representatives after all families run (a person can map to >1
+        # entity via suffix-variant normalized names, so a per-family entity-rep assignment
+        # violates the one-to-one unified_entities.person_id unique).
         full_name = _full_name(
             pl.col("first_name"), pl.col("last_name"), pl.col("suffix"), pl.col("organization")
         )
         person_entities = (
-            persons.join(person_map, on=["_pk_org", "_pk_fn", "_pk_ln"], how="left", join_nulls=True)
-            .with_columns(
+            persons.with_columns(
                 pl.when(pl.col("organization").is_not_null())
                 .then(pl.lit("ORGANIZATION"))
                 .otherwise(pl.lit("PERSON"))
@@ -810,6 +810,8 @@ class DetailChildrenWorker:
                 _norm_name(pl.col("name")).alias("normalized_name"),
                 pl.lit(None, dtype=pl.Utf8).alias("committee_id"),
                 pl.lit(None, dtype=pl.Utf8).alias("notes"),
+                pl.lit(None, dtype=pl.Int64).alias("person_id"),
+                pl.lit(None, dtype=pl.Int64).alias("address_id"),
             )
             .select(
                 "entity_type", "name", "normalized_name", "committee_id", "notes",

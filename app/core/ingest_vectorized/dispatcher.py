@@ -67,6 +67,16 @@ def run_vectorized(
             counts["loaded"] += int(result.get("loaded", 0))
             counts["families_run"] += 1
             _logger.info(f"[vectorized] family {sorted(worker.record_types)} -> {result}")
+
+        # Post-load reconciliation (analogous to the ORM's _link_after_load): assign each
+        # PERSON/ORGANIZATION entity ONE representative person deterministically, so the
+        # one-to-one unified_entities.person_id constraint holds (the families themselves
+        # no longer set it — see finalize.py).
+        from app.core.ingest_vectorized.finalize import finalize_entity_representatives
+
+        linked = finalize_entity_representatives(session, ctx.state_id)
+        counts["entity_reps_linked"] = linked
+        _logger.info(f"[vectorized] finalize_entity_representatives -> {linked}")
     finally:
         session.close()
     return counts
