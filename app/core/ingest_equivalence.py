@@ -123,13 +123,38 @@ def _intra_fk_parents(inspector: Any, table: str, targets: set[str]) -> dict[str
     return out
 
 
+# Surrogate FKs whose *target* is non-deterministic between equivalent runs and so
+# must be compared as presence-only, not resolved to the parent's natural key.
+#
+# ``unified_entities.person_id`` / ``unified_entities.address_id`` are the entity's
+# REPRESENTATIVE person and that person's address. When two source rows describe the same
+# party with trivial spelling variants ("Angela F" vs "Angela F.") they keep distinct
+# person rows but collapse to ONE entity (same normalized_name); which variant the entity
+# points to — and hence which address rides along — is decided by a flush/hash-seed-ordering
+# dependent ``person.entity = entity`` reassignment, so ORM-vs-ORM itself diverges run to
+# run on BOTH columns. They are reduced to "<set>" / None (presence only).
+#
+# What stays strictly compared: the entity's OWN identity (type, name, normalized_name);
+# the participant person rows themselves (in unified_persons); and the junction's DIRECT
+# participant ``unified_transaction_persons.person_id`` (a different column, fully resolved).
+# ACCEPTED BLIND SPOT: because the representative person/address are presence-only, this
+# gate cannot distinguish an entity linked to the *right* representative from one linked to
+# a structurally *wrong* person/address — only "linked vs not". Participant-level linkage
+# (the thing that actually matters for a contribution/expenditure) is still caught via the
+# junction's direct person_id and the person rows; the representative pointer is metadata.
+_PRESENCE_ONLY_FKS: frozenset[tuple[str, str]] = frozenset(
+    {("unified_entities", "person_id"), ("unified_entities", "address_id")}
+)
+
+
 def _snapshot_resolved(engine: Engine) -> dict[str, list[dict[str, Any]]]:
     """snapshot_unified with surrogate FKs RESOLVED to parent natural keys.
 
     Lets the gate verify relational LINKAGE (e.g. a contribution's contributor entity)
     instead of dropping surrogate ids. Recursive (entity -> person -> address), memoized,
     cycle-guarded. Only intra-target FKs are resolved; provenance FKs and volatile cols
-    are dropped exactly as in the default snapshot.
+    are dropped exactly as in the default snapshot. FKs listed in ``_PRESENCE_ONLY_FKS``
+    are reduced to a deterministic presence marker (their target is non-deterministic).
     """
     inspector = inspect(engine)
     targets = set(_target_tables(inspector))
@@ -178,7 +203,9 @@ def _snapshot_resolved(engine: Engine) -> dict[str, list[dict[str, Any]]]:
         for col in cols_by_table[table]:
             if col == "id" or col in drop_cols[table]:
                 continue
-            if col in intra[table]:
+            if (table, col) in _PRESENCE_ONLY_FKS:
+                out[col] = "<set>" if row.get(col) is not None else None
+            elif col in intra[table]:
                 out[col] = resolve(intra[table][col], row.get(col), stack)
             elif col in JSON_COLUMNS:
                 out[col] = _canonicalize_json(row.get(col))
