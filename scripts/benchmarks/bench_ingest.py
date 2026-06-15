@@ -109,11 +109,25 @@ _SQL_DROP_UIX = (
     "WHERE schemaname = 'public' AND indexname LIKE 'uix_%'"
 )
 
+# FK constraint defs captured before they are dropped, so the parity diff can re-add them
+# NOT VALID (see _readd_fks_not_valid). Schema is identical across all bench DBs, so a single
+# capture (from whichever DB is bootstrapped first) is reused for every DB.
+_SQL_CAPTURE_FKS = (
+    "SELECT conrelid::regclass::text, conname, pg_get_constraintdef(oid) "
+    "FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace"
+)
+_SQL_PRESENT_FKS = (
+    "SELECT conname FROM pg_constraint "
+    "WHERE contype = 'f' AND connamespace = 'public'::regnamespace"
+)
+_FK_DEFS: list[tuple[str, str, str]] = []
+
 
 def _relax_constraints(engine) -> None:
     """Drop constraints so the benchmark can load a capped (referentially incomplete) slice.
 
-    Always drops FK. When ``_DROP_UNIQUES`` (default), also drops one-to-one UNIQUE
+    Always drops FK (capturing their defs into ``_FK_DEFS`` first, so the parity diff can
+    re-add them NOT VALID). When ``_DROP_UNIQUES`` (default), also drops one-to-one UNIQUE
     constraints + the dim dedup partial-unique indexes (uix_*) — to measure raw throughput
     without dedup enforcement. With ``--enforce-uniques`` those stay ON, so the run proves
     the engine satisfies them on real data AND the ORM-vs-vec diff is deterministic."""
@@ -121,6 +135,9 @@ def _relax_constraints(engine) -> None:
     try:
         pg = raw.driver_connection
         cur = pg.cursor()
+        if not _FK_DEFS:
+            cur.execute(_SQL_CAPTURE_FKS)
+            _FK_DEFS.extend((t, c, d) for t, c, d in cur.fetchall())
         cur.execute(_SQL_DROP_FK_AND_UNIQUE if _DROP_UNIQUES else _SQL_DROP_FK_ONLY)
         for (stmt,) in cur.fetchall():
             cur.execute(stmt)
@@ -128,6 +145,44 @@ def _relax_constraints(engine) -> None:
             cur.execute(_SQL_DROP_UIX)
             for (stmt,) in cur.fetchall():
                 cur.execute(stmt)
+        pg.commit()
+        cur.close()
+    finally:
+        raw.close()
+
+
+def _readd_fks_not_valid(engine) -> None:
+    """Re-add the captured FK constraints as NOT VALID (metadata only — existing rows are not
+    validated, so a capped slice's dangling refs don't fail).
+
+    The benchmark drops FK constraints to load the incomplete slice, but
+    ``snapshot_unified(resolve_fks=True)`` reflects FK metadata from the LIVE DB to resolve
+    surrogate FKs to their parent's natural key. Without the FK metadata it cannot resolve, so
+    every surrogate-FK column (person_id/entity_id/transaction_id…) is compared as a raw
+    surrogate id that never matches between two independent loads — a false near-total
+    divergence. Re-adding NOT VALID before the diff restores honest, FK-resolved parity.
+    Idempotent: FK connames already present on the DB are skipped. Identifiers/body are
+    composed with psycopg2.sql (cdef is trusted pg_get_constraintdef output)."""
+    if not _FK_DEFS:
+        return
+    from psycopg2 import sql
+
+    raw = engine.raw_connection()
+    try:
+        pg = raw.driver_connection
+        cur = pg.cursor()
+        cur.execute(_SQL_PRESENT_FKS)
+        present = {r[0] for r in cur.fetchall()}
+        for tbl, conname, cdef in _FK_DEFS:
+            if conname in present:
+                continue
+            cur.execute(
+                sql.SQL("ALTER TABLE {tbl} ADD CONSTRAINT {con} {body} NOT VALID").format(
+                    tbl=sql.Identifier(tbl),
+                    con=sql.Identifier(conname),
+                    body=sql.SQL(cdef),
+                )
+            )
         pg.commit()
         cur.close()
     finally:
@@ -193,8 +248,13 @@ def _time_vectorized(db_url: str, slice_dir: Path, *, disable_copy: bool) -> tup
 def _diff(url_a: str, url_b: str) -> list[str]:
     from app.core.ingest_equivalence import diff_snapshots, snapshot_unified
 
-    a = snapshot_unified(create_engine(url_a), resolve_fks=True)
-    b = snapshot_unified(create_engine(url_b), resolve_fks=True)
+    # Re-add the dropped FKs NOT VALID so resolve_fks can resolve surrogate FKs to natural
+    # keys (otherwise they compare as raw, never-matching surrogate ids — a false divergence).
+    eng_a, eng_b = create_engine(url_a), create_engine(url_b)
+    _readd_fks_not_valid(eng_a)
+    _readd_fks_not_valid(eng_b)
+    a = snapshot_unified(eng_a, resolve_fks=True)
+    b = snapshot_unified(eng_b, resolve_fks=True)
     return diff_snapshots(a, b)
 
 
@@ -283,9 +343,15 @@ def main() -> None:
         if not orm_diff:
             print("  EQUAL ✓  (row-for-row, resolve_fks=True, all unified/canonical tables)")
         else:
-            print(f"  {len(orm_diff)} diff line(s) (expected residual: campaigns ORM⊆vec superset"
-                  " + tracked edge cases):")
-            print("    " + "\n    ".join(orm_diff[:30]))
+            # Print EVERY per-table summary line (FK-resolved, so honest) — never truncate the
+            # table list. Example offending rows (resolved dicts, verbose) are capped separately.
+            summary = [ln for ln in orm_diff if "left) vs" in ln or "present only" in ln]
+            examples = [ln for ln in orm_diff if ln not in summary]
+            print(f"  {len(summary)} table(s) diverge, {len(orm_diff)} total diff line(s):")
+            print("    " + "\n    ".join(summary))
+            if examples:
+                print(f"  ({len(examples)} example offending-row lines; first 12:)")
+                print("    " + "\n    ".join(examples[:12]))
         print()
 
     print("== Summary ==")
