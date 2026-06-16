@@ -19,13 +19,13 @@ class RecordValidationError(BaseModel):
     validator: str
     input: Optional[Dict | str]
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     def set_column(cls, values: Dict) -> Dict:
-        if 'ctx' in values:
-            col = values['ctx'].get('column', None)
-            values['column'] = col
+        if "ctx" in values:
+            col = values["ctx"].get("column", None)
+            values["column"] = col
         else:
-            values['column'] = values.get('loc')[0]
+            values["column"] = values.get("loc")[0]
         return values
 
 
@@ -39,16 +39,14 @@ class ValidationErrorList(BaseModel):
         self.error_count += 1
         try:
             record_error_list = []
-            for each_error in record['error']:
+            for each_error in record["error"]:
                 record_errors += 1
                 _error_validator = RecordValidationError(
                     **each_error,
                     id=self.error_count,
                     err_num=record_errors,
                 )
-                record_error_list.append(
-                    _error_validator
-                )
+                record_error_list.append(_error_validator)
             self.errors.extend(record_error_list)
             # record_error_list.clear()
         except ValidationError as e:
@@ -65,37 +63,39 @@ class ValidationErrorList(BaseModel):
         _errors = [dict(error) for error in self.errors]
         if not _errors:
             return None
-        df = pd.DataFrame(
-            [
-                dict(error) for error in self.errors
-            ]
-        )
+        df = pd.DataFrame([dict(error) for error in self.errors])
         return df
 
     def _error_summary(self, error_dataframe: pd.DataFrame = None) -> pd.crosstab:
         df = self._error_dataframe() if not error_dataframe else error_dataframe
-        df_counts = pd.crosstab(
-            index=[df['validator'], df['column']],
-            columns=df['type'],
-            values=df['id'],
-            aggfunc='count',
-            margins=True,
-            margins_name='Total'
-        ).fillna(0).astype(int) if df is not None else None
+        df_counts = (
+            pd.crosstab(
+                index=[df["validator"], df["column"]],
+                columns=df["type"],
+                values=df["id"],
+                aggfunc="count",
+                margins=True,
+                margins_name="Total",
+            )
+            .fillna(0)
+            .astype(int)
+            if df is not None
+            else None
+        )
         self.summary = df_counts
         return self.summary
 
     def show_errors(self):
         summary = self._error_summary()
         if summary is None:
-            _logger.debug('No errors found')
+            _logger.debug("No errors found")
             return
         validator_list = summary.index.get_level_values(0).unique()
-        _logger.debug(f'Error Summary for {validator_list[0]}')
+        _logger.debug(f"Error Summary for {validator_list[0]}")
         _logger.debug(str(summary))
 
     def to_df(self) -> pd.DataFrame | object:
         if self.summary is not None:
             return self.summary
-        _logger.debug('No errors found')
+        _logger.debug("No errors found")
         return None

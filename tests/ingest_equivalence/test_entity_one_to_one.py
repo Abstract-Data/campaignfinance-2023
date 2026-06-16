@@ -71,7 +71,9 @@ def _drop_create(db_name: str) -> None:
         pg = raw.driver_connection
         pg.autocommit = True
         cur = pg.cursor()
-        cur.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(db_name)))
+        cur.execute(
+            sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(db_name))
+        )
         cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name)))
         cur.close()
     finally:
@@ -88,7 +90,9 @@ def _drop(db_name: str) -> None:
         pg = raw.driver_connection
         pg.autocommit = True
         cur = pg.cursor()
-        cur.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(db_name)))
+        cur.execute(
+            sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(db_name))
+        )
         cur.close()
     finally:
         raw.close()
@@ -121,18 +125,35 @@ def _drop_fks_only(engine) -> None:
 def _rcpt_no_suffix_row() -> pl.DataFrame:
     """An RCPT contributor "JOHN ZZSUFFIXTEST" with NO suffix -> person + entity
     ``PERSON:"john zzsuffixtest"``."""
-    return pl.DataFrame([{
-        "recordType": "RCPT", "formTypeCd": "MPAC", "schedFormTypeCd": "A1",
-        "reportInfoIdent": "730", "receivedDt": "20000705", "infoOnlyFlag": "N",
-        "filerIdent": "00010883", "filerTypeCd": "MPAC", "filerName": "El Paso Energy Corp. PAC",
-        "contributionInfoId": "990000001", "contributionDt": "20000530",
-        "contributionAmount": "50.00", "contributorPersentTypeCd": "INDIVIDUAL",
-        "contributorNameLast": "ZZSUFFIXTEST", "contributorNameFirst": "JOHN",
-        "contributorNameSuffixCd": None, "contributorStreetCity": "AUSTIN",
-        "contributorStreetStateCd": "TX", "contributorStreetCountryCd": "USA",
-        "contributorStreetPostalCode": "78701", "contributorOosPacFlag": "N",
-        "itemizeFlag": "Y", "travelFlag": "N",
-    }])
+    return pl.DataFrame(
+        [
+            {
+                "recordType": "RCPT",
+                "formTypeCd": "MPAC",
+                "schedFormTypeCd": "A1",
+                "reportInfoIdent": "730",
+                "receivedDt": "20000705",
+                "infoOnlyFlag": "N",
+                "filerIdent": "00010883",
+                "filerTypeCd": "MPAC",
+                "filerName": "El Paso Energy Corp. PAC",
+                "contributionInfoId": "990000001",
+                "contributionDt": "20000530",
+                "contributionAmount": "50.00",
+                "contributorPersentTypeCd": "INDIVIDUAL",
+                "contributorNameLast": "ZZSUFFIXTEST",
+                "contributorNameFirst": "JOHN",
+                "contributorNameSuffixCd": None,
+                "contributorStreetCity": "AUSTIN",
+                "contributorStreetStateCd": "TX",
+                "contributorStreetCountryCd": "USA",
+                "contributorStreetPostalCode": "78701",
+                "contributorOosPacFlag": "N",
+                "itemizeFlag": "Y",
+                "travelFlag": "N",
+            }
+        ]
+    )
 
 
 def _loan_with_suffix_row() -> pl.DataFrame:
@@ -140,15 +161,30 @@ def _loan_with_suffix_row() -> pl.DataFrame:
     but WITH a suffix. The suffix-EXCLUDED person key reuses the existing person, but the
     detail family builds a SECOND entity ``PERSON:"john zzsuffixtest jr"`` from the
     suffix-included name. One person, two entities -> the blocker condition."""
-    return pl.DataFrame([{
-        "recordType": "LOAN", "formTypeCd": "MPAC", "schedFormTypeCd": "G1",
-        "reportInfoIdent": "730", "receivedDt": "20000705", "infoOnlyFlag": "N",
-        "filerIdent": "00010883", "filerTypeCd": "MPAC", "filerName": "El Paso Energy Corp. PAC",
-        "loanInfoId": "770000001", "loanAmount": "100.00", "loanDt": "20000601",
-        "lenderNameLast": "ZZSUFFIXTEST", "lenderNameFirst": "JOHN", "lenderNameSuffixCd": "JR",
-        "lenderStreetCity": "AUSTIN", "lenderStreetStateCd": "TX",
-        "lenderStreetPostalCode": "78701",
-    }])
+    return pl.DataFrame(
+        [
+            {
+                "recordType": "LOAN",
+                "formTypeCd": "MPAC",
+                "schedFormTypeCd": "G1",
+                "reportInfoIdent": "730",
+                "receivedDt": "20000705",
+                "infoOnlyFlag": "N",
+                "filerIdent": "00010883",
+                "filerTypeCd": "MPAC",
+                "filerName": "El Paso Energy Corp. PAC",
+                "loanInfoId": "770000001",
+                "loanAmount": "100.00",
+                "loanDt": "20000601",
+                "lenderNameLast": "ZZSUFFIXTEST",
+                "lenderNameFirst": "JOHN",
+                "lenderNameSuffixCd": "JR",
+                "lenderStreetCity": "AUSTIN",
+                "lenderStreetStateCd": "TX",
+                "lenderStreetPostalCode": "78701",
+            }
+        ]
+    )
 
 
 def _build_fixtures(slice_dir: Path) -> None:

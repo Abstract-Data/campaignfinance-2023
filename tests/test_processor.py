@@ -111,7 +111,12 @@ def test_build_guarantors_parses_single_slot() -> None:
     assert len(rows) == 1
     g = rows[0]
     assert g.position == 1
-    assert (g.last_name, g.first_name, g.city, g.state_code) == ("Hinojosa", "Juan", "McAllen", "TX")
+    assert (g.last_name, g.first_name, g.city, g.state_code) == (
+        "Hinojosa",
+        "Juan",
+        "McAllen",
+        "TX",
+    )
     assert g.person_type == "INDIVIDUAL"
 
 
@@ -137,8 +142,8 @@ def test_build_guarantors_clips_to_column_widths() -> None:
         _guar(1, guarantorStreetStateCd1="TEXAS", guarantorNameLast1="X" * 200),
         state_id=1,
     )
-    assert rows[0].state_code == "TE"          # clipped to 2
-    assert len(rows[0].last_name) == 100        # clipped to 100
+    assert rows[0].state_code == "TE"  # clipped to 2
+    assert len(rows[0].last_name) == 100  # clipped to 100
 
 
 def test_build_guarantors_blank_strings_are_none() -> None:

@@ -11,6 +11,7 @@ the TEC prefixes so file_discovery routes them to the right record type.
 
 Run:  uv run python tests/fixtures/ingest_golden/generate_golden.py
 """
+
 from __future__ import annotations
 
 import sys
@@ -22,9 +23,9 @@ ROOT = Path(__file__).resolve().parents[3]
 SRC = ROOT / "tmp" / "texas"
 OUT = Path(__file__).resolve().parent
 
-N_CONTRIB = 400          # seed contributions -> defines the committee set
-CAP_TXN = 250            # per transaction file
-CAP_REF = 600            # per reference/lookup file
+N_CONTRIB = 400  # seed contributions -> defines the committee set
+CAP_TXN = 250  # per transaction file
+CAP_REF = 600  # per reference/lookup file
 
 
 def _read(name: str) -> pl.DataFrame | None:

@@ -441,8 +441,9 @@ class FilerWorker:
         addr_new = (
             comm.filter(has_addr)
             .with_columns(_addr_key_cols())
-            .unique(subset=["_k_s1", "_k_city", "_k_state", "_k_zip"], keep="first",
-                    maintain_order=True)
+            .unique(
+                subset=["_k_s1", "_k_city", "_k_state", "_k_zip"], keep="first", maintain_order=True
+            )
             .join(
                 existing_addr.select("_k_s1", "_k_city", "_k_state", "_k_zip"),
                 on=["_k_s1", "_k_city", "_k_state", "_k_zip"],
@@ -492,9 +493,11 @@ class FilerWorker:
         parts: list[pl.DataFrame] = []
         offset = 0
         for of in officers:
-            parts.append(of.frame.with_columns(
-                (pl.int_range(0, pl.len(), dtype=pl.Int64) + offset).alias("_sort_key")
-            ))
+            parts.append(
+                of.frame.with_columns(
+                    (pl.int_range(0, pl.len(), dtype=pl.Int64) + offset).alias("_sort_key")
+                )
+            )
             offset += 10_000_000
         parties = pl.concat(parts, how="diagonal_relaxed").sort("_sort_key")
 
@@ -563,7 +566,9 @@ class FilerWorker:
                 entity_type.alias("entity_type"),
                 name.alias("name"),
             )
-            .with_columns(common.normalize_entity_name_expr(pl.col("name")).alias("normalized_name"))
+            .with_columns(
+                common.normalize_entity_name_expr(pl.col("name")).alias("normalized_name")
+            )
             .sort("_sort_key")
             .unique(subset=["entity_type", "normalized_name"], keep="first", maintain_order=True)
         )
@@ -591,9 +596,7 @@ class FilerWorker:
         )
         return common.write_frame(ctx.session, UnifiedEntity, out, conflict_cols=None)
 
-    def _write_committee_persons(
-        self, officers: list[_OfficerFrame], ctx: FamilyContext
-    ) -> int:
+    def _write_committee_persons(self, officers: list[_OfficerFrame], ctx: FamilyContext) -> int:
         """One committee_person per (committee, officer person, role). Resolves
         person_id + entity_id by natural key after persons/entities are written."""
         person_map = _person_id_map(ctx.engine, ctx.state_id)
@@ -617,13 +620,13 @@ class FilerWorker:
                 ).alias("normalized_name")
             )
             f = f.join(
-                person_map, on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"], how="left",
+                person_map,
+                on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
+                how="left",
                 join_nulls=True,
             )
             f = f.join(entity_map, on=["entity_type", "normalized_name"], how="left")
-            parts.append(
-                f.select("filer_id", "role", "person_id", "entity_id")
-            )
+            parts.append(f.select("filer_id", "role", "person_id", "entity_id"))
 
         cps = pl.concat(parts, how="diagonal_relaxed")
         # A person resolves to exactly one row; drop rows that failed to resolve (the

@@ -68,9 +68,7 @@ def notice_session_fixture():
     )
     with Session(engine) as session:
         session.add(StubState(id=43, code="TX"))
-        session.add(
-            StubUnifiedCommittee(filer_id="00012345", name="JANE DOE FOR STATE SENATE")
-        )
+        session.add(StubUnifiedCommittee(filer_id="00012345", name="JANE DOE FOR STATE SENATE"))
         session.commit()
         yield session
 

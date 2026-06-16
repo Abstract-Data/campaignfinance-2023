@@ -11,6 +11,7 @@ Usage (from the project root, with the venv active):
     uv run python scripts/reset_and_reingest.py --dry-run      # show plan, no DB writes
     uv run python scripts/reset_and_reingest.py --skip-ingest  # truncate + bootstrap only
 """
+
 from __future__ import annotations
 
 import argparse
@@ -71,7 +72,9 @@ def _truncate(engine, *, dry_run: bool) -> None:
             conn.commit()
             console.print("[green]Truncate complete.[/green]")
         except Exception as exc:
-            console.print(f"[yellow]Bulk TRUNCATE failed ({exc}); retrying table-by-table …[/yellow]")
+            console.print(
+                f"[yellow]Bulk TRUNCATE failed ({exc}); retrying table-by-table …[/yellow]"
+            )
             conn.rollback()
             _truncate_individually(conn)
 
@@ -154,13 +157,19 @@ def _ingest(manager, *, dry_run: bool) -> None:
         except Exception as exc:
             console.print(f"  [red]✗ {exc}[/red]")
 
-    console.print(f"\n[bold green]Re-ingest complete.[/bold green] {total_saved} transactions saved.")
+    console.print(
+        f"\n[bold green]Re-ingest complete.[/bold green] {total_saved} transactions saved."
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Reset and re-ingest Texas campaign finance data.")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would happen without writing.")
-    parser.add_argument("--skip-ingest", action="store_true", help="Truncate + bootstrap only; skip parquet load.")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would happen without writing."
+    )
+    parser.add_argument(
+        "--skip-ingest", action="store_true", help="Truncate + bootstrap only; skip parquet load."
+    )
     args = parser.parse_args()
 
     from app.core.unified_database import get_db_manager

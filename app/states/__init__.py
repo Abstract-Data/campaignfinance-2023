@@ -2,5 +2,5 @@ from pathlib import Path
 
 import tomli
 
-root = Path(__file__).parent / 'texas' / 'texas_fields.toml'
-config = tomli.load(open(root, 'rb'))
+root = Path(__file__).parent / "texas" / "texas_fields.toml"
+config = tomli.load(open(root, "rb"))

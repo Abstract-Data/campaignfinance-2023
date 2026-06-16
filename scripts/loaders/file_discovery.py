@@ -24,6 +24,7 @@ def _resolve_base_dir(base_dir: Path) -> Path:
         return path.resolve()
     return (_REPO_ROOT / path).resolve()
 
+
 # Filename prefix → TEC record type (confirmed against tmp/texas/CFS-ReadMe.txt).
 FILENAME_RECORD_TYPES: dict[str, str] = {
     "contribs": "RCPT",

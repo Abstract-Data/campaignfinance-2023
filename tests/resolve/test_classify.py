@@ -221,9 +221,7 @@ def test_classify_rerun_is_idempotent():
         second = run_classify_stage(session, run_id=14, config={})
         assert first == second == {"auto_merges": 1, "queued": 1, "rejected": 0}
 
-        decisions = session.exec(
-            select(MatchDecision).where(MatchDecision.run_id == 14)
-        ).all()
+        decisions = session.exec(select(MatchDecision).where(MatchDecision.run_id == 14)).all()
         assert len(decisions) == 2
 
         edges = session.exec(select(MergeEdge).where(MergeEdge.run_id == 14)).all()
@@ -347,14 +345,10 @@ def test_classify_preserves_fastpath_match_decisions():
 
         run_classify_stage(session, run_id=17, config={})
 
-        decisions = session.exec(
-            select(MatchDecision).where(MatchDecision.run_id == 17)
-        ).all()
+        decisions = session.exec(select(MatchDecision).where(MatchDecision.run_id == 17)).all()
         assert len(decisions) == 2
 
-        exact_rows = [
-            row for row in decisions if row.method == MatchMethod.exact
-        ]
+        exact_rows = [row for row in decisions if row.method == MatchMethod.exact]
         assert len(exact_rows) == 1
         assert exact_rows[0].source_a_id == "exact-a"
         assert exact_rows[0].explanation_json == '{"rule": "email"}'

@@ -67,7 +67,7 @@ _TABLES = [
     CanonicalCampaign.__table__,  # cleared by _clear_live_canonical_snapshot (FK → canonical_entity)
     CanonicalNameHistory.__table__,
     EntityCrosswalk.__table__,
-    MatchDecision.__table__,     # Queried by _build_node_crosswalk_attrs
+    MatchDecision.__table__,  # Queried by _build_node_crosswalk_attrs
     MergeEdge.__table__,
     MergeReview.__table__,
     ResolutionInput.__table__,
@@ -885,9 +885,7 @@ class TestCrosswalkMatchMethod:
 
         run_survivorship_stage(session, run_id, {"state_code": "TX"})
 
-        cw = session.exec(
-            select(EntityCrosswalk).where(EntityCrosswalk.source_id == "P1")
-        ).one()
+        cw = session.exec(select(EntityCrosswalk).where(EntityCrosswalk.source_id == "P1")).one()
         assert cw.match_method == MatchMethod.exact
         assert cw.match_score is None
 
@@ -926,6 +924,7 @@ class TestCrosswalkMatchMethod:
             DecisionBand,
             DecisionOutcome,
         )
+
         session.add(
             MatchDecision(
                 run_id=run_id,
@@ -950,9 +949,7 @@ class TestCrosswalkMatchMethod:
         assert all(cw.match_method == MatchMethod.probabilistic for cw in crosswalks)
         assert all(cw.match_score == pytest.approx(0.97) for cw in crosswalks)
 
-    def test_approved_review_merge_gets_approved_review_method(
-        self, session: Session, run_id: int
-    ):
+    def test_approved_review_merge_gets_approved_review_method(self, session: Session, run_id: int):
         """Members merged via an approved review edge get method=approved_review."""
         _add_input(session, run_id, "unified_person", "P1", first_name="A", last_name="B")
         _add_input(session, run_id, "unified_person", "P2", first_name="A", last_name="B")
@@ -975,9 +972,7 @@ class TestCrosswalkMatchMethod:
         ).all()
         assert all(cw.match_method == MatchMethod.approved_review for cw in crosswalks)
 
-    def test_prior_run_approved_review_propagates_to_crosswalk(
-        self, session: Session, run_id: int
-    ):
+    def test_prior_run_approved_review_propagates_to_crosswalk(self, session: Session, run_id: int):
         """Approved MergeReview rows from any run (no MergeEdge) set approved_review."""
         _add_input(session, run_id, "unified_person", "P1", first_name="A", last_name="B")
         _add_input(session, run_id, "unified_person", "P2", first_name="A", last_name="B")

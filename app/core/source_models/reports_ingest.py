@@ -99,13 +99,9 @@ def build_report(
         period_end=_parse_date(raw.get("periodEndDt")),
         is_final=False,
         total_contributions=_parse_amount(raw.get("totalContribAmount")),
-        total_unitemized_contributions=_parse_amount(
-            raw.get("unitemizedContribAmount")
-        ),
+        total_unitemized_contributions=_parse_amount(raw.get("unitemizedContribAmount")),
         total_expenditures=_parse_amount(raw.get("totalExpendAmount")),
-        total_unitemized_expenditures=_parse_amount(
-            raw.get("unitemizedExpendAmount")
-        ),
+        total_unitemized_expenditures=_parse_amount(raw.get("unitemizedExpendAmount")),
         loan_balance=_parse_amount(raw.get("loanBalanceAmount")),
         contributions_maintained=_parse_amount(raw.get("contribsMaintainedAmount")),
         cash_on_hand=_parse_amount(raw.get("cashOnHandAmount")),
@@ -393,8 +389,7 @@ def reconcile_report_totals(
             )
 
     _logger.info(
-        f"[reconcile] checked={checked} matched={matched} "
-        f"mismatched={mismatched} skipped={skipped}"
+        f"[reconcile] checked={checked} matched={matched} mismatched={mismatched} skipped={skipped}"
     )
     return {
         "checked": checked,

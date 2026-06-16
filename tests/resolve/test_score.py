@@ -468,9 +468,9 @@ class TestTermFrequencyAdjustment:
         # line_1 comparison should have a bf_tf_adj entry showing TF was applied.
         assert "line_1" in payload, f"Expected 'line_1' in explanation; got {list(payload)}"
         line1_entry = payload["line_1"]
-        assert (
-            "bf_tf_adj" in line1_entry
-        ), "Expected bf_tf_adj in line_1 explanation; TF adjustment must be active"
+        assert "bf_tf_adj" in line1_entry, (
+            "Expected bf_tf_adj in line_1 explanation; TF adjustment must be active"
+        )
 
     def test_common_address_has_lower_tf_weight_than_rare_address(self):
         """TF-adjusted BF for address must be lower for high-frequency addresses."""

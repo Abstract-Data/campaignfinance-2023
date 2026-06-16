@@ -19,16 +19,23 @@ class TECFinalReport(TECSettings, table=True):
     filerIdent: str = Field(..., description="Filer account #", max_length=100)
     filerTypeCd: str = Field(..., description="Type of filer", max_length=30)
     filerName: str = Field(..., description="Filer name", max_length=200)
-    finalUnexpendContribFlag: Optional[bool] = Field(default=None, description="Unexpended contributions indicator")
-    finalRetainedAssetsFlag: Optional[bool] = Field(default=None, description="Retained assets indicator")
-    finalOfficeholderAckFlag: Optional[bool] = Field(default=None, description="Office holder ack indicator")
+    finalUnexpendContribFlag: Optional[bool] = Field(
+        default=None, description="Unexpended contributions indicator"
+    )
+    finalRetainedAssetsFlag: Optional[bool] = Field(
+        default=None, description="Retained assets indicator"
+    )
+    finalOfficeholderAckFlag: Optional[bool] = Field(
+        default=None, description="Office holder ack indicator"
+    )
     file_origin: str = Field(..., description="File origin", max_length=20)
     download_date: date = Field(..., description="Date file downloaded")
 
-    @field_validator('recordType')
+    @field_validator("recordType")
     def check_record_type(cls, v):
-        assert v == 'FINL', 'Record type must be FINL'
+        assert v == "FINL", "Record type must be FINL"
         return v
+
     # @field_validator('receivedDt', mode='before')
     # def parse_date(cls, v):
     #     return datetime.strptime(v, '%Y%m%d')

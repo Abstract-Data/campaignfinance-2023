@@ -2,6 +2,7 @@
 canonical_entity.canonical_address_id (and the address_occupancy view) is populated
 by a single `run --pass-type entity`, instead of requiring a separate address pass.
 """
+
 from __future__ import annotations
 
 from app.resolve.cli import (

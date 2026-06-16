@@ -5,6 +5,7 @@ pre-existing one.  The additive-column shims (unified + resolve) close that gap 
 columns added to a model after a table already exists in a deployed DB are applied
 idempotently rather than breaking inserts with UndefinedColumn.
 """
+
 from __future__ import annotations
 
 from sqlalchemy import create_engine, inspect, text

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 ADDRESS_LIST = {}
 
+
 class TECAddress(TECSettings):
     __tablename__ = "tx_addresses"
     __table_args__ = {"schema": "texas"}
@@ -31,29 +32,29 @@ class TECAddress(TECSettings):
     region: Optional[str] = Field(default=None, description="Region")
     standardized: str = Field(default=None, description="Address standardized")
     person_name_id: Optional[str] = Field(default=None, foreign_key="tx_person_names.id")
-    person_name: list['TECPersonName'] = Field(default=None)
+    person_name: list["TECPersonName"] = Field(default=None)
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def fill_fields(cls, values):
         if not values:
             return values
         mappings = {
-            'address1': 'Addr1',
-            'address2': 'Addr2',
-            'city': 'City',
-            'state': 'StateCd',
-            'postalCode': 'PostalCode',
-            'county': 'CountyCd',
-            'country': 'CountryCd',
-            'region': 'Region'
+            "address1": "Addr1",
+            "address2": "Addr2",
+            "city": "City",
+            "state": "StateCd",
+            "postalCode": "PostalCode",
+            "county": "CountyCd",
+            "country": "CountryCd",
+            "region": "Region",
         }
 
         for field, key_part in mappings.items():
             values[field] = next((values.get(x) for x in values.keys() if key_part in x), None)
         return values
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def standardize_address(self):
         _address = ""
         if self.address1:
@@ -76,60 +77,54 @@ class TECAddress(TECSettings):
             except AddressNormalizationError:
                 pass
 
-
         _new_address = {}
         _has_full_zip = False
         _standardized = None
         if "PO" or "PO BOX" in _address:
-            _address = _address.replace(',', ' ')
+            _address = _address.replace(",", " ")
             print("PO BOX FOUND", _address)
             parsed = usaddress.parse(_address)
             for part, type_ in parsed:
                 match type_:
                     case "USPSBoxType":
-                        if _adr1 := _new_address.get('address1'):
-                            _new_address['address1'] += f" {part}".strip()
+                        if _adr1 := _new_address.get("address1"):
+                            _new_address["address1"] += f" {part}".strip()
                         else:
-                            _new_address['address1'] = part
+                            _new_address["address1"] = part
                     case "USPSBoxID":
-                        if _new_address.get('address1'):
-                            _new_address['address1'] += f" {part}".strip()
+                        if _new_address.get("address1"):
+                            _new_address["address1"] += f" {part}".strip()
                         # else:
                         #     _new_address['address1'] = part
                     case "PlaceName":
-                        if _new_address.get('city'):
-                            _new_address['city'] += f" {part}".strip()
+                        if _new_address.get("city"):
+                            _new_address["city"] += f" {part}".strip()
                         else:
-                            _new_address['city'] = part
+                            _new_address["city"] = part
                     case "StateName":
-                        if _new_address.get('state'):
-                            _new_address['state'] += f" {part}".strip()
+                        if _new_address.get("state"):
+                            _new_address["state"] += f" {part}".strip()
                         else:
-                            _new_address['state'] = part
+                            _new_address["state"] = part
                     case "ZipCode":
-                        if _new_address.get('postalCode'):
-                            _new_address['postalCode'] += f" {part}".strip()
+                        if _new_address.get("postalCode"):
+                            _new_address["postalCode"] += f" {part}".strip()
                         else:
-                            _new_address['postalCode'] = part
-            if _pc :=_new_address.get('postalCode'):
-                if '-' in _pc:
+                            _new_address["postalCode"] = part
+            if _pc := _new_address.get("postalCode"):
+                if "-" in _pc:
                     _has_full_zip = True
-
 
             has_address_lines = all(
                 [
-                    _new_address.get('address1'),
-                    _new_address.get('city'),
-                    _new_address.get('state'),
-                    _new_address.get('postalCode')
+                    _new_address.get("address1"),
+                    _new_address.get("city"),
+                    _new_address.get("state"),
+                    _new_address.get("postalCode"),
                 ]
             )
             if has_address_lines:
-                std = ", ".join(
-                    [
-                        v.strip() for k, v in _new_address.items() if v
-                    ]
-                )
+                std = ", ".join([v.strip() for k, v in _new_address.items() if v])
                 if _has_full_zip:
                     ADDRESS_LIST[_pc] = std
                     _standardized = std

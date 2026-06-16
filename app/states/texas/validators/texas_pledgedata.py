@@ -16,9 +16,7 @@ class PledgeData(TECSettings):
     schedFormTypeCd: str = Field(..., description="TEC Schedule Used", max_length=20)
     reportInfoIdent: int = Field(..., description="Unique report #")
     receivedDt: datetime = Field(..., description="Date report received by TEC")
-    infoOnlyFlag: str = Field(
-        ..., description="Superseded by other report (Y/N)", max_length=1
-    )
+    infoOnlyFlag: str = Field(..., description="Superseded by other report (Y/N)", max_length=1)
 
     # ── Filer ─────────────────────────────────────────────────────────────
     filerIdent: str = Field(..., description="Filer account #", max_length=100)
@@ -32,9 +30,7 @@ class PledgeData(TECSettings):
     pledgeDescr: Optional[str] = Field(
         default=None, description="Pledge description", max_length=100
     )
-    itemizeFlag: str = Field(
-        ..., description="Y indicates the pledge is itemized", max_length=1
-    )
+    itemizeFlag: str = Field(..., description="Y indicates the pledge is itemized", max_length=1)
     travelFlag: str = Field(
         ..., description="Y indicates the pledge has associated travel", max_length=1
     )
@@ -145,9 +141,7 @@ class PledgeData(TECSettings):
     @classmethod
     def check_flags(cls, v: str) -> str:
         if str(v).upper() not in ("Y", "N"):
-            raise PydanticCustomError(
-                "invalid_flag", "Flag must be Y or N", {"value": v}
-            )
+            raise PydanticCustomError("invalid_flag", "Flag must be Y or N", {"value": v})
         return str(v).upper()
 
     @field_validator("pledgerOosPacFlag", mode="before")

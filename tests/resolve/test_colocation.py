@@ -152,9 +152,7 @@ class TestAssertColocation:
         e1 = _make_entity(session, addr.id, name="Alice")
         e2 = _make_entity(session, addr.id, name="Bob")
 
-        assoc = assert_colocation(
-            session, e1.id, e2.id, reason="household", asserted_by="analyst"
-        )
+        assoc = assert_colocation(session, e1.id, e2.id, reason="household", asserted_by="analyst")
 
         assert assoc.id is not None
         assert assoc.source_entity_id == e1.id
@@ -166,9 +164,7 @@ class TestAssertColocation:
         e1 = _make_entity(session, addr.id, name="Alice")
         e2 = _make_entity(session, addr.id, name="Bob")
 
-        assert_colocation(
-            session, e1.id, e2.id, reason="shared office", asserted_by="system"
-        )
+        assert_colocation(session, e1.id, e2.id, reason="shared office", asserted_by="system")
         session.commit()
 
         rows = session.exec(select(UnifiedEntityAssociation)).all()
@@ -180,18 +176,14 @@ class TestAssertColocation:
         e = _make_entity(session, addr.id)
 
         with pytest.raises(SelfColocationError):
-            assert_colocation(
-                session, e.id, e.id, reason="test", asserted_by="test"
-            )
+            assert_colocation(session, e.id, e.id, reason="test", asserted_by="test")
 
     def test_self_link_refusal_creates_no_rows(self, session):
         addr = _make_address(session)
         e = _make_entity(session, addr.id)
 
         with pytest.raises(SelfColocationError):
-            assert_colocation(
-                session, e.id, e.id, reason="test", asserted_by="test"
-            )
+            assert_colocation(session, e.id, e.id, reason="test", asserted_by="test")
 
         rows = session.exec(select(UnifiedEntityAssociation)).all()
         assert rows == []
@@ -201,9 +193,7 @@ class TestAssertColocation:
         e1 = _make_entity(session, addr.id, name="Alice")
         e2 = _make_entity(session, addr.id, name="Bob")
 
-        assoc = assert_colocation(
-            session, e1.id, e2.id, reason="household", asserted_by="reviewer"
-        )
+        assoc = assert_colocation(session, e1.id, e2.id, reason="household", asserted_by="reviewer")
 
         assert assoc.description == "household"
 
@@ -317,25 +307,19 @@ class TestNoMergeWrites:
         e1 = _make_entity(session, addr.id, name="Alice")
         e2 = _make_entity(session, addr.id, name="Bob")
 
-        assert_colocation(
-            session, e1.id, e2.id, reason="household", asserted_by="test"
-        )
+        assert_colocation(session, e1.id, e2.id, reason="household", asserted_by="test")
         session.commit()
 
         crosswalk = session.exec(select(EntityCrosswalk)).all()
         assert crosswalk == [], "assert_colocation must not write to entity_crosswalk"
 
-    def test_assert_colocation_does_not_create_new_canonical_entity_rows(
-        self, session
-    ):
+    def test_assert_colocation_does_not_create_new_canonical_entity_rows(self, session):
         addr = _make_address(session)
         e1 = _make_entity(session, addr.id, name="Alice")
         e2 = _make_entity(session, addr.id, name="Bob")
 
         before_count = len(session.exec(select(CanonicalEntity)).all())
-        assert_colocation(
-            session, e1.id, e2.id, reason="test", asserted_by="test"
-        )
+        assert_colocation(session, e1.id, e2.id, reason="test", asserted_by="test")
         session.commit()
         after_count = len(session.exec(select(CanonicalEntity)).all())
 
@@ -343,9 +327,7 @@ class TestNoMergeWrites:
             "assert_colocation must not create new canonical_entity rows"
         )
 
-    def test_assert_colocation_does_not_modify_existing_canonical_entity(
-        self, session
-    ):
+    def test_assert_colocation_does_not_modify_existing_canonical_entity(self, session):
         addr = _make_address(session)
         e1 = _make_entity(session, addr.id, name="Alice")
         e2 = _make_entity(session, addr.id, name="Bob")
@@ -353,9 +335,7 @@ class TestNoMergeWrites:
         snap_a = (e1.canonical_name, e1.entity_type, e1.canonical_address_id)
         snap_b = (e2.canonical_name, e2.entity_type, e2.canonical_address_id)
 
-        assert_colocation(
-            session, e1.id, e2.id, reason="test", asserted_by="test"
-        )
+        assert_colocation(session, e1.id, e2.id, reason="test", asserted_by="test")
         session.commit()
         session.refresh(e1)
         session.refresh(e2)
@@ -374,9 +354,7 @@ class TestNoMergeWrites:
         crosswalk = session.exec(select(EntityCrosswalk)).all()
         assert crosswalk == []
 
-    def test_suggest_colocations_does_not_create_canonical_entity_rows(
-        self, session
-    ):
+    def test_suggest_colocations_does_not_create_canonical_entity_rows(self, session):
         addr = _make_address(session, frequency=2)
         _make_entity(session, addr.id, name="Alice")
         _make_entity(session, addr.id, name="Bob")

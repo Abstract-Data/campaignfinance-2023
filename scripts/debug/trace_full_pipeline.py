@@ -2,9 +2,10 @@
 Full end-to-end trace of the ingest pipeline for a single record.
 Does NOT save to DB — just traces what fields get set.
 """
+
 import sys
 
-sys.path.insert(0, '/Users/johneakin/PyCharmProjects/campaignfinance')
+sys.path.insert(0, "/Users/johneakin/PyCharmProjects/campaignfinance")
 
 from pathlib import Path
 
@@ -16,7 +17,9 @@ from app.core.unified_database import get_db_manager
 from app.core.unified_state_loader import UnifiedStateLoader
 
 # Get a real record from the parquet file
-contribs_file = Path('/Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas/contribs_05_20260524.parquet')
+contribs_file = Path(
+    "/Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas/contribs_05_20260524.parquet"
+)
 df = pl.scan_parquet(contribs_file).limit(1).collect()
 raw_record = df.to_dicts()[0]
 
@@ -37,6 +40,7 @@ with db.get_session() as session:
     from sqlmodel import select
 
     from app.core.models.tables import State
+
     state_rec = session.exec(select(State).where(State.code == "TX")).first()
     if state_rec:
         state_id = state_rec.id

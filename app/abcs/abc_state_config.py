@@ -31,8 +31,8 @@ def check_for_empty_gen(func):
             return None
         finally:
             del gen1
-    return wrapper
 
+    return wrapper
 
 
 class FieldType(StrEnum):
@@ -74,7 +74,6 @@ class CategoryConfig:
     PREFIX: Optional[str] = None
     SUFFIX: Optional[str] = None
 
-
     def __iter__(self) -> Iterator[Dict]:
         """Iterator over category data"""
         if not self.DATA:
@@ -97,14 +96,18 @@ class CategoryConfig:
         if not any([self.PREFIX, self.SUFFIX]):
             raise ValueError("Either PREFIX or SUFFIX must be defined")
 
-
     def _filter(self, x: Dict) -> bool:
         pattern = self.SUFFIX or self.PREFIX
         is_suffix = bool(self.SUFFIX)
-        return x["file_origin"].endswith(pattern) if is_suffix else x["file_origin"].startswith(pattern)
+        return (
+            x["file_origin"].endswith(pattern)
+            if is_suffix
+            else x["file_origin"].startswith(pattern)
+        )
 
-
-    def filter_category(self, data: Generator[Dict, None, None]) -> Generator[Dict, None, None] | None:
+    def filter_category(
+        self, data: Generator[Dict, None, None]
+    ) -> Generator[Dict, None, None] | None:
         filtered = (record for record in data if self._filter(record))
         self.DATA = filtered
         return self.DATA
@@ -127,10 +130,7 @@ class CategoryTypes:
 
     def __iter__(self) -> Iterator[CategoryConfig]:
         """Get all non-None CategoryConfig objects"""
-        return iter([
-            value for value in vars(self).values()
-            if isinstance(value, CategoryConfig)
-        ])
+        return iter([value for value in vars(self).values() if isinstance(value, CategoryConfig)])
 
     def __next__(self) -> CategoryConfig:
         """Get next CategoryConfig object"""
@@ -155,22 +155,31 @@ class StateConfig:
 
     @property
     def FIELD_DATA(self) -> dict:
-        return funcs.read_toml(Path(__file__).parents[1] / 'states'/ (_state := self.STATE_NAME.lower()) / f"{_state}_fields.toml")
+        return funcs.read_toml(
+            Path(__file__).parents[1]
+            / "states"
+            / (_state := self.STATE_NAME.lower())
+            / f"{_state}_fields.toml"
+        )
 
     @staticmethod
     @lru_cache
     def get_file_count(file: Path) -> int:
         try:
-            return pl.scan_csv(
-                file,
-                ignore_errors=True,
-                low_memory=True,
-            ).collect().height
+            return (
+                pl.scan_csv(
+                    file,
+                    ignore_errors=True,
+                    low_memory=True,
+                )
+                .collect()
+                .height
+            )
         except pl.exceptions.ComputeError:
             return 0
 
     def get_record_counts(self) -> Optional[Dict[str, int]]:
-        files = list(self.TEMP_FOLDER.glob('*.csv'))
+        files = list(self.TEMP_FOLDER.glob("*.csv"))
         if not files:
             return None
 

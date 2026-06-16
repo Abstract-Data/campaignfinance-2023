@@ -282,8 +282,7 @@ def ensure_candidate_pair_unique_index(session: Session) -> None:
 # promote source is already deduped (DISTINCT ON), so the rebuild never finds a
 # conflict, and it runs inside a try/finally that always restores the constraint.
 _DROP_PAIR_UNIQUE_CONSTRAINT_SQL = (
-    "ALTER TABLE candidate_pairs "
-    "DROP CONSTRAINT IF EXISTS uq_candidate_pairs_run_sources"
+    "ALTER TABLE candidate_pairs DROP CONSTRAINT IF EXISTS uq_candidate_pairs_run_sources"
 )
 _DROP_PAIR_UNIQUE_INDEX_SQL = "DROP INDEX IF EXISTS uq_candidate_pairs_run_sources"
 _ADD_PAIR_UNIQUE_CONSTRAINT_SQL = (
@@ -429,9 +428,7 @@ def _apply_pair_cap(
     delete_batch_size: int = _PAIR_CAP_DELETE_BATCH,
 ) -> None:
     total = session.exec(
-        select(func.count())
-        .select_from(CandidatePair)
-        .where(CandidatePair.run_id == run_id)
+        select(func.count()).select_from(CandidatePair).where(CandidatePair.run_id == run_id)
     ).one()
     if total <= max_pairs_per_run:
         return
@@ -457,9 +454,7 @@ def _apply_pair_cap(
         deleted_total += deleted
         session.commit()
         remaining = session.exec(
-            select(func.count())
-            .select_from(CandidatePair)
-            .where(CandidatePair.run_id == run_id)
+            select(func.count()).select_from(CandidatePair).where(CandidatePair.run_id == run_id)
         ).one()
         LOGGER.info(
             "Pair cap deleted batch=%s remaining_pairs=%s",
@@ -549,8 +544,6 @@ def run_blocking_stage_sql(session: Session, run_id: int, config: dict) -> dict:
         session.commit()
 
     pair_count = session.exec(
-        select(func.count())
-        .select_from(CandidatePair)
-        .where(CandidatePair.run_id == run_id)
+        select(func.count()).select_from(CandidatePair).where(CandidatePair.run_id == run_id)
     ).one()
     return {"pairs_compared": int(pair_count)}

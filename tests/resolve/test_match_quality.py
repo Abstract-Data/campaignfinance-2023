@@ -52,8 +52,7 @@ def _load_golden(filename: str) -> list[dict[str, Any]]:
     path = GOLDEN_DIR / filename
     if not path.exists():
         raise FileNotFoundError(
-            f"Golden fixture not found: {path}. "
-            "Run from the repo root or check GOLDEN_DIR."
+            f"Golden fixture not found: {path}. Run from the repo root or check GOLDEN_DIR."
         )
     with path.open(newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
@@ -78,24 +77,16 @@ def compute_precision_recall(
     - If there are no positive labels, recall is defined as 0.0.
     """
     if len(predictions) != len(labels):
-        raise ValueError(
-            f"Length mismatch: {len(predictions)} predictions vs {len(labels)} labels"
-        )
+        raise ValueError(f"Length mismatch: {len(predictions)} predictions vs {len(labels)} labels")
 
     tp = sum(
-        1
-        for p, lbl in zip(predictions, labels)
-        if p == positive_label and lbl == positive_label
+        1 for p, lbl in zip(predictions, labels) if p == positive_label and lbl == positive_label
     )
     fp = sum(
-        1
-        for p, lbl in zip(predictions, labels)
-        if p == positive_label and lbl != positive_label
+        1 for p, lbl in zip(predictions, labels) if p == positive_label and lbl != positive_label
     )
     fn = sum(
-        1
-        for p, lbl in zip(predictions, labels)
-        if p != positive_label and lbl == positive_label
+        1 for p, lbl in zip(predictions, labels) if p != positive_label and lbl == positive_label
     )
 
     precision = tp / (tp + fp) if (tp + fp) > 0 else 1.0
@@ -322,9 +313,21 @@ class TestGoldenFixtureSchema:
         pairs = _load_golden("person_pairs.csv")
         assert len(pairs) >= 50, f"Expected ≥50 person pairs, got {len(pairs)}"
         required = {
-            "pair_id", "label", "notes",
-            "first_name_a", "last_name_a", "line_1_a", "city_a", "state_a", "zip5_a",
-            "first_name_b", "last_name_b", "line_1_b", "city_b", "state_b", "zip5_b",
+            "pair_id",
+            "label",
+            "notes",
+            "first_name_a",
+            "last_name_a",
+            "line_1_a",
+            "city_a",
+            "state_a",
+            "zip5_a",
+            "first_name_b",
+            "last_name_b",
+            "line_1_b",
+            "city_b",
+            "state_b",
+            "zip5_b",
         }
         cols = set(pairs[0].keys())
         missing = required - cols
@@ -349,9 +352,21 @@ class TestGoldenFixtureSchema:
         pairs = _load_golden("organization_pairs.csv")
         assert len(pairs) >= 50, f"Expected ≥50 org pairs, got {len(pairs)}"
         required = {
-            "pair_id", "label", "notes",
-            "raw_name_a", "normalized_org_a", "line_1_a", "city_a", "state_a", "zip5_a",
-            "raw_name_b", "normalized_org_b", "line_1_b", "city_b", "state_b", "zip5_b",
+            "pair_id",
+            "label",
+            "notes",
+            "raw_name_a",
+            "normalized_org_a",
+            "line_1_a",
+            "city_a",
+            "state_a",
+            "zip5_a",
+            "raw_name_b",
+            "normalized_org_b",
+            "line_1_b",
+            "city_b",
+            "state_b",
+            "zip5_b",
         }
         cols = set(pairs[0].keys())
         missing = required - cols
@@ -372,9 +387,15 @@ class TestGoldenFixtureSchema:
         pairs = _load_golden("committee_pairs.csv")
         assert len(pairs) >= 50, f"Expected ≥50 committee pairs, got {len(pairs)}"
         required = {
-            "pair_id", "label", "notes",
-            "filer_id_a", "raw_name_a", "normalized_org_a",
-            "filer_id_b", "raw_name_b", "normalized_org_b",
+            "pair_id",
+            "label",
+            "notes",
+            "filer_id_a",
+            "raw_name_a",
+            "normalized_org_a",
+            "filer_id_b",
+            "raw_name_b",
+            "normalized_org_b",
         }
         cols = set(pairs[0].keys())
         missing = required - cols

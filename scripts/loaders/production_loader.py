@@ -49,10 +49,10 @@ ENRICHMENT_RECORD_TYPES = frozenset({"CAND"})
 # transactions reference them via the committee_id FK.
 # CVR1 (reports) must precede transactions so that report_id FK can be set.
 _FILE_PRIORITY: dict[str, int] = {
-    "FILER": 0,   # committees / filer identity — referenced by every transaction
-    "CVR1": 1,    # report cover sheets — referenced by transactions via report_id
-    "FINL": 2,    # final report flags — amends CVR1 rows
-    "SPAC": 3,    # specific-purpose committee declarations
+    "FILER": 0,  # committees / filer identity — referenced by every transaction
+    "CVR1": 1,  # report cover sheets — referenced by transactions via report_id
+    "FINL": 2,  # final report flags — amends CVR1 rows
+    "SPAC": 3,  # specific-purpose committee declarations
     # Transaction types follow; relative order among them is not critical.
     "RCPT": 10,
     "EXPN": 11,
@@ -595,20 +595,35 @@ def _persist_row(
     if effective_type in ENRICHMENT_RECORD_TYPES:
         # CAND: link the candidate to its existing expenditure (no new transaction).
         _persist_cand_link(
-            session, raw, state=state, state_id=state_id, state_code=state_code,
+            session,
+            raw,
+            state=state,
+            state_id=state_id,
+            state_code=state_code,
             cache=cache,
         )
         return True
     if effective_type in TRANSACTION_RECORD_TYPES:
         if effective_type == "PLDG":
             _persist_pldg_row(
-                session, raw, state=state, state_id=state_id, state_code=state_code,
-                file_origin_id=file_origin_id, cache=cache,
+                session,
+                raw,
+                state=state,
+                state_id=state_id,
+                state_code=state_code,
+                file_origin_id=file_origin_id,
+                cache=cache,
             )
         else:
             _persist_transaction(
-                session, raw, state=state, state_id=state_id, state_code=state_code,
-                file_origin_id=file_origin_id, record_type=effective_type, cache=cache,
+                session,
+                raw,
+                state=state,
+                state_id=state_id,
+                state_code=state_code,
+                file_origin_id=file_origin_id,
+                record_type=effective_type,
+                cache=cache,
                 flush=flush,
             )
         return True
@@ -684,9 +699,9 @@ def _partition_orphan_committee_rows(
     if not refs:
         return [], pending
 
-    stmt = _text(
-        "SELECT filer_id FROM unified_committees WHERE filer_id IN :ids"
-    ).bindparams(bindparam("ids", expanding=True))
+    stmt = _text("SELECT filer_id FROM unified_committees WHERE filer_id IN :ids").bindparams(
+        bindparam("ids", expanding=True)
+    )
     existing = {r[0] for r in session.execute(stmt, {"ids": list(refs)}).fetchall()}
 
     orphans: list[tuple[dict[str, Any], str]] = []
@@ -771,8 +786,14 @@ def _commit_pending(
         with session.no_autoflush:
             for raw, rtype in pending:
                 _persist_row(
-                    session, raw, rtype, state=state, state_id=state_id,
-                    state_code=state_code, file_origin_id=file_origin_id, cache=cache,
+                    session,
+                    raw,
+                    rtype,
+                    state=state,
+                    state_id=state_id,
+                    state_code=state_code,
+                    file_origin_id=file_origin_id,
+                    cache=cache,
                     flush=False,
                 )
         session.commit()
@@ -780,8 +801,7 @@ def _commit_pending(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         logger.warning(
-            f"[loader] batch commit failed in {source_file} "
-            f"({type(exc).__name__}); recovering"
+            f"[loader] batch commit failed in {source_file} ({type(exc).__name__}); recovering"
         )
         cache = BuilderCache()
 
@@ -790,10 +810,13 @@ def _commit_pending(
     orphans, retry = _partition_orphan_committee_rows(session, pending, state_id)
     if orphans:
         _bulk_record_ingest_errors(
-            session, orphans,
+            session,
+            orphans,
             error_type="ForeignKeyViolation",
             error_message="referenced committee_id absent from unified_committees.filer_id",
-            file_origin_id=file_origin_id, state_id=state_id, source_file=source_file,
+            file_origin_id=file_origin_id,
+            state_id=state_id,
+            source_file=source_file,
         )
         rejected += len(orphans)
         # Tier 2: with orphans gone the remainder is usually clean — try once.
@@ -803,9 +826,15 @@ def _commit_pending(
                 with session.no_autoflush:
                     for raw, rtype in retry:
                         _persist_row(
-                            session, raw, rtype, state=state, state_id=state_id,
-                            state_code=state_code, file_origin_id=file_origin_id,
-                            cache=cache, flush=False,
+                            session,
+                            raw,
+                            rtype,
+                            state=state,
+                            state_id=state_id,
+                            state_code=state_code,
+                            file_origin_id=file_origin_id,
+                            cache=cache,
+                            flush=False,
                         )
                 session.commit()
                 return len(retry), rejected, cache
@@ -819,9 +848,15 @@ def _commit_pending(
         try:
             with session.no_autoflush:
                 _persist_row(
-                    session, raw, rtype, state=state, state_id=state_id,
-                    state_code=state_code, file_origin_id=file_origin_id,
-                    cache=cache, flush=True,
+                    session,
+                    raw,
+                    rtype,
+                    state=state,
+                    state_id=state_id,
+                    state_code=state_code,
+                    file_origin_id=file_origin_id,
+                    cache=cache,
+                    flush=True,
                 )
             session.commit()
             committed += 1
@@ -830,8 +865,13 @@ def _commit_pending(
             cache = BuilderCache()
             try:
                 _record_ingest_error(
-                    session, raw, rtype, row_exc, file_origin_id=file_origin_id,
-                    state_id=state_id, source_file=source_file,
+                    session,
+                    raw,
+                    rtype,
+                    row_exc,
+                    file_origin_id=file_origin_id,
+                    state_id=state_id,
+                    source_file=source_file,
                 )
                 session.commit()
             except Exception:  # noqa: BLE001
@@ -893,9 +933,14 @@ def _load_file(
 
             if len(pending) >= config.commit_frequency:
                 committed, rej, cache = _commit_pending(
-                    session, pending, state=state, state_id=state_id,
-                    state_code=state_code, file_origin_id=file_origin_id,
-                    source_file=path.name, cache=cache,
+                    session,
+                    pending,
+                    state=state,
+                    state_id=state_id,
+                    state_code=state_code,
+                    file_origin_id=file_origin_id,
+                    source_file=path.name,
+                    cache=cache,
                 )
                 loaded += committed
                 rejected += rej
@@ -905,8 +950,14 @@ def _load_file(
             break
 
     committed, rej, cache = _commit_pending(
-        session, pending, state=state, state_id=state_id, state_code=state_code,
-        file_origin_id=file_origin_id, source_file=path.name, cache=cache,
+        session,
+        pending,
+        state=state,
+        state_id=state_id,
+        state_code=state_code,
+        file_origin_id=file_origin_id,
+        source_file=path.name,
+        cache=cache,
     )
     loaded += committed
     rejected += rej

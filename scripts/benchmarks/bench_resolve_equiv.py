@@ -45,10 +45,14 @@ def natural_maps(db: str) -> tuple[dict, dict]:
     """Return ({natural_key: canonical_id}, {canonical_id: frozenset(natural_keys)}) for *db*."""
     eng = create_engine(f"{PG}/{db}")
     with eng.connect() as c:
-        ent = {str(r[0]): ("E", _low(getattr(r[1], "name", r[1])), _low(r[2]))
-               for r in c.execute(text(_Q_ENTITY))}
-        per = {str(r[0]): ("P", f"{_low(r[1])}|{_low(r[2])}|{_low(r[3])}")
-               for r in c.execute(text(_Q_PERSON))}
+        ent = {
+            str(r[0]): ("E", _low(getattr(r[1], "name", r[1])), _low(r[2]))
+            for r in c.execute(text(_Q_ENTITY))
+        }
+        per = {
+            str(r[0]): ("P", f"{_low(r[1])}|{_low(r[2])}|{_low(r[3])}")
+            for r in c.execute(text(_Q_PERSON))
+        }
         xwalk = c.execute(text(_Q_XWALK)).fetchall()
     eng.dispose()
 
@@ -98,9 +102,15 @@ def main() -> None:
     # Coverage: which natural keys exist in each / both.
     o_keys, v_keys = set(o_k2c), set(v_k2c)
     shared = o_keys & v_keys
-    print(f"\nnatural-key universe:  shared={len(shared):,}  "
-          f"ORM-only={len(o_keys - v_keys):,}  vec-only={len(v_keys - o_keys):,}")
-    for tag, ks in (("shared", shared), ("ORM-only", o_keys - v_keys), ("vec-only", v_keys - o_keys)):
+    print(
+        f"\nnatural-key universe:  shared={len(shared):,}  "
+        f"ORM-only={len(o_keys - v_keys):,}  vec-only={len(v_keys - o_keys):,}"
+    )
+    for tag, ks in (
+        ("shared", shared),
+        ("ORM-only", o_keys - v_keys),
+        ("vec-only", v_keys - o_keys),
+    ):
         by_type = Counter(k[0] for k in ks)
         print(f"  {tag:9} by type: {dict(by_type)}")
 
@@ -108,8 +118,10 @@ def main() -> None:
     o_cl = clusters_over(shared, o_c2k)
     v_cl = clusters_over(shared, v_c2k)
     identical = o_cl & v_cl
-    print(f"\nclusters over shared universe:  ORM={len(o_cl):,}  vec={len(v_cl):,}  "
-          f"identical={len(identical):,}")
+    print(
+        f"\nclusters over shared universe:  ORM={len(o_cl):,}  vec={len(v_cl):,}  "
+        f"identical={len(identical):,}"
+    )
     denom = max(len(o_cl), 1)
     print(f"  identical-cluster ratio (vs ORM): {len(identical) / denom:.1%}")
 
@@ -120,11 +132,14 @@ def main() -> None:
     o_sig, v_sig = sig(o_k2c, o_c2k), sig(v_k2c, v_c2k)
     over_split = [k for k in shared if v_sig[k] < o_sig[k] and v_sig[k] != o_sig[k]]  # vec apart
     over_merge = [k for k in shared if v_sig[k] > o_sig[k] and v_sig[k] != o_sig[k]]  # vec together
-    other = [k for k in shared if v_sig[k] != o_sig[k]
-             and not (v_sig[k] < o_sig[k]) and not (v_sig[k] > o_sig[k])]
+    other = [
+        k
+        for k in shared
+        if v_sig[k] != o_sig[k] and not (v_sig[k] < o_sig[k]) and not (v_sig[k] > o_sig[k])
+    ]
     agree = len(shared) - len(over_split) - len(over_merge) - len(other)
     print(f"\nper-key clustering agreement over shared universe ({len(shared):,} keys):")
-    print(f"  agree:            {agree:,} ({agree / max(len(shared),1):.1%})")
+    print(f"  agree:            {agree:,} ({agree / max(len(shared), 1):.1%})")
     print(f"  vec over-SPLIT:   {len(over_split):,}  (ORM groups them, vec separates)")
     print(f"  vec over-MERGE:   {len(over_merge):,}  (vec groups them, ORM separates)")
     print(f"  cross-different:  {len(other):,}  (neither subset)")

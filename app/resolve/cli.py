@@ -436,9 +436,7 @@ def _run_command(args: argparse.Namespace) -> int:
     with Session(engine) as session:
         resolution_run.run(session, stages)
 
-    logger.info(
-        f"Resolution run complete: run_id={resolution_run.run_id} state={state_code}"
-    )
+    logger.info(f"Resolution run complete: run_id={resolution_run.run_id} state={state_code}")
     return 0
 
 
@@ -484,13 +482,9 @@ def _review_command(args: argparse.Namespace) -> int:
                 logger.error(f"Error: {exc}")
                 return 1
         elif args.review_command == "approve":
-            return _run_approve(
-                session, args.review_id, reviewer=args.reviewer, notes=args.notes
-            )
+            return _run_approve(session, args.review_id, reviewer=args.reviewer, notes=args.notes)
         elif args.review_command == "reject":
-            return _run_reject(
-                session, args.review_id, reviewer=args.reviewer, notes=args.notes
-            )
+            return _run_reject(session, args.review_id, reviewer=args.reviewer, notes=args.notes)
         elif args.review_command == "report":
             from app.resolve.review.explain import run_report
 

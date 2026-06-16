@@ -124,15 +124,14 @@ def get_config(preset: str = "production") -> LoaderConfig:
         "production": LoaderPresets.production,
     }
     if preset not in mapping:
-        raise ValueError(
-            f"Unknown preset {preset!r}. Choose from: {', '.join(mapping)}"
-        )
+        raise ValueError(f"Unknown preset {preset!r}. Choose from: {', '.join(mapping)}")
     return mapping[preset]()
 
 
 # ---------------------------------------------------------------------------
 # Default per-state glob configurations
 # ---------------------------------------------------------------------------
+
 
 def get_texas_glob_config(base_dir: Path | None = None) -> StateGlobConfig:
     """Return the standard file-discovery config for the Texas data directory."""

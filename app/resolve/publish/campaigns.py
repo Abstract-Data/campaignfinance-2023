@@ -91,7 +91,14 @@ def build_canonical_campaigns(
     Key = tuple[int, str | None, int]
     by_identity: dict[Key, CanonicalCampaign] = {}
     source_keys: list[tuple[int, Key]] = []  # (unified_campaign.id, identity key)
-    for uc_id, primary_committee_id, candidate_person_id, election_year, office_sought, name in rows:
+    for (
+        uc_id,
+        primary_committee_id,
+        candidate_person_id,
+        election_year,
+        office_sought,
+        name,
+    ) in rows:
         committee_entity_id = committee_xw.get(str(primary_committee_id))
         if committee_entity_id is None:
             continue
@@ -101,9 +108,7 @@ def build_canonical_campaigns(
         cycle = int(election_year) if election_year is not None else 0
         key = (committee_entity_id, office, cycle)
         candidate_entity_id = (
-            person_xw.get(str(candidate_person_id))
-            if candidate_person_id is not None
-            else None
+            person_xw.get(str(candidate_person_id)) if candidate_person_id is not None else None
         )
         source_keys.append((uc_id, key))
         existing = by_identity.get(key)
@@ -130,9 +135,7 @@ def build_canonical_campaigns(
     session.flush()  # populate canonical_campaign.id for crosswalk rows
 
     if run_id is not None:
-        session.execute(
-            text("DELETE FROM campaign_crosswalk WHERE run_id = :rid"), {"rid": run_id}
-        )
+        session.execute(text("DELETE FROM campaign_crosswalk WHERE run_id = :rid"), {"rid": run_id})
         key_to_canonical_id = {key: cc.id for key, cc in by_identity.items()}
         for uc_id, key in source_keys:
             canonical_id = key_to_canonical_id.get(key)

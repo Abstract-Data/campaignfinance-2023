@@ -21,7 +21,7 @@ def test_no_fstring_text_sql_remains() -> None:
     """No f-string-interpolated SQL may appear in the loader source."""
     pattern = re.compile(r"text\(\s*f[\"']")
     assert not pattern.search(SOURCE), (
-        "Found f-string text(f\"...\") SQL in unified_state_loader.py — "
+        'Found f-string text(f"...") SQL in unified_state_loader.py — '
         "convert to parameterized SQLModel select()/update()."
     )
 
@@ -30,7 +30,7 @@ def test_no_bare_string_session_exec() -> None:
     """`session.exec("SELECT ...")` (bare string) is the line-491 bug."""
     pattern = re.compile(r"session\.exec\(\s*f?[\"']\s*SELECT", re.IGNORECASE)
     assert not pattern.search(SOURCE), (
-        "Found bare-string session.exec(\"SELECT ...\") — must use select()."
+        'Found bare-string session.exec("SELECT ...") — must use select().'
     )
 
 

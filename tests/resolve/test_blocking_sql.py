@@ -78,9 +78,7 @@ def test_run_blocking_stage_sql_dedupes_across_rules(pg_engine):
             run_id=run_id,
             config={"blocking_backend": "sql", "max_block_size": 500},
         )
-        pairs = session.exec(
-            select(CandidatePair).where(CandidatePair.run_id == run_id)
-        ).all()
+        pairs = session.exec(select(CandidatePair).where(CandidatePair.run_id == run_id)).all()
 
         assert result["pairs_compared"] == 1
         assert len(pairs) == 1

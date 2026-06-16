@@ -5,6 +5,7 @@ Usage (from the project root, with the venv active):
 
     uv run python scripts/verify_ingest.py
 """
+
 from __future__ import annotations
 
 import sys

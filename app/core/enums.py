@@ -91,5 +91,3 @@ class CampaignRole(str, Enum):
     SUPPORTER = "supporter"
     COMMITTEE = "committee"
     OTHER = "other"
-
-

@@ -134,12 +134,8 @@ def test_link_transactions_to_reports_returns_count(reports_session: Session) ->
     reports_session.commit()
     reports_session.refresh(report)
 
-    tx1 = StubUnifiedTransaction(
-        state_id=43, committee_id="00012345", report_ident="12345678901"
-    )
-    tx2 = StubUnifiedTransaction(
-        state_id=43, committee_id="00012345", report_ident="12345678901"
-    )
+    tx1 = StubUnifiedTransaction(state_id=43, committee_id="00012345", report_ident="12345678901")
+    tx2 = StubUnifiedTransaction(state_id=43, committee_id="00012345", report_ident="12345678901")
     reports_session.add(tx1)
     reports_session.add(tx2)
     reports_session.commit()
@@ -154,9 +150,7 @@ def test_link_transactions_to_reports_sets_report_id(reports_session: Session) -
     reports_session.commit()
     reports_session.refresh(report)
 
-    tx = StubUnifiedTransaction(
-        state_id=43, committee_id="00012345", report_ident="12345678901"
-    )
+    tx = StubUnifiedTransaction(state_id=43, committee_id="00012345", report_ident="12345678901")
     reports_session.add(tx)
     reports_session.commit()
     reports_session.refresh(tx)

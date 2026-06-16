@@ -63,46 +63,102 @@ _logger = Logger(__name__)
 # ---------------------------------------------------------------------------
 
 _RCPT_COLS = (
-    "recordType", "formTypeCd", "schedFormTypeCd", "reportInfoIdent",
-    "receivedDt", "infoOnlyFlag", "filerIdent", "filerTypeCd", "filerName",
-    "contributionInfoId", "contributionDt", "contributionAmount", "contributionDescr",
-    "itemizeFlag", "travelFlag",
-    "contributorPersentTypeCd", "contributorNameOrganization",
-    "contributorNameLast", "contributorNameSuffixCd", "contributorNameFirst",
-    "contributorNamePrefixCd", "contributorNameShort",
-    "contributorStreetCity", "contributorStreetStateCd", "contributorStreetCountyCd",
-    "contributorStreetCountryCd", "contributorStreetPostalCode", "contributorStreetRegion",
-    "contributorEmployer", "contributorOccupation", "contributorJobTitle",
-    "contributorPacFein", "contributorOosPacFlag",
-    "contributorLawFirmName", "contributorSpouseLawFirmName",
-    "contributorParent1LawFirmName", "contributorParent2LawFirmName",
+    "recordType",
+    "formTypeCd",
+    "schedFormTypeCd",
+    "reportInfoIdent",
+    "receivedDt",
+    "infoOnlyFlag",
+    "filerIdent",
+    "filerTypeCd",
+    "filerName",
+    "contributionInfoId",
+    "contributionDt",
+    "contributionAmount",
+    "contributionDescr",
+    "itemizeFlag",
+    "travelFlag",
+    "contributorPersentTypeCd",
+    "contributorNameOrganization",
+    "contributorNameLast",
+    "contributorNameSuffixCd",
+    "contributorNameFirst",
+    "contributorNamePrefixCd",
+    "contributorNameShort",
+    "contributorStreetCity",
+    "contributorStreetStateCd",
+    "contributorStreetCountyCd",
+    "contributorStreetCountryCd",
+    "contributorStreetPostalCode",
+    "contributorStreetRegion",
+    "contributorEmployer",
+    "contributorOccupation",
+    "contributorJobTitle",
+    "contributorPacFein",
+    "contributorOosPacFlag",
+    "contributorLawFirmName",
+    "contributorSpouseLawFirmName",
+    "contributorParent1LawFirmName",
+    "contributorParent2LawFirmName",
 )
 
 _EXPN_COLS = (
-    "recordType", "formTypeCd", "schedFormTypeCd", "reportInfoIdent",
-    "receivedDt", "infoOnlyFlag", "filerIdent", "filerTypeCd", "filerName",
-    "expendInfoId", "expendDt", "expendAmount", "expendDescr",
-    "expendCatCd", "expendCatDescr", "itemizeFlag", "travelFlag",
-    "politicalExpendCd", "reimburseIntendedFlag", "srcCorpContribFlag", "capitalLivingexpFlag",
-    "payeePersentTypeCd", "payeeNameOrganization",
-    "payeeNameLast", "payeeNameSuffixCd", "payeeNameFirst",
-    "payeeNamePrefixCd", "payeeNameShort",
-    "payeeStreetAddr1", "payeeStreetAddr2",
-    "payeeStreetCity", "payeeStreetStateCd", "payeeStreetCountyCd",
-    "payeeStreetCountryCd", "payeeStreetPostalCode", "payeeStreetRegion",
-    "creditCardIssuer", "repaymentDt",
+    "recordType",
+    "formTypeCd",
+    "schedFormTypeCd",
+    "reportInfoIdent",
+    "receivedDt",
+    "infoOnlyFlag",
+    "filerIdent",
+    "filerTypeCd",
+    "filerName",
+    "expendInfoId",
+    "expendDt",
+    "expendAmount",
+    "expendDescr",
+    "expendCatCd",
+    "expendCatDescr",
+    "itemizeFlag",
+    "travelFlag",
+    "politicalExpendCd",
+    "reimburseIntendedFlag",
+    "srcCorpContribFlag",
+    "capitalLivingexpFlag",
+    "payeePersentTypeCd",
+    "payeeNameOrganization",
+    "payeeNameLast",
+    "payeeNameSuffixCd",
+    "payeeNameFirst",
+    "payeeNamePrefixCd",
+    "payeeNameShort",
+    "payeeStreetAddr1",
+    "payeeStreetAddr2",
+    "payeeStreetCity",
+    "payeeStreetStateCd",
+    "payeeStreetCountyCd",
+    "payeeStreetCountryCd",
+    "payeeStreetPostalCode",
+    "payeeStreetRegion",
+    "creditCardIssuer",
+    "repaymentDt",
 )
 
 # Placeholder last names that force PersonType.UNKNOWN (mirrors build_person /
 # constants.PLACEHOLDER_NAMES, applied case-insensitively on the stripped last name).
-_PLACEHOLDER_NAMES_UPPER = frozenset({
-    "NON-ITEMIZED CONTRIBUTOR", "NON-ITEMIZED", "UNKNOWN", "ANONYMOUS",
-})
+_PLACEHOLDER_NAMES_UPPER = frozenset(
+    {
+        "NON-ITEMIZED CONTRIBUTOR",
+        "NON-ITEMIZED",
+        "UNKNOWN",
+        "ANONYMOUS",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
 # Frame IO helpers
 # ---------------------------------------------------------------------------
+
 
 def _read(files: list[Path]) -> pl.DataFrame | None:
     frames = [pl.read_parquet(p) for p in files]
@@ -124,6 +180,7 @@ def _cs(col: str) -> pl.Expr:
 # Parent-transaction column re-derivation (must match flat_txns.py exactly).
 # ---------------------------------------------------------------------------
 
+
 def _transaction_date_expr(date_col: str) -> pl.Expr:
     return common.builder_date(date_col).fill_null(common.builder_date("receivedDt"))
 
@@ -131,6 +188,7 @@ def _transaction_date_expr(date_col: str) -> pl.Expr:
 # ---------------------------------------------------------------------------
 # Id-maps read back from the already-written tables (parameterized core select).
 # ---------------------------------------------------------------------------
+
 
 def _entity_id_map(session, state_id: int) -> pl.DataFrame:
     """Read entity id-map for the state's entities.
@@ -160,7 +218,9 @@ def _entity_id_map(session, state_id: int) -> pl.DataFrame:
             "_ent_committee_id": [r[3] for r in rows],
         },
         schema={
-            "_ent_id": pl.Int64, "_ent_type": pl.Utf8, "_ent_norm": pl.Utf8,
+            "_ent_id": pl.Int64,
+            "_ent_type": pl.Utf8,
+            "_ent_norm": pl.Utf8,
             "_ent_committee_id": pl.Utf8,
         },
     )
@@ -195,45 +255,63 @@ def _person_id_map(session, state_id: int) -> pl.DataFrame:
     def _lower_or_null(v):
         return v.strip().lower() if isinstance(v, str) and v.strip() else None
 
-    return pl.DataFrame(
-        {
-            "_pid": [r[0] for r in rows],
-            "_pk_fn": [_lower_or_null(r[1]) for r in rows],
-            "_pk_ln": [_lower_or_null(r[3]) for r in rows],
-            "_pk_org": [_lower_or_null(r[5]) for r in rows],
-            "_pk_addr": [r[6] for r in rows],
-            "first_name": [r[1] for r in rows],
-            "middle_name": [r[2] for r in rows],
-            "last_name": [r[3] for r in rows],
-            "suffix": [r[4] for r in rows],
-            "organization": [r[5] for r in rows],
-        },
-        schema={
-            "_pid": pl.Int64, "_pk_fn": pl.Utf8, "_pk_ln": pl.Utf8, "_pk_org": pl.Utf8,
-            "_pk_addr": pl.Utf8,
-            "first_name": pl.Utf8, "middle_name": pl.Utf8, "last_name": pl.Utf8,
-            "suffix": pl.Utf8, "organization": pl.Utf8,
-        },
-        # Org-persons keyed on lower(org) ALONE (null fn/ln/addr) — matches
-        # uix_persons_org_state and the family-side dedup key, so the id-join finds the
-        # single org person.
-    ).pipe(common.collapse_org_person_key).with_columns(
-        pl.when(_cs("organization").is_not_null())
-        .then(pl.lit("ORGANIZATION"))
-        .otherwise(pl.lit("PERSON"))
-        .alias("_party_ent_type"),
-        _norm_name_expr_from(
+    return (
+        pl.DataFrame(
+            {
+                "_pid": [r[0] for r in rows],
+                "_pk_fn": [_lower_or_null(r[1]) for r in rows],
+                "_pk_ln": [_lower_or_null(r[3]) for r in rows],
+                "_pk_org": [_lower_or_null(r[5]) for r in rows],
+                "_pk_addr": [r[6] for r in rows],
+                "first_name": [r[1] for r in rows],
+                "middle_name": [r[2] for r in rows],
+                "last_name": [r[3] for r in rows],
+                "suffix": [r[4] for r in rows],
+                "organization": [r[5] for r in rows],
+            },
+            schema={
+                "_pid": pl.Int64,
+                "_pk_fn": pl.Utf8,
+                "_pk_ln": pl.Utf8,
+                "_pk_org": pl.Utf8,
+                "_pk_addr": pl.Utf8,
+                "first_name": pl.Utf8,
+                "middle_name": pl.Utf8,
+                "last_name": pl.Utf8,
+                "suffix": pl.Utf8,
+                "organization": pl.Utf8,
+            },
+            # Org-persons keyed on lower(org) ALONE (null fn/ln/addr) — matches
+            # uix_persons_org_state and the family-side dedup key, so the id-join finds the
+            # single org person.
+        )
+        .pipe(common.collapse_org_person_key)
+        .with_columns(
             pl.when(_cs("organization").is_not_null())
-            .then(_cs("organization"))
-            .otherwise(
-                common.full_name_expr(
-                    "first_name", "middle_name", "last_name", "suffix", "organization"
+            .then(pl.lit("ORGANIZATION"))
+            .otherwise(pl.lit("PERSON"))
+            .alias("_party_ent_type"),
+            _norm_name_expr_from(
+                pl.when(_cs("organization").is_not_null())
+                .then(_cs("organization"))
+                .otherwise(
+                    common.full_name_expr(
+                        "first_name", "middle_name", "last_name", "suffix", "organization"
+                    )
                 )
-            )
-        ).alias("_party_ent_norm"),
-    ).select(
-        ["_pid", "_pk_fn", "_pk_ln", "_pk_org", "_pk_addr",
-         "_party_ent_type", "_party_ent_norm"]
+            ).alias("_party_ent_norm"),
+        )
+        .select(
+            [
+                "_pid",
+                "_pk_fn",
+                "_pk_ln",
+                "_pk_org",
+                "_pk_addr",
+                "_party_ent_type",
+                "_party_ent_norm",
+            ]
+        )
     )
 
 
@@ -287,8 +365,11 @@ def _address_id_map(session, state_id: int) -> pl.DataFrame:
             "_ak_zip": [r[4] for r in rows],
         },
         schema={
-            "_aid": pl.Int64, "_ak_s1": pl.Utf8, "_ak_city": pl.Utf8,
-            "_ak_state": pl.Utf8, "_ak_zip": pl.Utf8,
+            "_aid": pl.Int64,
+            "_ak_s1": pl.Utf8,
+            "_ak_city": pl.Utf8,
+            "_ak_state": pl.Utf8,
+            "_ak_zip": pl.Utf8,
         },
     )
 
@@ -332,11 +413,7 @@ def _person_addr_keys(
     ORGANIZATION when org present else PERSON; entity name = org else full_name;
     normalized via normalize_entity_name.
     """
-    s1 = (
-        _cs(s1_col).str.to_lowercase()
-        if s1_col is not None
-        else pl.lit(None, dtype=pl.Utf8)
-    )
+    s1 = _cs(s1_col).str.to_lowercase() if s1_col is not None else pl.lit(None, dtype=pl.Utf8)
     full_name = common.full_name_expr(
         first_col, "person_middle_name", last_col, suffix_col, org_col
     )
@@ -372,8 +449,20 @@ def _person_addr_keys(
         ent_type.alias("_ent_type"),
         _norm_name_expr_from(ent_name).alias("_ent_norm"),
     ).select(
-        ["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr", "_ak_s1", "_ak_city", "_ak_state",
-         "_ak_zip", "_sort_key", "_full_len", "_ent_type", "_ent_norm"]
+        [
+            "_pk_org",
+            "_pk_fn",
+            "_pk_ln",
+            "_pk_addr",
+            "_ak_s1",
+            "_ak_city",
+            "_ak_state",
+            "_ak_zip",
+            "_sort_key",
+            "_full_len",
+            "_ent_type",
+            "_ent_norm",
+        ]
     )
 
 
@@ -394,6 +483,7 @@ def _first_per_person(rows: pl.DataFrame) -> pl.DataFrame:
 # Per-row participant projection (one frame: txn natural key + person/entity keys).
 # ---------------------------------------------------------------------------
 
+
 def _project_rcpt(df: pl.DataFrame) -> pl.DataFrame:
     """RCPT -> one row per source record with join keys + parent-txn fields.
 
@@ -405,8 +495,11 @@ def _project_rcpt(df: pl.DataFrame) -> pl.DataFrame:
     first = _cs("contributorNameFirst")
     last = _cs("contributorNameLast")
     full_name = common.full_name_expr(
-        "contributorNameFirst", "person_middle_name", "contributorNameLast",
-        "contributorNameSuffixCd", "contributorNameOrganization",
+        "contributorNameFirst",
+        "person_middle_name",
+        "contributorNameLast",
+        "contributorNameSuffixCd",
+        "contributorNameOrganization",
     )
     return df.with_columns(
         pl.lit(None, dtype=pl.Utf8).alias("person_middle_name"),
@@ -448,8 +541,11 @@ def _project_expn(df: pl.DataFrame) -> pl.DataFrame:
     first = _cs("payeeNameFirst")
     last = _cs("payeeNameLast")
     full_name = common.full_name_expr(
-        "payeeNameFirst", "person_middle_name", "payeeNameLast",
-        "payeeNameSuffixCd", "payeeNameOrganization",
+        "payeeNameFirst",
+        "person_middle_name",
+        "payeeNameLast",
+        "payeeNameSuffixCd",
+        "payeeNameOrganization",
     )
     return df.with_columns(
         pl.lit(None, dtype=pl.Utf8).alias("person_middle_name"),
@@ -490,6 +586,7 @@ def _norm_name_expr_from(name_expr: pl.Expr) -> pl.Expr:
 # ---------------------------------------------------------------------------
 # Join helpers
 # ---------------------------------------------------------------------------
+
 
 def _attach_party_person(proj: pl.DataFrame, person_map: pl.DataFrame) -> pl.DataFrame:
     """Attach the participant person id (and a built flag) via the name + address key.
@@ -564,6 +661,7 @@ def _attach_txn(proj: pl.DataFrame, txn_map: pl.DataFrame) -> pl.DataFrame:
 # Worker
 # ---------------------------------------------------------------------------
 
+
 class FlatTxnsDetailWorker:
     """Detail/junction rows for RCPT/EXPN with real surrogate-id linkage."""
 
@@ -582,16 +680,22 @@ class FlatTxnsDetailWorker:
         if rcpt is not None:
             rcpt = _ensure_cols(rcpt, _RCPT_COLS)
             rcpt = common.add_resolved_street(
-                rcpt, addr_lookup,
-                city_col="contributorStreetCity", state_col="contributorStreetStateCd",
-                zip_col="contributorStreetPostalCode", out_col="contributorStreetAddr1",
+                rcpt,
+                addr_lookup,
+                city_col="contributorStreetCity",
+                state_col="contributorStreetStateCd",
+                zip_col="contributorStreetPostalCode",
+                out_col="contributorStreetAddr1",
             )
         if expn is not None:
             expn = _ensure_cols(expn, _EXPN_COLS)
             expn = common.add_resolved_street(
-                expn, addr_lookup,
-                city_col="payeeStreetCity", state_col="payeeStreetStateCd",
-                zip_col="payeeStreetPostalCode", out_col="payeeStreetAddr1",
+                expn,
+                addr_lookup,
+                city_col="payeeStreetCity",
+                state_col="payeeStreetStateCd",
+                zip_col="payeeStreetPostalCode",
+                out_col="payeeStreetAddr1",
                 own_s1_col="payeeStreetAddr1",
             )
 
@@ -609,9 +713,7 @@ class FlatTxnsDetailWorker:
             proj = _attach_party_entity(proj, entity_map)
             proj = _attach_committee_entity(proj, entity_map)
             counts["contributions"] = self._write_contributions(proj, ctx)
-            counts["txn_persons_rcpt"] = self._write_txn_persons(
-                proj, ctx, role="CONTRIBUTOR"
-            )
+            counts["txn_persons_rcpt"] = self._write_txn_persons(proj, ctx, role="CONTRIBUTOR")
 
         if expn is not None and expn.height > 0:
             txn_map = _transaction_id_map(ctx.session, ctx.state_id, "EXPENDITURE")
@@ -621,9 +723,7 @@ class FlatTxnsDetailWorker:
             proj = _attach_party_entity(proj, entity_map)
             proj = _attach_committee_entity(proj, entity_map)
             counts["expenditures"] = self._write_expenditures(proj, ctx)
-            counts["txn_persons_expn"] = self._write_txn_persons(
-                proj, ctx, role="PAYEE"
-            )
+            counts["txn_persons_expn"] = self._write_txn_persons(proj, ctx, role="PAYEE")
 
         # Retrofit dim-layer FKs (person.address_id, entity.person_id,
         # entity.address_id) that flat_txns_dims left unset — verified under
@@ -661,15 +761,19 @@ class FlatTxnsDetailWorker:
             )
             per_row_parts.append(
                 _person_addr_keys(
-                    r, org_col="contributorNameOrganization",
-                    first_col="contributorNameFirst", last_col="contributorNameLast",
+                    r,
+                    org_col="contributorNameOrganization",
+                    first_col="contributorNameFirst",
+                    last_col="contributorNameLast",
                     suffix_col="contributorNameSuffixCd",
                     # omit-null-resolved street (set in run()) so the address-key here
                     # resolves to the enriched person + the inherited (FILER) address id.
-                    s1_col="contributorStreetAddr1", city_col="contributorStreetCity",
+                    s1_col="contributorStreetAddr1",
+                    city_col="contributorStreetCity",
                     state_col="contributorStreetStateCd",
                     zip_col="contributorStreetPostalCode",
-                    id_col="contributionInfoId", sort_offset=0,
+                    id_col="contributionInfoId",
+                    sort_offset=0,
                 )
             )
         if expn is not None and expn.height > 0:
@@ -678,13 +782,17 @@ class FlatTxnsDetailWorker:
             )
             per_row_parts.append(
                 _person_addr_keys(
-                    e, org_col="payeeNameOrganization",
-                    first_col="payeeNameFirst", last_col="payeeNameLast",
+                    e,
+                    org_col="payeeNameOrganization",
+                    first_col="payeeNameFirst",
+                    last_col="payeeNameLast",
                     suffix_col="payeeNameSuffixCd",
-                    s1_col="payeeStreetAddr1", city_col="payeeStreetCity",
+                    s1_col="payeeStreetAddr1",
+                    city_col="payeeStreetCity",
                     state_col="payeeStreetStateCd",
                     zip_col="payeeStreetPostalCode",
-                    id_col="expendInfoId", sort_offset=_EXPN_SORT_OFFSET,
+                    id_col="expendInfoId",
+                    sort_offset=_EXPN_SORT_OFFSET,
                 )
             )
         if not per_row_parts:
@@ -701,8 +809,10 @@ class FlatTxnsDetailWorker:
             join_nulls=True,
         )
         first = first.join(
-            addr_map, on=["_ak_s1", "_ak_city", "_ak_state", "_ak_zip"],
-            how="left", join_nulls=True,
+            addr_map,
+            on=["_ak_s1", "_ak_city", "_ak_state", "_ak_zip"],
+            how="left",
+            join_nulls=True,
         )
 
         # 2. person.address_id update set (persons with a resolved address).
@@ -710,10 +820,9 @@ class FlatTxnsDetailWorker:
         #    deterministically, by finalize_entity_representatives after all families run
         #    (a person can map to >1 entity via suffix-variant normalized names, so a
         #    per-family entity-rep assignment violates the one-to-one person_id unique).
-        person_addr = (
-            first.filter(pl.col("_pid").is_not_null() & pl.col("_aid").is_not_null())
-            .select(pl.col("_pid").alias("pid"), pl.col("_aid").alias("aid"))
-        )
+        person_addr = first.filter(
+            pl.col("_pid").is_not_null() & pl.col("_aid").is_not_null()
+        ).select(pl.col("_pid").alias("pid"), pl.col("_aid").alias("aid"))
         self._apply_person_address(ctx.session, person_addr)
 
     @staticmethod
@@ -824,9 +933,7 @@ class FlatTxnsDetailWorker:
                 pl.lit(None, dtype=pl.Utf8).alias("notes"),
             )
         )
-        return common.write_frame(
-            ctx.session, UnifiedTransactionPerson, rows, conflict_cols=None
-        )
+        return common.write_frame(ctx.session, UnifiedTransactionPerson, rows, conflict_cols=None)
 
 
 register(FlatTxnsDetailWorker())

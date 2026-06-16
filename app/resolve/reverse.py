@@ -66,7 +66,7 @@ def _get_run_raw(session: Session, run_id: int) -> dict | None:
     Pydantic validation error.
     """
     row = session.execute(
-        text("SELECT id, state_code, pass_type, status " "FROM match_run WHERE id = :run_id"),
+        text("SELECT id, state_code, pass_type, status FROM match_run WHERE id = :run_id"),
         {"run_id": run_id},
     ).first()
     if row is None:
@@ -165,7 +165,7 @@ def can_unmerge(session: Session, run_id: int) -> tuple[bool, str]:
         return False, f"run_id={run_id} is already reverted"
     if status != _COMPLETED:
         return False, (
-            f"run_id={run_id} has status={status!r}; " "only completed runs can be unmerged"
+            f"run_id={run_id} has status={status!r}; only completed runs can be unmerged"
         )
 
     latest_id = _latest_completed_run_id(

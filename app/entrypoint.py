@@ -207,8 +207,7 @@ def run_load(
 
     if _shutdown.requested:
         console.print(
-            "[yellow]Shutdown requested; finished current file batch.[/yellow] "
-            f"{results}"
+            f"[yellow]Shutdown requested; finished current file batch.[/yellow] {results}"
         )
         return 0
 

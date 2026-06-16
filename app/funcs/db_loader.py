@@ -50,9 +50,9 @@ class DBLoader:
         self.logger.info("Creating all tables")
         SQLModel.metadata.create_all(self.engine)
 
-    def remove_existing_records(self,
-                                records: List[SQLModel] | Iterator[SQLModel],
-                                validator: Type[SQLModel]) -> Iterator[SQLModel]:
+    def remove_existing_records(
+        self, records: List[SQLModel] | Iterator[SQLModel], validator: Type[SQLModel]
+    ) -> Iterator[SQLModel]:
         """
         Check for existing data in the database.
         :param session:
@@ -62,7 +62,9 @@ class DBLoader:
         """
         with Session(self.engine) as session:
             self.logger.info("Checking for existing data in the database")
-            _existing_records = set(record.id for record in session.exec(select(validator.id)).all())
+            _existing_records = set(
+                record.id for record in session.exec(select(validator.id)).all()
+            )
             self.logger.info(f"Found {len(_existing_records):,} existing records in the database")
             remaining_records = (x for x in records if x.id not in _existing_records)
         return iter(remaining_records)
@@ -82,7 +84,9 @@ class DBLoader:
         except StopIteration:
             self.logger.info("No records in iterator.")
 
-    def add_with_limits(self, records: Generator[SQLModel, None, None], limit: int, session: Session) -> None:
+    def add_with_limits(
+        self, records: Generator[SQLModel, None, None], limit: int, session: Session
+    ) -> None:
         """
         Add all records with a limit.
         :param session:

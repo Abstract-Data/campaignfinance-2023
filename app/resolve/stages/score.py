@@ -375,9 +375,7 @@ def _create_scored_indexes(session: Session) -> None:
 # Postgres shutdown the table is truncated — acceptable, and consistent with the
 # UNLOGGED candidate_pairs_stage the blocking stage already uses.
 _SET_UNLOGGED_SQL = text("ALTER TABLE scored_pairs SET UNLOGGED")
-_RELPERSISTENCE_SQL = text(
-    "SELECT relpersistence FROM pg_class WHERE relname = 'scored_pairs'"
-)
+_RELPERSISTENCE_SQL = text("SELECT relpersistence FROM pg_class WHERE relname = 'scored_pairs'")
 
 
 def _ensure_scored_unlogged(session: Session) -> None:
@@ -856,10 +854,7 @@ def _score_entity_type_streaming(
         rel = con.sql(_JOIN_SCORES_SQL)
         idx = {name: i for i, name in enumerate(rel.columns)}
         meta_cols = [
-            c
-            for col in comp_meta
-            for c in (f"gamma_{col}", f"bf_tf_adj_{col}")
-            if c in idx
+            c for col in comp_meta for c in (f"gamma_{col}", f"bf_tf_adj_{col}") if c in idx
         ]
         i_prob = idx["match_probability"]
         i_at, i_ai = idx["a_type"], idx["a_id"]
@@ -992,9 +987,7 @@ def run_score_stage(session: Session, run_id: int, config: dict) -> dict:
     # Entity types present for this run (drives per-type partitioning).
     entity_types = list(
         session.exec(
-            select(ResolutionInput.entity_type)
-            .where(ResolutionInput.run_id == run_id)
-            .distinct()
+            select(ResolutionInput.entity_type).where(ResolutionInput.run_id == run_id).distinct()
         ).all()
     )
 
@@ -1021,9 +1014,7 @@ def run_score_stage(session: Session, run_id: int, config: dict) -> dict:
             if cfg is None:
                 total_pairs += _score_unconfigured_type(session, run_id, entity_type)
             else:
-                total_pairs += _score_entity_type_streaming(
-                    session, run_id, entity_type, cfg, seed
-                )
+                total_pairs += _score_entity_type_streaming(session, run_id, entity_type, cfg, seed)
     finally:
         if swap_indexes:
             _create_scored_indexes(session)

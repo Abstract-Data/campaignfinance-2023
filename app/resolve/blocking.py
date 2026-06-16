@@ -232,9 +232,7 @@ def resolve_blocking_backend(session, config: dict) -> str:
     if configured is not None:
         backend = str(configured).strip().lower()
         if backend not in {"python", "sql"}:
-            raise ValueError(
-                f"blocking_backend must be 'python' or 'sql', got {configured!r}"
-            )
+            raise ValueError(f"blocking_backend must be 'python' or 'sql', got {configured!r}")
         return backend
 
     bind = session.get_bind()

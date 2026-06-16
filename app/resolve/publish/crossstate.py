@@ -66,9 +66,7 @@ def entities_for_master(
     if not ids:
         return []
 
-    return list(
-        session.exec(select(CanonicalEntity).where(CanonicalEntity.id.in_(ids))).all()
-    )
+    return list(session.exec(select(CanonicalEntity).where(CanonicalEntity.id.in_(ids))).all())
 
 
 def link_to_master(
@@ -104,7 +102,5 @@ def link_to_master(
 def _fetch_entity(session: Session, canonical_entity_id: int) -> CanonicalEntity:
     entity = session.get(CanonicalEntity, canonical_entity_id)
     if entity is None:
-        raise ValueError(
-            f"canonical entity with id {canonical_entity_id} does not exist"
-        )
+        raise ValueError(f"canonical entity with id {canonical_entity_id} does not exist")
     return entity

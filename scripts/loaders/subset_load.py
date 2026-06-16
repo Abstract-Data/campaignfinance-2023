@@ -42,15 +42,15 @@ SOURCE_CAPS: dict[str, int | None] = {
     # loader rejects any row whose committee is absent.  The filers file holds
     # ~20.7k committees but a single transaction file references ~17k distinct ones,
     # so capping FILER (was 8000) dropped ~12k transactions to FK-violation rejects.
-    "FILER": None,   # committees + officer committee_persons — all of them
-    "CVR1": 80000,   # reports — fuller so transactions can link
+    "FILER": None,  # committees + officer committee_persons — all of them
+    "CVR1": 80000,  # reports — fuller so transactions can link
     "FINL": 8000,
     "CVR2": 5000,
     "CVR3": 5000,
     "SPAC": 5000,
     "EXCAT": None,
 }
-TXN_CAP = 4000          # rows per transaction file
+TXN_CAP = 4000  # rows per transaction file
 MAX_CONTRIBS_FILES = 2  # only the first N contribs_* files (each ~170k rows)
 
 
@@ -105,15 +105,21 @@ def main(
         for path, rtype, cap in plan:
             try:
                 n, rej, cache = _load_file(
-                    path, rtype, config,
-                    state=state, state_id=state_row.id, state_code=state_row.code,
-                    session=session, cache=cache, max_remaining=cap,
+                    path,
+                    rtype,
+                    config,
+                    state=state,
+                    state_id=state_row.id,
+                    state_code=state_row.code,
+                    session=session,
+                    cache=cache,
+                    max_remaining=cap,
                 )
                 loaded += n
                 rejected += rej
                 logger.info(
                     f"[subset] {path.name} (+{n}, rej {rej}) total={loaded} "
-                    f"elapsed={time.time()-t0:.0f}s"
+                    f"elapsed={time.time() - t0:.0f}s"
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.error(f"[subset] ERROR {path.name}: {exc}")
@@ -125,7 +131,7 @@ def main(
         session.close()
     logger.info(
         f"[subset] done: loaded={loaded} rejected={rejected} "
-        f"failed_files={len(failed_files)} in {time.time()-t0:.0f}s"
+        f"failed_files={len(failed_files)} in {time.time() - t0:.0f}s"
     )
     if failed_files:
         for name, err in failed_files:

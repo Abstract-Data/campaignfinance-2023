@@ -122,9 +122,7 @@ def test_match_score_is_nullable_on_all_crosswalks(engine):
     for table_name in ("entity_crosswalk", "address_crosswalk", "campaign_crosswalk"):
         cols = {c["name"]: c for c in inspector.get_columns(table_name)}
         assert "match_score" in cols, f"match_score missing from {table_name}"
-        assert cols["match_score"]["nullable"], (
-            f"match_score on {table_name} must be nullable"
-        )
+        assert cols["match_score"]["nullable"], f"match_score on {table_name} must be nullable"
 
 
 def test_crosswalk_unique_constraint_on_source_and_run():
@@ -132,16 +130,12 @@ def test_crosswalk_unique_constraint_on_source_and_run():
     expected_cols = frozenset({"source_type", "source_id", "run_id"})
     for table_name in ("entity_crosswalk", "address_crosswalk", "campaign_crosswalk"):
         table = SQLModel.metadata.tables[table_name]
-        unique_constraints = [
-            c for c in table.constraints if isinstance(c, UniqueConstraint)
-        ]
+        unique_constraints = [c for c in table.constraints if isinstance(c, UniqueConstraint)]
         found = any(
-            frozenset(col.name for col in uc.columns) == expected_cols
-            for uc in unique_constraints
+            frozenset(col.name for col in uc.columns) == expected_cols for uc in unique_constraints
         )
         assert found, (
-            f"{table_name} must have a UniqueConstraint on "
-            "(source_type, source_id, run_id)"
+            f"{table_name} must have a UniqueConstraint on (source_type, source_id, run_id)"
         )
 
 

@@ -2,9 +2,10 @@
 Trace what actually ends up in the DB after saving one transaction.
 Uses a TEST transaction_id prefix so we can find and clean it up.
 """
+
 import sys
 
-sys.path.insert(0, '/Users/johneakin/PyCharmProjects/campaignfinance')
+sys.path.insert(0, "/Users/johneakin/PyCharmProjects/campaignfinance")
 
 from pathlib import Path
 
@@ -16,7 +17,9 @@ from app.core.processor import unified_sql_processor  # noqa: F401 (side-effect 
 from app.core.unified_database import get_db_manager
 
 # Get a real contribution record
-contribs_file = Path('/Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas/contribs_05_20260524.parquet')
+contribs_file = Path(
+    "/Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas/contribs_05_20260524.parquet"
+)
 df = pl.scan_parquet(contribs_file).limit(1).collect()
 raw_record = df.to_dicts()[0]
 
@@ -48,6 +51,7 @@ with db.get_session() as session:
 
     # Step 2: simulate what _persist_transaction_from_record does with the committee
     from app.core.models.tables import UnifiedCommittee
+
     if txn.committee:
         filer_id = txn.committee.filer_id
         existing = session.get(UnifiedCommittee, filer_id)

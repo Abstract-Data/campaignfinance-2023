@@ -61,25 +61,47 @@ _logger = Logger(__name__)
 # ---------------------------------------------------------------------------
 
 _CAND_COLS = (
-    "recordType", "formTypeCd", "schedFormTypeCd", "reportInfoIdent",
-    "receivedDt", "infoOnlyFlag", "filerIdent", "filerTypeCd", "filerName",
-    "expendInfoId", "expendDt", "expendAmount", "expendDescr",
-    "expendCatCd", "expendCatDescr", "itemizeFlag",
-    "candidatePersentTypeCd", "candidateNameOrganization",
-    "candidateNameLast", "candidateNameSuffixCd", "candidateNameFirst",
-    "candidateNamePrefixCd", "candidateNameShort",
+    "recordType",
+    "formTypeCd",
+    "schedFormTypeCd",
+    "reportInfoIdent",
+    "receivedDt",
+    "infoOnlyFlag",
+    "filerIdent",
+    "filerTypeCd",
+    "filerName",
+    "expendInfoId",
+    "expendDt",
+    "expendAmount",
+    "expendDescr",
+    "expendCatCd",
+    "expendCatDescr",
+    "itemizeFlag",
+    "candidatePersentTypeCd",
+    "candidateNameOrganization",
+    "candidateNameLast",
+    "candidateNameSuffixCd",
+    "candidateNameFirst",
+    "candidateNamePrefixCd",
+    "candidateNameShort",
 )
 
 # Placeholder last names that force PersonType.UNKNOWN (mirrors build_person /
 # constants.PLACEHOLDER_NAMES, applied case-insensitively on the stripped last name).
-_PLACEHOLDER_NAMES_UPPER = frozenset({
-    "NON-ITEMIZED CONTRIBUTOR", "NON-ITEMIZED", "UNKNOWN", "ANONYMOUS",
-})
+_PLACEHOLDER_NAMES_UPPER = frozenset(
+    {
+        "NON-ITEMIZED CONTRIBUTOR",
+        "NON-ITEMIZED",
+        "UNKNOWN",
+        "ANONYMOUS",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
 # Frame IO helpers
 # ---------------------------------------------------------------------------
+
 
 def _read(files: list[Path]) -> pl.DataFrame | None:
     frames = [pl.read_parquet(p) for p in files]
@@ -109,6 +131,7 @@ def _norm_name_expr_from(name_expr: pl.Expr) -> pl.Expr:
 # ---------------------------------------------------------------------------
 # Person type / key expressions (mirror builders.build_person).
 # ---------------------------------------------------------------------------
+
 
 def _person_type_expr(last_col: str, first_col: str, org_col: str) -> pl.Expr:
     """Mirror ORM build_person person_type priority order:
@@ -146,8 +169,11 @@ def _project_candidates(df: pl.DataFrame) -> pl.DataFrame:
     suffix = _cs("candidateNameSuffixCd")
     # middle is person_middle_name in the ORM -> absent on CAND rows -> None.
     full_name = common.full_name_expr(
-        "candidateNameFirst", "person_middle_name", "candidateNameLast",
-        "candidateNameSuffixCd", "candidateNameOrganization",
+        "candidateNameFirst",
+        "person_middle_name",
+        "candidateNameLast",
+        "candidateNameSuffixCd",
+        "candidateNameOrganization",
     )
     org_low = org.str.to_lowercase()
     # Person find-or-create key (mirrors _find_person_by_name_state):
@@ -160,48 +186,53 @@ def _project_candidates(df: pl.DataFrame) -> pl.DataFrame:
     ent_type = pl.when(org.is_not_null()).then(pl.lit("ORGANIZATION")).otherwise(pl.lit("PERSON"))
     ent_name = pl.when(org.is_not_null()).then(org).otherwise(full_name)
 
-    return df.with_columns(
-        pl.lit(None, dtype=pl.Utf8).alias("person_middle_name"),
-    ).with_row_index("_cand_row").with_columns(
-        # expenditure natural key
-        pl.col("expendInfoId").cast(pl.Utf8).alias("_expend_id"),
-        # candidate person identity (stored values, ORM build_person)
-        first.alias("first_name"),
-        last.alias("last_name"),
-        pl.lit(None, dtype=pl.Utf8).alias("middle_name"),
-        suffix.alias("suffix"),
-        org.alias("organization"),
-        _person_type_expr(
-            "candidateNameLast", "candidateNameFirst", "candidateNameOrganization"
-        ).alias("person_type"),
-        full_name.str.len_chars().alias("_full_len"),
-        # find-or-create person key. Candidate records carry no address columns, so the
-        # address dimension of the key is always NULL (candidate persons get NULL
-        # dedup_addr_key, matching the ORM build_person(CANDIDATE) -> no address).
-        pk_org.alias("_pk_org"),
-        pk_fn.alias("_pk_fn"),
-        pk_ln.alias("_pk_ln"),
-        pl.lit(None, dtype=pl.Utf8).alias("_pk_addr"),
-        # entity key
-        ent_type.alias("_ent_type"),
-        _norm_name_expr_from(ent_name).alias("_ent_norm"),
-        # full-identity key (resolves person id even for non-dedupable names).
-        # _fk_addr is NULL (candidates carry no address) so the candidate resolves to
-        # the NULL-addr person of that name, not a same-name address-bearing person.
-        first.str.to_lowercase().alias("_fk_fn"),
-        last.str.to_lowercase().alias("_fk_ln"),
-        org_low.alias("_fk_org"),
-        suffix.str.to_lowercase().alias("_fk_sfx"),
-        _person_type_expr(
-            "candidateNameLast", "candidateNameFirst", "candidateNameOrganization"
-        ).alias("_fk_type"),
-        pl.lit(None, dtype=pl.Utf8).alias("_fk_addr"),
+    return (
+        df.with_columns(
+            pl.lit(None, dtype=pl.Utf8).alias("person_middle_name"),
+        )
+        .with_row_index("_cand_row")
+        .with_columns(
+            # expenditure natural key
+            pl.col("expendInfoId").cast(pl.Utf8).alias("_expend_id"),
+            # candidate person identity (stored values, ORM build_person)
+            first.alias("first_name"),
+            last.alias("last_name"),
+            pl.lit(None, dtype=pl.Utf8).alias("middle_name"),
+            suffix.alias("suffix"),
+            org.alias("organization"),
+            _person_type_expr(
+                "candidateNameLast", "candidateNameFirst", "candidateNameOrganization"
+            ).alias("person_type"),
+            full_name.str.len_chars().alias("_full_len"),
+            # find-or-create person key. Candidate records carry no address columns, so the
+            # address dimension of the key is always NULL (candidate persons get NULL
+            # dedup_addr_key, matching the ORM build_person(CANDIDATE) -> no address).
+            pk_org.alias("_pk_org"),
+            pk_fn.alias("_pk_fn"),
+            pk_ln.alias("_pk_ln"),
+            pl.lit(None, dtype=pl.Utf8).alias("_pk_addr"),
+            # entity key
+            ent_type.alias("_ent_type"),
+            _norm_name_expr_from(ent_name).alias("_ent_norm"),
+            # full-identity key (resolves person id even for non-dedupable names).
+            # _fk_addr is NULL (candidates carry no address) so the candidate resolves to
+            # the NULL-addr person of that name, not a same-name address-bearing person.
+            first.str.to_lowercase().alias("_fk_fn"),
+            last.str.to_lowercase().alias("_fk_ln"),
+            org_low.alias("_fk_org"),
+            suffix.str.to_lowercase().alias("_fk_sfx"),
+            _person_type_expr(
+                "candidateNameLast", "candidateNameFirst", "candidateNameOrganization"
+            ).alias("_fk_type"),
+            pl.lit(None, dtype=pl.Utf8).alias("_fk_addr"),
+        )
     )
 
 
 # ---------------------------------------------------------------------------
 # Id-maps read back from the already-written tables (parameterized core select).
 # ---------------------------------------------------------------------------
+
 
 def _person_id_map(session, state_id: int) -> pl.DataFrame:
     """Read persons keyed by the ORM find-or-create key (id-map for junction linkage).
@@ -237,10 +268,14 @@ def _person_id_map(session, state_id: int) -> pl.DataFrame:
         # Org-persons key on org alone (addr NULL); individuals carry dedup_addr_key.
         pk_addr.append(None if org is not None else r[4])
     return pl.DataFrame(
-        {"_pid": pid, "_pk_org": pk_org, "_pk_fn": pk_fn, "_pk_ln": pk_ln,
-         "_pk_addr": pk_addr},
-        schema={"_pid": pl.Int64, "_pk_org": pl.Utf8, "_pk_fn": pl.Utf8,
-                "_pk_ln": pl.Utf8, "_pk_addr": pl.Utf8},
+        {"_pid": pid, "_pk_org": pk_org, "_pk_fn": pk_fn, "_pk_ln": pk_ln, "_pk_addr": pk_addr},
+        schema={
+            "_pid": pl.Int64,
+            "_pk_org": pl.Utf8,
+            "_pk_fn": pl.Utf8,
+            "_pk_ln": pl.Utf8,
+            "_pk_addr": pl.Utf8,
+        },
     )
 
 
@@ -284,15 +319,20 @@ def _person_full_id_map(session, state_id: int) -> pl.DataFrame:
             "_fk_addr": [r[6] for r in rows],
         },
         schema={
-            "_pid": pl.Int64, "_fk_fn": pl.Utf8, "_fk_ln": pl.Utf8, "_fk_org": pl.Utf8,
-            "_fk_sfx": pl.Utf8, "_fk_type": pl.Utf8, "_fk_addr": pl.Utf8,
+            "_pid": pl.Int64,
+            "_fk_fn": pl.Utf8,
+            "_fk_ln": pl.Utf8,
+            "_fk_org": pl.Utf8,
+            "_fk_sfx": pl.Utf8,
+            "_fk_type": pl.Utf8,
+            "_fk_addr": pl.Utf8,
         },
     )
     # One representative id per full-identity key (structurally identical persons
     # resolve identically under resolve_fks, so the smallest id is a stable pick).
-    return df.group_by(
-        ["_fk_fn", "_fk_ln", "_fk_org", "_fk_sfx", "_fk_type", "_fk_addr"]
-    ).agg(pl.col("_pid").min().alias("_pid"))
+    return df.group_by(["_fk_fn", "_fk_ln", "_fk_org", "_fk_sfx", "_fk_type", "_fk_addr"]).agg(
+        pl.col("_pid").min().alias("_pid")
+    )
 
 
 def _entity_id_map(session, state_id: int) -> pl.DataFrame:
@@ -342,6 +382,7 @@ def _expenditure_id_map(session, state_id: int) -> pl.DataFrame:
 # Worker
 # ---------------------------------------------------------------------------
 
+
 class CandWorker:
     """CAND enrichment: candidate <-> expenditure linkage (no new transactions)."""
 
@@ -366,9 +407,8 @@ class CandWorker:
         # restricting person/entity/junction creation to CAND rows whose expenditure
         # is present.
         expend_map = _expenditure_id_map(ctx.session, ctx.state_id)
-        cand_rows = (
-            proj.join(expend_map, on="_expend_id", how="left")
-            .filter(pl.col("_txn_id").is_not_null())
+        cand_rows = proj.join(expend_map, on="_expend_id", how="left").filter(
+            pl.col("_txn_id").is_not_null()
         )
 
         counts: dict[str, int] = {}
@@ -420,7 +460,8 @@ class CandWorker:
             cand_rows.filter(dedupable)
             .sort("_cand_row")
             .unique(
-                subset=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"], keep="first",
+                subset=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
+                keep="first",
                 maintain_order=True,
             )
         )
@@ -483,11 +524,13 @@ class CandWorker:
         ).filter(pl.col("_exists").is_null())
 
         # Entity name: the stored display name (org else full_name) of the rep row.
-        name_expr = pl.when(pl.col("organization").is_not_null()).then(
-            pl.col("organization")
-        ).otherwise(
-            common.full_name_expr(
-                "first_name", "middle_name", "last_name", "suffix", "organization"
+        name_expr = (
+            pl.when(pl.col("organization").is_not_null())
+            .then(pl.col("organization"))
+            .otherwise(
+                common.full_name_expr(
+                    "first_name", "middle_name", "last_name", "suffix", "organization"
+                )
             )
         )
         rows = new.with_columns(name_expr.alias("name")).select(
@@ -539,9 +582,7 @@ class CandWorker:
                 pl.lit(None, dtype=pl.Utf8).alias("notes"),
             )
         )
-        return common.write_frame(
-            ctx.session, UnifiedTransactionPerson, rows, conflict_cols=None
-        )
+        return common.write_frame(ctx.session, UnifiedTransactionPerson, rows, conflict_cols=None)
 
 
 register(CandWorker())

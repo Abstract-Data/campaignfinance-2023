@@ -1,4 +1,5 @@
 """Pure-unit tests for diff_snapshots (no DB) — the equality contract of the gate."""
+
 from __future__ import annotations
 
 from app.core.ingest_equivalence import diff_snapshots

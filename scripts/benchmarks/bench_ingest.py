@@ -78,7 +78,9 @@ def _fresh_database(pg_base: str, db_name: str):
         pg = raw.driver_connection
         pg.autocommit = True
         cur = pg.cursor()
-        cur.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(db_name)))
+        cur.execute(
+            sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(db_name))
+        )
         cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name)))
         cur.close()
     finally:

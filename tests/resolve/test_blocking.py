@@ -283,9 +283,7 @@ def test_run_blocking_stage_persists_pairs_and_returns_count():
         session.commit()
 
         result = run_blocking_stage(session, run_id=15, config={})
-        stored = session.exec(
-            select(CandidatePair).where(CandidatePair.run_id == 15)
-        ).all()
+        stored = session.exec(select(CandidatePair).where(CandidatePair.run_id == 15)).all()
 
         assert result == {"pairs_compared": 1}
         assert len(stored) == 1
@@ -365,9 +363,7 @@ def test_run_blocking_stage_caps_pairs_per_run(caplog):
             run_id=17,
             config={"max_pairs_per_run": 2},
         )
-        stored = session.exec(
-            select(CandidatePair).where(CandidatePair.run_id == 17)
-        ).all()
+        stored = session.exec(select(CandidatePair).where(CandidatePair.run_id == 17)).all()
 
         assert result == {"pairs_compared": 2}
         assert len(stored) == 2
@@ -375,18 +371,18 @@ def test_run_blocking_stage_caps_pairs_per_run(caplog):
 
 
 def test_zip3_blocking_key_lowercases_mixed_case_zip5():
-  rule = default_blocking_rules()[0]
-  row = ResolutionInput(
-      run_id=1,
-      source_type="unified_person",
-      source_id="p1",
-      entity_type="person",
-      raw_name="n",
-      raw_address="a",
-      last_name_phonetic="SM0",
-      zip5="78A01",
-  )
-  assert rule.key_for(row) == "sm0|78a"
+    rule = default_blocking_rules()[0]
+    row = ResolutionInput(
+        run_id=1,
+        source_type="unified_person",
+        source_id="p1",
+        entity_type="person",
+        raw_name="n",
+        raw_address="a",
+        last_name_phonetic="SM0",
+        zip5="78A01",
+    )
+    assert rule.key_for(row) == "sm0|78a"
 
 
 def test_sql_backend_rejects_custom_blocking_rules():
@@ -394,9 +390,5 @@ def test_sql_backend_rejects_custom_blocking_rules():
         run_blocking_stage_sql(
             Session(),
             run_id=1,
-            config={
-                "blocking_rules": [
-                    {"name": "custom_rule", "fields": ["last_name_phonetic"]}
-                ]
-            },
+            config={"blocking_rules": [{"name": "custom_rule", "fields": ["last_name_phonetic"]}]},
         )

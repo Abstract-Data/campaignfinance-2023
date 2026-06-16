@@ -40,9 +40,7 @@ class DebtData(TECSettings, table=True):
     filerName: str = Field(..., max_length=200, description="Filer name")
 
     # ── Loan record ───────────────────────────────────────────────────────
-    loanInfoId: int = Field(
-        ..., description="Loan unique identifier", primary_key=True
-    )
+    loanInfoId: int = Field(..., description="Loan unique identifier", primary_key=True)
     # Optional because rows may omit the guarantee flag
     loanGuaranteedFlag: Optional[bool] = Field(
         default=None, description="Loan guaranteed indicator"

@@ -67,9 +67,7 @@ def build_canonical_addresses(session: Session, run_id: int | None = None) -> in
     ``address_crosswalk`` row per source address (cleared for that run first).
     """
     rows = session.execute(
-        text(
-            "SELECT id, street_1, street_2, city, state, zip_code FROM unified_addresses"
-        )
+        text("SELECT id, street_1, street_2, city, state, zip_code FROM unified_addresses")
     ).fetchall()
 
     by_key: dict[_AddrKey, CanonicalAddress] = {}
@@ -108,9 +106,7 @@ def build_canonical_addresses(session: Session, run_id: int | None = None) -> in
 
     # Idempotent rebuild of the canonical layer.
     if run_id is not None:
-        session.execute(
-            text("DELETE FROM address_crosswalk WHERE run_id = :rid"), {"rid": run_id}
-        )
+        session.execute(text("DELETE FROM address_crosswalk WHERE run_id = :rid"), {"rid": run_id})
     # canonical_address is a single global table (no state_code column) and this
     # builder reads *all* unified_addresses above, so the unscoped DELETE is a
     # full rebuild — every prior canonical row is re-derived from source, not lost.

@@ -44,8 +44,11 @@ def create_database_if_absent() -> None:
     interpolated SQL string.
     """
     conn = psycopg2.connect(
-        host=PGHOST, port=PGPORT, user=PGUSER,
-        password=PGPASSWORD or None, dbname="postgres",
+        host=PGHOST,
+        port=PGPORT,
+        user=PGUSER,
+        password=PGPASSWORD or None,
+        dbname="postgres",
     )
     try:
         conn.autocommit = True

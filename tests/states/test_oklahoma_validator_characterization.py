@@ -246,11 +246,7 @@ class TestFourLevelSplit:
 # ---------------------------------------------------------------------------
 
 
-@given(
-    amount=st.floats(
-        min_value=0.0, max_value=500_000.0, allow_nan=False, allow_infinity=False
-    )
-)
+@given(amount=st.floats(min_value=0.0, max_value=500_000.0, allow_nan=False, allow_infinity=False))
 @settings(max_examples=30)
 def test_expenditure_amount_round_trip(amount: float) -> None:
     """Any non-negative float parses without error."""

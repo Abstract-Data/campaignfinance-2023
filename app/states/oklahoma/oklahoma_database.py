@@ -15,9 +15,9 @@ def create_connection():
     from snowflake.snowpark import Session
 
     return Session.builder.configs(
-        OnePasswordItem.create_sync(name='snowflake_counterpoint').database_params
+        OnePasswordItem.create_sync(name="snowflake_counterpoint").database_params
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     oklahoma_snowpark_session = create_connection()

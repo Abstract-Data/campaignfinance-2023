@@ -15,12 +15,9 @@ def validate_dates(cls, values):
                     values[key] = datetime.strptime(value, "%Y%m%d").date()
                 except ValueError:
                     raise PydanticCustomError(
-                        'bad_date_format',
+                        "bad_date_format",
                         f"{value} must be in YYYYMMDD format",
-                        {
-                            'column': key,
-                            'value': value
-                        }
+                        {"column": key, "value": value},
                     )
     return values
 
@@ -28,7 +25,9 @@ def validate_dates(cls, values):
 def address_formatting(cls, values):
     original_address = None
     formatted_address = None
-    _field_addresses = [_field.split('Addr')[0] for _field in values.keys() if _field.endswith('Addr1')]
+    _field_addresses = [
+        _field.split("Addr")[0] for _field in values.keys() if _field.endswith("Addr1")
+    ]
     for address in _field_addresses:
         addr1 = f"{address}Addr1"
         addr2 = f"{address}Addr2"
