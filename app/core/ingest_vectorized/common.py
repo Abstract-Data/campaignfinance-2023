@@ -186,6 +186,144 @@ def person_addr_key_expr(
     return pl.when(populated >= 2).then(joined).otherwise(None)
 
 
+# Standard address column names a frame must carry for ``resolve_partial_address``.
+_ADDR_COLS: tuple[str, ...] = (
+    "street_1", "street_2", "city", "state", "zip_code", "country", "county",
+)
+
+
+def full_address_lookup(engine: Any) -> pl.DataFrame:
+    """Build the ``(lower city, lower state, zip) -> first-created existing address`` lookup
+    that ``resolve_partial_address`` matches partial addresses against.
+
+    One row per (city, state, zip) that has all three populated; among addresses sharing it,
+    the LOWEST id wins — mirroring the ORM's first-created ``.first()`` (the FILER committee
+    address, loaded at priority 0, is created before any contributor, so it wins where it
+    exists). The winning row may itself be street-less; ``resolve_partial_address`` only
+    enriches when it carries a street. Columns: ``_lk_city``/``_lk_state``/``_lk_zip`` plus
+    ``a_<field>`` for each of ``_ADDR_COLS`` (the matched row's full field set).
+    """
+    from sqlalchemy import MetaData, Table, select
+
+    tbl = Table("unified_addresses", MetaData(), autoload_with=engine)
+    sel = select(
+        tbl.c.id, tbl.c.street_1, tbl.c.street_2, tbl.c.city, tbl.c.state,
+        tbl.c.zip_code, tbl.c.country, tbl.c.county,
+    )
+    with engine.connect() as conn:
+        rows = [dict(m) for m in conn.execute(sel).mappings().all()]
+    if not rows:
+        return pl.DataFrame()
+    df = pl.DataFrame(
+        {
+            "id": [r["id"] for r in rows],
+            **{f"a_{c}": [r[c] for r in rows] for c in _ADDR_COLS},
+        },
+        schema={"id": pl.Int64, **{f"a_{c}": pl.Utf8 for c in _ADDR_COLS}},
+    )
+    return (
+        df.filter(
+            pl.col("a_city").is_not_null()
+            & pl.col("a_state").is_not_null()
+            & pl.col("a_zip_code").is_not_null()
+        )
+        .with_columns(
+            pl.col("a_city").str.to_lowercase().alias("_lk_city"),
+            pl.col("a_state").str.to_lowercase().alias("_lk_state"),
+            pl.col("a_zip_code").alias("_lk_zip"),
+        )
+        .sort("id")
+        .unique(subset=["_lk_city", "_lk_state", "_lk_zip"], keep="first", maintain_order=True)
+        .drop("id")
+    )
+
+
+def add_resolved_street(
+    df: pl.DataFrame,
+    lookup: pl.DataFrame,
+    *,
+    city_col: str,
+    state_col: str,
+    zip_col: str,
+    out_col: str,
+    own_s1_col: str | None = None,
+) -> pl.DataFrame:
+    """Add *out_col* = this row's street, inheriting one from an existing fuller address sharing
+    its (city, state, zip) when the row has none — the omit-null match of
+    ``builders._find_address_by_fields``.
+
+    A thin per-row wrapper over ``resolve_partial_address`` (so the rule is the one verified in
+    test_address_partial_match.py): builds a standard address frame from this row's city/state/zip
+    with its OWN street (``own_s1_col``, or null for the street-less RCPT contributors), resolves
+    it against *lookup* (``full_address_lookup`` output), and joins the resulting street back as
+    *out_col*. A row that already carries a street keeps it (``resolve_partial_address`` only
+    fills nulls); a street-less row inherits one when a street-bearing match exists, else stays
+    null. Every family calls this identically so the person dedup key stays consistent across the
+    dim layer and the junction layer.
+    """
+    own = clean_str(own_s1_col) if own_s1_col is not None else pl.lit(None, dtype=pl.Utf8)
+    if lookup.height == 0:
+        # No DB addresses to match: out_col is just the row's own street (with_columns
+        # overwrites in place when out_col already exists, e.g. EXPN's payeeStreetAddr1).
+        return df.with_columns(own.alias(out_col))
+    base = df.with_row_index("_ridx")
+    addr = base.select(
+        "_ridx",
+        own.alias("street_1"),
+        pl.lit(None, dtype=pl.Utf8).alias("street_2"),
+        clean_str(city_col).alias("city"),
+        upper_str(state_col).alias("state"),
+        clean_str(zip_col).alias("zip_code"),
+        pl.lit(None, dtype=pl.Utf8).alias("country"),
+        pl.lit(None, dtype=pl.Utf8).alias("county"),
+    )
+    resolved = resolve_partial_address(addr, lookup).select(
+        "_ridx", pl.col("street_1").alias(out_col)
+    )
+    # Drop any existing out_col (own-street source or a padded placeholder) so the join that
+    # brings in the resolved out_col cannot collide.
+    if out_col in base.columns:
+        base = base.drop(out_col)
+    return base.join(resolved, on="_ridx", how="left").drop("_ridx")
+
+
+def resolve_partial_address(df: pl.DataFrame, lookup: pl.DataFrame) -> pl.DataFrame:
+    """Resolve a PARTIAL (no-street) address to an existing fuller address — the vectorized
+    equivalent of the ORM's ``builders._find_address_by_fields`` omit-null-fields match.
+
+    The ORM matches an address by a dynamic WHERE over only its NON-NULL fields, so a
+    contributor row carrying just (city, state, zip) — no street — resolves to an EXISTING
+    full address sharing that (city, state, zip) and the person then inherits that address's
+    street (e.g. a Conroe/77304 contributor inherits a committee filer address '3115 Wilson
+    Rd.'). vec's plain 4-field equi-join can't do this, so the contributor stays street-less
+    and its ``dedup_addr_key`` diverges, splitting the person and starving the resolver.
+
+    For each row whose ``street_1`` is NULL but ``city``/``state``/``zip_code`` are populated,
+    this REPLACES the seven address columns with the matched lookup row's fields (so the row
+    becomes the full address, exactly as the ORM links to the existing object). Rows that
+    already carry a street, or whose (city, state, zip) has no full match, are unchanged.
+
+    *df* must carry the standard address columns (``_ADDR_COLS``). *lookup* is the output of
+    ``full_address_lookup`` (one fullest row per (lower city, lower state, zip), lowest-id won).
+    """
+    if df.height == 0 or lookup.height == 0:
+        return df
+    keyed = df.with_columns(
+        pl.col("city").cast(pl.Utf8).str.to_lowercase().alias("_lk_city"),
+        pl.col("state").cast(pl.Utf8).str.to_lowercase().alias("_lk_state"),
+        pl.col("zip_code").alias("_lk_zip"),
+    )
+    joined = keyed.join(lookup, on=["_lk_city", "_lk_state", "_lk_zip"], how="left")
+    # Replace only when this row has NO street of its own and a full match exists.
+    do = pl.col("street_1").is_null() & pl.col("a_street_1").is_not_null()
+    out = joined.with_columns(
+        [pl.when(do).then(pl.col(f"a_{c}")).otherwise(pl.col(c)).alias(c) for c in _ADDR_COLS]
+    )
+    return out.drop(
+        ["_lk_city", "_lk_state", "_lk_zip", *(f"a_{c}" for c in _ADDR_COLS)]
+    )
+
+
 def collapse_org_person_key(frame: pl.DataFrame) -> pl.DataFrame:
     """Null ``_pk_fn``/``_pk_ln``/``_pk_addr`` on rows where ``_pk_org`` is set, so an
     org-person is deduped/looked-up on ``lower(org)`` ALONE.

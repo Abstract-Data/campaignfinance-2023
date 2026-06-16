@@ -424,13 +424,14 @@ def _project_rcpt(df: pl.DataFrame) -> pl.DataFrame:
         first.str.to_lowercase().alias("_pk_fn"),
         last.str.to_lowercase().alias("_pk_ln"),
         org.str.to_lowercase().alias("_pk_org"),
-        # Address dimension of the individual key (RCPT has no street_1). NULL for
+        # Address dimension of the individual key — uses the omit-null-resolved street
+        # (contributorStreetAddr1) so it matches the enriched dim-layer person. NULL for
         # org participants so they match the org-collapsed person_map (addr NULL).
         pl.when(org.is_not_null())
         .then(None)
         .otherwise(
             common.person_addr_key_expr(
-                pl.lit(None, dtype=pl.Utf8),
+                "contributorStreetAddr1",
                 "contributorStreetCity",
                 common.upper_str("contributorStreetStateCd"),
                 "contributorStreetPostalCode",
@@ -572,10 +573,27 @@ class FlatTxnsDetailWorker:
     def run(self, files_by_type: dict[str, list[Path]], ctx: FamilyContext) -> dict[str, int]:
         rcpt = _read(files_by_type.get("RCPT", []))
         expn = _read(files_by_type.get("EXPN", []))
+        # Mirror flat_txns_dims: each street-less party inherits a fuller existing address's
+        # street (omit-null match) so the participant person key + address retrofit here
+        # resolve to the SAME enriched person the dim layer created. The lookup is built from
+        # the DB, where FILER addresses keep the lowest ids, so this picks the same street the
+        # dim layer did. RCPT adds contributorStreetAddr1; EXPN overwrites payeeStreetAddr1.
+        addr_lookup = common.full_address_lookup(ctx.engine)
         if rcpt is not None:
             rcpt = _ensure_cols(rcpt, _RCPT_COLS)
+            rcpt = common.add_resolved_street(
+                rcpt, addr_lookup,
+                city_col="contributorStreetCity", state_col="contributorStreetStateCd",
+                zip_col="contributorStreetPostalCode", out_col="contributorStreetAddr1",
+            )
         if expn is not None:
             expn = _ensure_cols(expn, _EXPN_COLS)
+            expn = common.add_resolved_street(
+                expn, addr_lookup,
+                city_col="payeeStreetCity", state_col="payeeStreetStateCd",
+                zip_col="payeeStreetPostalCode", out_col="payeeStreetAddr1",
+                own_s1_col="payeeStreetAddr1",
+            )
 
         # Id-maps from the already-populated dim + transaction tables.
         entity_map = _entity_id_map(ctx.session, ctx.state_id)
@@ -646,7 +664,9 @@ class FlatTxnsDetailWorker:
                     r, org_col="contributorNameOrganization",
                     first_col="contributorNameFirst", last_col="contributorNameLast",
                     suffix_col="contributorNameSuffixCd",
-                    s1_col=None, city_col="contributorStreetCity",
+                    # omit-null-resolved street (set in run()) so the address-key here
+                    # resolves to the enriched person + the inherited (FILER) address id.
+                    s1_col="contributorStreetAddr1", city_col="contributorStreetCity",
                     state_col="contributorStreetStateCd",
                     zip_col="contributorStreetPostalCode",
                     id_col="contributionInfoId", sort_offset=0,
