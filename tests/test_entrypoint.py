@@ -87,22 +87,49 @@ def test_scrape_failure_exit_code(
     assert result.exit_code == 1
 
 
-def test_load_uses_discover_and_load(
+def test_load_defaults_to_vectorized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The P5 flip: `cf load` uses the vectorized engine by default."""
+    fake_manager = MagicMock(database_url="postgresql://test/db")
+    import app.core.unified_database as udb
+    import app.entrypoint as ep
+
+    monkeypatch.setattr(udb, "get_db_manager", lambda **kwargs: fake_manager)
+    called: dict[str, bool] = {}
+
+    def _fake_vec(state, config, db_url, *, dry_run, should_stop):
+        called["vectorized"] = True
+        return {"discovered": 2, "loaded": 10, "families_run": 5}
+
+    monkeypatch.setattr(ep, "_run_vectorized_load", _fake_vec)
+
+    result = runner.invoke(app, ["load", "texas", "--dry-run"])
+    assert result.exit_code == 0
+    assert called.get("vectorized")
+    assert "Load complete" in result.stdout
+
+
+def test_load_engine_orm_uses_discover_and_load(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--engine orm` (or INGEST_ENGINE=orm) falls back to the ORM loader."""
     fake_manager = MagicMock(database_url="postgresql://test/db")
     import app.core.unified_database as udb
     import scripts.loaders.production_loader as pl
 
     monkeypatch.setattr(udb, "get_db_manager", lambda **kwargs: fake_manager)
-    monkeypatch.setattr(
-        pl,
-        "discover_and_load",
-        lambda *a, **k: {"discovered": 2, "loaded": 10, "skipped": 0},
-    )
+    called: dict[str, bool] = {}
 
-    result = runner.invoke(app, ["load", "texas", "--dry-run"])
+    def _fake_dal(*a, **k):
+        called["orm"] = True
+        return {"discovered": 2, "loaded": 10, "skipped": 0}
+
+    monkeypatch.setattr(pl, "discover_and_load", _fake_dal)
+
+    result = runner.invoke(app, ["load", "texas", "--engine", "orm", "--dry-run"])
     assert result.exit_code == 0
+    assert called.get("orm")
     assert "Load complete" in result.stdout
 
 

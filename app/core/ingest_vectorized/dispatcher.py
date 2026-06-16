@@ -8,6 +8,7 @@ package registers them.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -30,11 +31,20 @@ def run_vectorized(
     fixtures_dir: Path | str,
     *,
     state: str = "texas",
+    dry_run: bool = False,
+    should_stop: Callable[[], bool] | None = None,
 ) -> dict[str, int]:
     """Vectorized ingest of *state* source files under *fixtures_dir* into *engine*.
 
     Returns counters: ``{discovered, loaded, families_run}``. Families register
     themselves on import; each is run in ascending ``priority`` (FK order).
+
+    ``dry_run`` discovers files and returns the counts without writing anything (parity
+    with the ORM loader's ``--dry-run``). ``should_stop`` is polled before each family so a
+    graceful shutdown request stops cleanly between families (the unit of work) — committed
+    families persist, like the ORM loader's per-file ``should_stop`` checkpointing. The
+    *engine* must already be bootstrapped (tables + dedup indexes); the ``cf load`` wiring
+    bootstraps via ``production_loader._get_session`` before calling this.
     """
     from sqlmodel import Session
 
@@ -49,6 +59,11 @@ def run_vectorized(
         by_type.setdefault(item.record_type, []).append(item.path)
 
     counts = {"discovered": len(discovered), "loaded": 0, "families_run": 0}
+    if dry_run:
+        _logger.info(f"[vectorized] dry-run: discovered {len(discovered)} file(s); skipping writes")
+        return counts
+
+    _stopped = False
     session = Session(engine, expire_on_commit=False)
     try:
         state_row = _seed(session, state)
@@ -60,6 +75,10 @@ def run_vectorized(
             state=state,
         )
         for worker in sorted(FAMILY_WORKERS, key=lambda w: w.priority):
+            if should_stop is not None and should_stop():
+                _logger.info("[vectorized] stop requested; halting before next family")
+                _stopped = True
+                break
             files_by_type = {rt: by_type[rt] for rt in worker.record_types if rt in by_type}
             if not files_by_type:
                 continue
@@ -67,6 +86,10 @@ def run_vectorized(
             counts["loaded"] += int(result.get("loaded", 0))
             counts["families_run"] += 1
             _logger.info(f"[vectorized] family {sorted(worker.record_types)} -> {result}")
+
+        if _stopped:
+            counts["stopped"] = 1
+            return counts
 
         # Post-load reconciliation (analogous to the ORM's _link_after_load): assign each
         # PERSON/ORGANIZATION entity ONE representative person deterministically, so the
