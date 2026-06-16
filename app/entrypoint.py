@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
@@ -111,29 +111,70 @@ def scrape(
     raise typer.Exit(run_scrape(state, overwrite=overwrite, headless=headless, out=out))
 
 
+def _run_vectorized_load(
+    state: str,
+    config: Any,
+    db_url: str,
+    *,
+    dry_run: bool,
+    should_stop: Callable[[], bool],
+) -> dict[str, int]:
+    """Bootstrap the schema (reusing the ORM loader's `_get_session`: create_all + dedup
+    indexes + additive columns) then run the vectorized engine against the state's source dir."""
+    from app.core.ingest_vectorized import run_vectorized
+    from scripts.loaders.loader_config import STATE_GLOB_CONFIGS
+    from scripts.loaders.production_loader import _get_session
+
+    if config.max_records is not None:
+        console.print(
+            "[yellow]Note:[/yellow] the vectorized engine ignores the preset row cap "
+            f"(max_records={config.max_records}); it loads every discovered row. "
+            "Use --engine orm for a capped subset."
+        )
+    session = _get_session(db_url)
+    engine = session.get_bind()
+    session.close()
+    fixtures_dir = STATE_GLOB_CONFIGS[state].base_dir
+    return run_vectorized(
+        engine, fixtures_dir, state=state, dry_run=dry_run, should_stop=should_stop
+    )
+
+
 def run_load(
     state: str,
     *,
     preset: str = "production",
     dry_run: bool = False,
     should_stop: Callable[[], bool] | None = None,
+    engine: str | None = None,
 ) -> int:
+    import os
+
     from app.core.unified_database import get_db_manager
     from scripts.loaders.loader_config import get_config
-    from scripts.loaders.production_loader import discover_and_load
 
     manager = get_db_manager()
     config = get_config(preset)
     stop_fn = should_stop if should_stop is not None else (lambda: _shutdown.requested)
+    # Engine selection: vectorized is the default (P5 flip); `--engine orm` or
+    # INGEST_ENGINE=orm falls back to the ORM loader.
+    engine_name = (engine or os.environ.get("INGEST_ENGINE", "vectorized")).lower()
 
     try:
-        results = discover_and_load(
-            state,
-            config,
-            dry_run=dry_run,
-            db_url=manager.database_url,
-            should_stop=stop_fn,
-        )
+        if engine_name == "orm":
+            from scripts.loaders.production_loader import discover_and_load
+
+            results = discover_and_load(
+                state,
+                config,
+                dry_run=dry_run,
+                db_url=manager.database_url,
+                should_stop=stop_fn,
+            )
+        else:
+            results = _run_vectorized_load(
+                state, config, manager.database_url, dry_run=dry_run, should_stop=stop_fn
+            )
     except ValueError as exc:
         console.print(f"[red]Load failed:[/red] {exc}")
         return 1
@@ -163,11 +204,18 @@ def load(
         bool,
         typer.Option("--dry-run", help="Discover files but skip DB writes."),
     ] = False,
+    engine: Annotated[
+        str | None,
+        typer.Option(
+            "--engine",
+            help="Ingest engine: vectorized (default, fast COPY path) | orm (row-by-row).",
+        ),
+    ] = None,
 ) -> None:
     """Discover parquet/CSV under tmp/<state> and load into the database."""
     _shutdown.install()
     try:
-        raise typer.Exit(run_load(state, preset=preset, dry_run=dry_run))
+        raise typer.Exit(run_load(state, preset=preset, dry_run=dry_run, engine=engine))
     finally:
         _shutdown.restore()
 

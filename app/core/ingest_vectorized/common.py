@@ -22,9 +22,35 @@ Two parse dialects exist in the ORM and must be kept distinct:
 from __future__ import annotations
 
 import enum
+import json
 from typing import Any
 
 import polars as pl
+
+from app.logger import Logger
+
+_logger = Logger(__name__)
+
+
+def _row_level_errors() -> tuple[type[BaseException], ...]:
+    """Row-level DB exception types worth isolating (bad row → ingest_errors) rather than
+    failing the load. Includes BOTH the SQLAlchemy wrappers (bulk_upsert / core insert path)
+    and the raw psycopg2 errors (the COPY fast-path calls ``copy_expert`` on the raw cursor,
+    so it raises psycopg2 directly, unwrapped). Operational errors (connection, syntax) are
+    deliberately excluded so they still propagate."""
+    from sqlalchemy.exc import DataError, IntegrityError
+
+    types: tuple[type[BaseException], ...] = (IntegrityError, DataError)
+    try:
+        import psycopg2
+
+        types = (*types, psycopg2.IntegrityError, psycopg2.DataError)
+    except ImportError:  # pragma: no cover - psycopg2 is a hard dep in practice
+        pass
+    return types
+
+
+_ROW_LEVEL_ERRORS = _row_level_errors()
 
 
 def clean_str(col: str) -> pl.Expr:
@@ -510,6 +536,108 @@ def _write_frame_postgres(
     return len(rows)
 
 
+def _attempt_write(
+    session: Any,
+    model: type,
+    rows: list[dict[str, Any]],
+    *,
+    conflict_cols: list[str] | None,
+    update_cols: list[str] | None,
+    is_postgres: bool,
+) -> int:
+    """One bulk-write attempt (COPY / bulk_upsert / core insert), committing on success.
+    Raises on any DB error — the caller decides whether to isolate."""
+    import os
+
+    from sqlalchemy import insert
+
+    from app.core.upsert import bulk_upsert
+
+    if is_postgres and not os.environ.get("VECTORIZED_DISABLE_COPY"):
+        return _write_frame_postgres(
+            session, model, rows, conflict_cols=conflict_cols, update_cols=update_cols
+        )
+    if conflict_cols:
+        return bulk_upsert(
+            session, model, rows, conflict_cols=conflict_cols, update_cols=update_cols
+        )
+    session.execute(insert(model.__table__), rows)  # type: ignore[attr-defined]
+    session.commit()
+    return len(rows)
+
+
+def _record_ingest_errors(
+    session: Any,
+    model: type,
+    rows: list[dict[str, Any]],
+    *,
+    error_type: str,
+    error_message: str,
+    error_ctx: dict[str, Any] | None,
+) -> None:
+    """Route bad rows to ``ingest_errors`` (verbatim raw_data + reason), committing them in a
+    fresh transaction. Provenance (state_id / file_origin_id / record_type / source_file) is
+    best-effort from *error_ctx*; record_type falls back to the target table name."""
+    from app.core.models.tables import IngestError
+
+    ctx = error_ctx or {}
+    table_name = model.__table__.name  # type: ignore[attr-defined]
+    errs = [
+        IngestError(
+            state_id=ctx.get("state_id"),
+            file_origin_id=ctx.get("file_origin_id"),
+            record_type=ctx.get("record_type") or table_name,
+            source_file=ctx.get("source_file"),
+            error_type=error_type[:100],
+            error_message=error_message,
+            raw_data=json.dumps(r, default=str),
+        )
+        for r in rows
+    ]
+    session.add_all(errs)
+    session.commit()
+
+
+def _write_isolating(
+    session: Any,
+    model: type,
+    rows: list[dict[str, Any]],
+    *,
+    conflict_cols: list[str] | None,
+    update_cols: list[str] | None,
+    is_postgres: bool,
+    error_ctx: dict[str, Any] | None,
+) -> int:
+    """Recover a failed bulk write by bisection: commit good sub-batches, route the genuinely
+    bad rows to ``ingest_errors``. Returns the number of rows actually written. Only row-level
+    integrity/data errors are isolated; operational errors propagate (handled by ``write_frame``)."""
+    try:
+        return _attempt_write(
+            session, model, rows, conflict_cols=conflict_cols,
+            update_cols=update_cols, is_postgres=is_postgres,
+        )
+    except _ROW_LEVEL_ERRORS as exc:
+        session.rollback()
+        if len(rows) == 1:
+            orig = getattr(exc, "orig", None)
+            _record_ingest_errors(
+                session, model, rows, error_type=type(exc).__name__,
+                error_message=str(orig) if orig is not None else str(exc),
+                error_ctx=error_ctx,
+            )
+            return 0
+        mid = len(rows) // 2
+        left = _write_isolating(
+            session, model, rows[:mid], conflict_cols=conflict_cols,
+            update_cols=update_cols, is_postgres=is_postgres, error_ctx=error_ctx,
+        )
+        right = _write_isolating(
+            session, model, rows[mid:], conflict_cols=conflict_cols,
+            update_cols=update_cols, is_postgres=is_postgres, error_ctx=error_ctx,
+        )
+        return left + right
+
+
 def write_frame(
     session: Any,
     model: type,
@@ -517,6 +645,7 @@ def write_frame(
     *,
     conflict_cols: list[str] | None,
     update_cols: list[str] | None = None,
+    error_ctx: dict[str, Any] | None = None,
 ) -> int:
     """Bulk-write a Polars frame into ``model``'s table (dialect-safe).
 
@@ -534,30 +663,40 @@ def write_frame(
     ingest scale. On sqlite / other dialects it uses ``bulk_upsert`` / core insert. The
     COPY path is proven row-identical to bulk_upsert by the equivalence harness. Set
     ``VECTORIZED_DISABLE_COPY=1`` to force the legacy path (used to diff COPY vs upsert).
+
+    **Error isolation (production parity with the ORM loader's ingest_errors path):** the
+    bulk write is attempted as one statement (the fast path, untouched for clean data). If it
+    raises a row-level ``IntegrityError``/``DataError`` (e.g. a transaction whose committee FK
+    is absent — the dominant dirty-data failure), the batch is rolled back and recovered by
+    bisection: good sub-batches commit, the genuinely bad rows are routed verbatim to
+    ``ingest_errors`` (with *error_ctx* provenance) instead of failing the whole load. Returns
+    the number of rows actually written (rejected rows are excluded and logged).
     """
-    import os
-
-    from sqlalchemy import insert
-
-    from app.core.upsert import bulk_upsert
-
     if frame.is_empty():
         return 0
     rows = frame.to_dicts()
     _inject_auto_columns(model, rows)
 
     is_postgres = session.get_bind().dialect.name == "postgresql"
-    if is_postgres and not os.environ.get("VECTORIZED_DISABLE_COPY"):
-        return _write_frame_postgres(
-            session, model, rows, conflict_cols=conflict_cols, update_cols=update_cols
+    try:
+        return _attempt_write(
+            session, model, rows, conflict_cols=conflict_cols,
+            update_cols=update_cols, is_postgres=is_postgres,
         )
-
-    if conflict_cols:
-        return bulk_upsert(
-            session, model, rows, conflict_cols=conflict_cols, update_cols=update_cols
+    except _ROW_LEVEL_ERRORS as exc:
+        session.rollback()
+        _logger.warning(
+            f"[vectorized.write_frame] {model.__table__.name}: bulk write failed "  # type: ignore[attr-defined]
+            f"({type(exc).__name__}); isolating bad rows to ingest_errors"
         )
-    # Plain insert: commit explicitly (bulk_upsert commits internally; the dispatcher
-    # closes the session in finally with no commit, which would otherwise roll this back).
-    session.execute(insert(model.__table__), rows)  # type: ignore[attr-defined]
-    session.commit()
-    return len(rows)
+        written = _write_isolating(
+            session, model, rows, conflict_cols=conflict_cols,
+            update_cols=update_cols, is_postgres=is_postgres, error_ctx=error_ctx,
+        )
+        rejected = len(rows) - written
+        if rejected:
+            _logger.warning(
+                f"[vectorized.write_frame] {model.__table__.name}: "  # type: ignore[attr-defined]
+                f"isolated {rejected} bad row(s) to ingest_errors ({written} written)"
+            )
+        return written

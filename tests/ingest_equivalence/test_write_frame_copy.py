@@ -148,6 +148,59 @@ def test_copy_equals_bulk_upsert_plain_insert(pg_engine):
     assert "" in first_names and None in first_names
 
 
+@pytest.mark.parametrize("disable_copy", [False, True], ids=["copy", "bulk_upsert"])
+def test_write_frame_isolates_bad_rows_to_ingest_errors(pg_engine, disable_copy):
+    """A row-level integrity failure (the dominant dirty-data case: an FK orphan) must NOT
+    fail the whole batch — the good rows commit and the bad row is routed verbatim to
+    ingest_errors, on BOTH the COPY and bulk_upsert write paths. This is the vectorized
+    equivalent of the ORM loader's tier-3 row isolation."""
+    from sqlmodel import select
+
+    from app.core.models import State
+    from app.core.models.tables import IngestError
+
+    with _session(pg_engine) as s:
+        s.add(State(id=1, code="TX", name="Texas"))
+        s.commit()
+
+    # Row 2 references a non-existent state (FK orphan); rows 1 and 3 are valid.
+    frame = pl.DataFrame(
+        {
+            "first_name": ["Ann", "Bad", "Cy"],
+            "last_name": ["Lee", "Orphan", "Solo"],
+            "state_id": [1, 999, 1],
+        }
+    )
+    prev = os.environ.get("VECTORIZED_DISABLE_COPY")
+    if disable_copy:
+        os.environ["VECTORIZED_DISABLE_COPY"] = "1"
+    else:
+        os.environ.pop("VECTORIZED_DISABLE_COPY", None)
+    try:
+        with _session(pg_engine) as s:
+            written = common.write_frame(
+                s, UnifiedPerson, frame, conflict_cols=None,
+                error_ctx={"state_id": 1, "record_type": "RCPT", "source_file": "contribs.parquet"},
+            )
+    finally:
+        if prev is None:
+            os.environ.pop("VECTORIZED_DISABLE_COPY", None)
+        else:
+            os.environ["VECTORIZED_DISABLE_COPY"] = prev
+
+    assert written == 2
+    with _session(pg_engine) as s:
+        persons = s.exec(select(UnifiedPerson)).all()
+        errs = s.exec(select(IngestError)).all()
+    assert {p.first_name for p in persons} == {"Ann", "Cy"}  # good rows committed
+    assert len(errs) == 1  # exactly the orphan isolated
+    err = errs[0]
+    assert err.record_type == "RCPT" and err.state_id == 1
+    assert err.source_file == "contribs.parquet"
+    assert err.error_type  # populated with the DB exception class
+    assert "Orphan" in err.raw_data  # verbatim bad row captured
+
+
 def test_copy_equals_bulk_upsert_on_conflict(pg_engine):
     """conflict_cols + update_cols: COPY's staging + INSERT...ON CONFLICT DO UPDATE matches
     bulk_upsert — both for the initial insert and the conflicting update."""
