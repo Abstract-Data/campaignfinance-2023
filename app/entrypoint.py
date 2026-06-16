@@ -140,6 +140,32 @@ def _run_vectorized_load(
     )
 
 
+def run_migrate(*, db_url: str | None = None) -> int:
+    """Apply pending Alembic migrations (`alembic upgrade head`) — the deploy step that brings
+    an EXISTING database to the latest schema. Fresh DBs get the full schema from the baseline."""
+    from app.core.unified_database import get_db_manager
+    from app.db_migrate import current_revision, upgrade_head
+
+    url = db_url or get_db_manager(bootstrap=False).database_url
+    try:
+        before = current_revision(url)
+        upgrade_head(url)
+        after = current_revision(url)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Migration failed:[/red] {exc}")
+        return 1
+    if before == after:
+        console.print(f"[green]Database already at head[/green] ({after}).")
+    else:
+        console.print(f"[green]Migrated[/green] {before or '(empty)'} -> {after}.")
+    return 0
+
+
+def migrate() -> None:
+    """Apply pending database migrations (alembic upgrade head)."""
+    raise typer.Exit(run_migrate())
+
+
 def run_load(
     state: str,
     *,
@@ -267,6 +293,7 @@ def schedule(
 
 
 app.command(name="bootstrap")(bootstrap)
+app.command(name="migrate")(migrate)
 app.command(name="scrape")(scrape)
 app.command(name="load")(load)
 app.command(name="schedule")(schedule)

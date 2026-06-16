@@ -34,6 +34,7 @@ dependencies = [
     "splink>=4.0.16,<4.0.17",
     "duckdb>=1.5.3",
     "psycopg2-binary>=2.9.12",
+    "alembic>=1.18.4",
 ]
 
 [project.scripts]

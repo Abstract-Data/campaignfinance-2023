@@ -1,52 +1,58 @@
-# TASK — Tighten the individual person dedup key (name + address)
+# TASK — Migration gap: introduce a real migration framework (Alembic)
 
-User-AUTHORIZED pipeline change (incl. schema column + dedup-index change).
-Measured: 78% of contributor records are over-merged because distinct-location
-same-name people collapse to one person at ingest. Tighten the individual person
-dedup key so the downstream resolve/Splink stage does the real merging.
+## Problem ([[schema-drift-no-migration]])
+No migration framework. Schema = `SQLModel.metadata.create_all` (creates MISSING TABLES only —
+never ALTERs) + two hand-maintained additive-column shim lists + raw-DDL dedup indexes:
+- `app/core/unified_database.py`: `_UNIFIED_ADDITIVE_COLUMNS` (3 cols: report committee/treasurer
+  name-at-filing, persons.dedup_addr_key) + `_apply_dedup_indexes` (partial unique indexes).
+- `app/resolve/run.py`: `_ADDITIVE_COLUMNS` (resolution_input links, canonical_entity.employer).
+Every NEW post-deploy column must be hand-added to a shim list or it breaks existing DBs; non-additive
+changes (type/constraint/drop/rename) have NO path at all. CI misses it (always create_all fresh).
 
-## New dedup semantics (ORM is the contract; vectorized engine MUST match)
-- Individual person dedup key -> `(lower(first), lower(last), state, address_key)`
-  where `address_key = BuilderCache.address_key(address_dict)` (≥2 of
-  street/city/state/zip populated, lowercased; None when too few fields -> FALL
-  BACK to name-only, today's behavior, so addressless persons don't fragment).
-- Org-persons UNCHANGED: `(lower(org), state)` with NULL `dedup_addr_key`.
-- `dedup_addr_key` = denormalized "street|city|state|zip" (the address_key tuple
-  joined by `|`) or NULL.
+## DECISION: Full Alembic baseline (user-chosen).
 
-## Files in scope
-- `app/core/load_cache.py` — `person_key(... , address_key=None)`; add
-  `address_key_str(address_dict)` denormalizer used by both engines.
-- `app/core/models/tables.py` — `UnifiedPerson.dedup_addr_key: str | None` (nullable VARCHAR).
-- `app/core/builders.py` — `build_person`: build address BEFORE find-or-create;
-  compute address_key; thread into `_find_person_by_name_state` + cache key; set
-  `dedup_addr_key` on new person. `_find_person_by_name_state(..., address_key=None)`
-  matches `dedup_addr_key` (NULL-aware) for individuals.
-- `app/core/unified_database.py` — add `dedup_addr_key` to
-  `_UNIFIED_ADDITIVE_COLUMNS`; change `uix_persons_name_state` to include
-  `dedup_addr_key`.
-- `app/resolve/run.py` — mirror the additive column if it lists persons columns.
-- `app/core/ingest_vectorized/common.py` — `person_addr_key_expr(...)` denormalizer
-  expr; extend `collapse_org_person_key` to also null `_pk_addr` for org-persons.
-- `app/core/ingest_vectorized/families/{flat_txns_dims,detail_children,cand,flat_txns_detail}.py`
-  — person dedup key gains `_pk_addr`; person write-frames set `dedup_addr_key`;
-  `_person_id_map` read-backs key on the address-inclusive key.
+## STATUS — foundation DONE + verified (branch `feat/alembic-migrations`, commit 83c9e9bb)
+- alembic added (1.18.4); `alembic.ini` + `migrations/env.py` (target_metadata=SQLModel.metadata
+  after importing all model modules; URL from PostgresConfig, `-x dburl=` override) + script template.
+- Baseline `0001_baseline`: create_all + Fix-7 dedup indexes (PG-only). VERIFIED `alembic upgrade
+  head` on a fresh DB == bootstrap schema (33 tables, 0 col/index mismatch; only alembic_version extra).
+- Inert/safe: nothing auto-invokes Alembic yet, so the test suite is unaffected.
 
-## Behavior to preserve
-- Org-person dedup unchanged (lower(org), state; NULL dedup_addr_key).
-- `diff_snapshots(ORM, vec)` for dim tables stays `[]` — both engines change identically.
-- Addressless persons (address_key None) stay name-only (no fragmentation).
+## REMAINING (the integration step — behavior change, do next):
+1. Wire production bootstrap to Alembic: deploy runs `alembic upgrade head`; on a fresh app-bootstrap
+   (create_all path, kept FAST for the ~975 sqlite tests) `alembic stamp head` so future deltas apply.
+   DECISION inside: do NOT route every _get_session through alembic (per-test overhead) — keep
+   create_all for sqlite tests, use alembic for Postgres deploys/existing DBs.
+2. Retire the additive-shim lists (`_UNIFIED_ADDITIVE_COLUMNS`, resolve `_ADDITIVE_COLUMNS`) once a
+   migration covers their columns; or keep as belt-and-braces no-ops. Update [[schema-drift-no-migration]].
+3. Add a test: `alembic upgrade head` (fresh) == create_all schema; document the workflow (a MIGRATIONS.md).
 
-## HARD RULES
-- Pure Polars (no map_elements/.apply). Parameterized SQLAlchemy core only (no
-  f-string SQL). Reuse common.py. Plain git. No rm -rf.
+## Original plan / risks below.
 
-## Checks (evidence required before done)
-1. `uv run pytest tests/ingest_equivalence -q` -> green; vec == ORM holds.
-2. `grep -rnE "map_elements|\.apply\(" app/core/ingest_vectorized/` -> none in new code.
-3. `uv run ruff check app/core tests/ingest_equivalence` -> clean.
-4. code-review skill run; findings fixed.
+## Plan (assuming standard Alembic baseline adoption)
+1. Add Alembic (`alembic.ini`, `migrations/env.py`, `versions/`). Wire `env.py` to the project's
+   SQLModel `target_metadata` + DB URL resolution (reuse `get_db_manager` / `resolve_runtime_database_url`).
+   Handle the offline/online + the project's import-time table registration.
+2. **Baseline migration** capturing the CURRENT full schema (tables + the additive columns + the
+   partial-unique dedup indexes + resolve tables). Verify `alembic upgrade head` on an empty DB
+   produces a schema byte-equal to `create_all` + the shims (diff via reflection).
+3. **Existing DBs**: `alembic stamp head` marks them at-baseline (schema already present). Document.
+4. **Bootstrap rewire**: `UnifiedDatabaseManager.bootstrap()` / `production_loader._get_session` run
+   `alembic upgrade head` (idempotent) instead of / in addition to create_all. Keep create_all as a
+   fallback for test/sqlite if Alembic-on-sqlite is awkward.
+5. Retire the additive shims into the migration history (or keep as a belt-and-braces no-op) once the
+   baseline + an "additive cols" migration cover them; update [[schema-drift-no-migration]].
+6. Establish the forward pattern: `alembic revision --autogenerate` for future model changes.
 
-## Cannot run here (no tmp/texas data in this worktree) — report, do not fake
-- Real-Texas person-count ~1.9x increase.
-- PG load with dedup indexes enforced completing without uix_persons_* violation.
+## Risks / unknowns to resolve during impl
+- The "migrations" + "alembic runs" PreToolUse gate will ASK for confirmation — expected.
+- sqlite (tests) vs Postgres (prod) — partial indexes + some DDL are PG-only; the baseline migration
+  must branch on dialect (or guard PG-only DDL), mirroring the current `_apply_dedup_indexes` logic.
+- Autogenerate vs the raw-DDL indexes / any schema-qualified models — verify autogenerate doesn't try
+  to drop them; may need `include_object` filters in env.py.
+- The vectorized engine + tests bootstrap via `_get_session`; ensure the rewire keeps them green.
+
+## Gates
+1. `alembic upgrade head` on empty DB == create_all+shims schema (reflection diff empty).
+2. Full test suite green (bootstrap rewire must not break the 975-test suite).
+3. ruff clean; no f-string SQL; task-critic PASS.
