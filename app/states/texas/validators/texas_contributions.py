@@ -12,164 +12,93 @@ from .texas_settings import TECSettings
 
 
 class TECContributionBase(CreateValidatorModel, TECSettings):
-    recordType: str = Field(
-        ...,
-        description="Record type code - always RCPT"
-    )
-    formTypeCd: str = Field(
-        ...,
-        description="TEC form used"
-    )
-    schedFormTypeCd: str = Field(
-        ...,
-        description="TEC Schedule Used"
-    )
-    reportInfoIdent: int = Field(
-        ...,
-        description="Unique report #"
-    )
-    receivedDt: date = Field(
-        ...,
-        description="Date report received by TEC"
-    )
-    infoOnlyFlag: Optional[bool] = Field(
-        default=None,
-        description="Superseded by other report"
-    )
-    filerIdent: int = Field(
-        ...,
-        description="Filer account #"
-    )
-    filerTypeCd: str = Field(
-        ...,
-        description="Type of filer"
-    )
-    filerName: str = Field(
-        ...,
-        description="Filer name"
-    )
-    contributionInfoId: int = Field(
-        primary_key=True,
-        description="Contribution unique identifier"
-    )
-    contributionDt: date = Field(
-        ...,
-        description="Contribution date"
-    )
-    contributionAmount: float = Field(
-        ...,
-        description="Contribution amount"
-    )
-    contributionDescr: Optional[str] = Field(
-        default=None,
-        description="Contribution description"
-    )
+    recordType: str = Field(..., description="Record type code - always RCPT")
+    formTypeCd: str = Field(..., description="TEC form used")
+    schedFormTypeCd: str = Field(..., description="TEC Schedule Used")
+    reportInfoIdent: int = Field(..., description="Unique report #")
+    receivedDt: date = Field(..., description="Date report received by TEC")
+    infoOnlyFlag: Optional[bool] = Field(default=None, description="Superseded by other report")
+    filerIdent: int = Field(..., description="Filer account #")
+    filerTypeCd: str = Field(..., description="Type of filer")
+    filerName: str = Field(..., description="Filer name")
+    contributionInfoId: int = Field(primary_key=True, description="Contribution unique identifier")
+    contributionDt: date = Field(..., description="Contribution date")
+    contributionAmount: float = Field(..., description="Contribution amount")
+    contributionDescr: Optional[str] = Field(default=None, description="Contribution description")
     itemizeFlag: Optional[bool] = Field(
-        default=None,
-        description="Y indicates that the contribution is itemized"
+        default=None, description="Y indicates that the contribution is itemized"
     )
     travelFlag: Optional[bool] = Field(
-        default=None,
-        description="Y indicates that the contribution has associated travel"
+        default=None, description="Y indicates that the contribution has associated travel"
     )
-    contributorPersentTypeCd: str = Field(...,
-                                          description="Type of contributor name data - INDIVIDUAL or ENTITY"
-                                          )
+    contributorPersentTypeCd: str = Field(
+        ..., description="Type of contributor name data - INDIVIDUAL or ENTITY"
+    )
     contributorNameOrganization: Optional[str] = Field(
-        default=None,
-        description="For ENTITY, the contributor organization name"
+        default=None, description="For ENTITY, the contributor organization name"
     )
     contributorNameLast: Optional[str] = Field(
-        default=None,
-        description="For INDIVIDUAL, the contributor last name"
+        default=None, description="For INDIVIDUAL, the contributor last name"
     )
     contributorNameSuffixCd: Optional[str] = Field(
-        default=None,
-        description="For INDIVIDUAL, the contributor suffix"
+        default=None, description="For INDIVIDUAL, the contributor suffix"
     )
     contributorNameFirst: Optional[str] = Field(
-        default=None,
-        description="For INDIVIDUAL, the contributor first name"
+        default=None, description="For INDIVIDUAL, the contributor first name"
     )
     contributorNamePrefixCd: Optional[str] = Field(
-        default=None,
-        description="For INDIVIDUAL, the contributor prefix"
+        default=None, description="For INDIVIDUAL, the contributor prefix"
     )
     contributorNameShort: Optional[str] = Field(
-        default=None,
-        description="For INDIVIDUAL, the contributor short name (nickname)"
+        default=None, description="For INDIVIDUAL, the contributor short name (nickname)"
     )
     contributorNameFull: Optional[str] = Field(
-        default=None,
-        description="For INDIVIDUAL, the contributor full name"
+        default=None, description="For INDIVIDUAL, the contributor full name"
     )
     contributorStreetCity: Optional[str] = Field(
-        default=None,
-        description="The contributor street address city"
+        default=None, description="The contributor street address city"
     )
     contributorStreetStateCd: Optional[str] = Field(
         default=None,
         description="Contributor street address - state code (e.g. TX, CA) - for  \
-     country=USA/UMI only"
+     country=USA/UMI only",
     )
     contributorStreetCountyCd: Optional[str] = Field(
-        default=None,
-        description="Contributor street address - Texas county")
+        default=None, description="Contributor street address - Texas county"
+    )
     contributorStreetCountryCd: Optional[str] = Field(
-        default=None,
-        description="Contributor street address - country (e.g. USA, UMI, MEX, CAN)"
+        default=None, description="Contributor street address - country (e.g. USA, UMI, MEX, CAN)"
     )
     contributorStreetPostalCode: Optional[str] = Field(
         default=None,
-        description="Contributor street address - postal code - for USA addresses only"
+        description="Contributor street address - postal code - for USA addresses only",
     )
     contributorStreetRegion: Optional[str] = Field(
-        default=None,
-        description="Contributor street address - region for country other than USA"
+        default=None, description="Contributor street address - region for country other than USA"
     )
-    contributorEmployer: Optional[str] = Field(
-        default=None,
-        description="Contributor employer"
-    )
-    contributorOccupation: Optional[str] = Field(
-        default=None,
-        description="Contributor occupation"
-    )
-    contributorJobTitle: Optional[str] = Field(
-        default=None,
-        description="Contributor job title"
-    )
+    contributorEmployer: Optional[str] = Field(default=None, description="Contributor employer")
+    contributorOccupation: Optional[str] = Field(default=None, description="Contributor occupation")
+    contributorJobTitle: Optional[str] = Field(default=None, description="Contributor job title")
     contributorPacFein: Optional[str] = Field(
         description="FEC ID of out-of-state PAC contributor",
     )
     contributorOosPacFlag: Optional[bool] = Field(
-        default=None,
-        description="Indicates if contributor is an out-of-state PAC "
+        default=None, description="Indicates if contributor is an out-of-state PAC "
     )
     contributorLawFirmName: Optional[str] = Field(
-        default=None,
-        description="Contributor law firm name"
+        default=None, description="Contributor law firm name"
     )
     contributorSpouseLawFirmName: Optional[str] = Field(
-        default=None,
-        description="Contributor spouse law firm name"
+        default=None, description="Contributor spouse law firm name"
     )
     contributorParent1LawFirmName: Optional[str] = Field(
-        default=None,
-        description="Contributor parent #1 law firm name"
+        default=None, description="Contributor parent #1 law firm name"
     )
     contributorParent2LawFirmName: Optional[str] = Field(
-        default=None,
-        description="Contributor parent #2 law firm name"
+        default=None, description="Contributor parent #2 law firm name"
     )
-    file_origin: str = Field(
-        ...,
-        description="The file origin of the data"
-    )
-    download_date: date = Field(
-        ...,
-        description="The date the data was downloaded"
-    )
+    file_origin: str = Field(..., description="The file origin of the data")
+    download_date: date = Field(..., description="The date the data was downloaded")
 
     # filer_id: Optional[int]
     # filers: Optional[List]
@@ -197,7 +126,9 @@ class TECContributionBase(CreateValidatorModel, TECSettings):
     def format_contributor_name(cls, values):
         if values["contributorPersentTypeCd"] == "INDIVIDUAL":
             if values["contributorNameLast"] and values["contributorNameFirst"]:
-                values["contributorNameFull"] = f"{values['contributorNameFirst']} {values['contributorNameLast']}"
+                values["contributorNameFull"] = (
+                    f"{values['contributorNameFirst']} {values['contributorNameLast']}"
+                )
 
         return values
 
@@ -207,36 +138,32 @@ class TECContributionBase(CreateValidatorModel, TECSettings):
         if values["contributorPersentTypeCd"] == "INDIVIDUAL":
             if not values["contributorNameLast"]:
                 raise PydanticCustomError(
-                    'missing_required_value',
+                    "missing_required_value",
                     "contributorNameLast is required for INDIVIDUAL contributorPersentTypeCd",
-                    {
-                        'column': 'contributorNameLast',
-                        'value': values["contributorNameLast"]}
+                    {"column": "contributorNameLast", "value": values["contributorNameLast"]},
                 )
         elif values["contributorPersentTypeCd"] == "ENTITY":
             if not values["contributorNameOrganization"]:
                 raise PydanticCustomError(
-                    'individual_field_check',
+                    "individual_field_check",
                     "contributorNameOrganization is required for ENTITY contributorPersentTypeCd",
                     {
-                        'column': 'contributorNameOrganization',
-                        'value': values["contributorNameOrganization"]}
+                        "column": "contributorNameOrganization",
+                        "value": values["contributorNameOrganization"],
+                    },
                 )
         else:
             pass
         return values
 
-    @field_validator('contributorPersentTypeCd', 'receivedDt', 'filerName', mode='before')
+    @field_validator("contributorPersentTypeCd", "receivedDt", "filerName", mode="before")
     @classmethod
     def validate_contributor_type(cls, v):
         if not v:
             raise PydanticCustomError(
-                'missing_required_value',
+                "missing_required_value",
                 "contributorPersentTypeCd must be INDIVIDUAL or ENTITY",
-                {
-                    'column': 'contributorPersentTypeCd',
-                    'value': v
-                }
+                {"column": "contributorPersentTypeCd", "value": v},
             )
         return v
 

@@ -46,9 +46,7 @@ def session():
 # seed helpers
 # --------------------------------------------------------------------------- #
 def _addr(session: Session, line: str = "123 Main St") -> CanonicalAddress:
-    ca = CanonicalAddress(
-        standardized_line_1=line, city="Austin", state="TX", zip5="78701"
-    )
+    ca = CanonicalAddress(standardized_line_1=line, city="Austin", state="TX", zip5="78701")
     session.add(ca)
     session.flush()
     return ca

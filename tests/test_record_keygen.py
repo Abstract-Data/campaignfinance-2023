@@ -16,9 +16,9 @@ def test_generate_static_key_from_tuple() -> None:
 
 
 def test_generate_static_key_from_string() -> None:
-    assert RecordKeyGenerator.generate_static_key("plain-string") == RecordKeyGenerator.generate_static_key(
+    assert RecordKeyGenerator.generate_static_key(
         "plain-string"
-    )
+    ) == RecordKeyGenerator.generate_static_key("plain-string")
 
 
 def test_generate_static_key_date_set() -> None:

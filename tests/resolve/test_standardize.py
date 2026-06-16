@@ -153,9 +153,7 @@ def test_resolution_input_table_registered_and_stage1_inserts_rows():
         inserted = build_resolution_input(session, run_id=42, state_code="TX")
         assert inserted == 3
 
-        rows = session.exec(
-            select(ResolutionInput).where(ResolutionInput.run_id == 42)
-        ).all()
+        rows = session.exec(select(ResolutionInput).where(ResolutionInput.run_id == 42)).all()
         assert len(rows) == 3
         assert {row.source_type for row in rows} == {
             "unified_person",
@@ -226,18 +224,15 @@ def test_build_resolution_input_rolls_back_delete_on_insert_failure(monkeypatch)
         with pytest.raises(RuntimeError, match="simulated insert failure"):
             build_resolution_input(session, run_id=7, state_code="TX")
 
-        surviving = session.exec(
-            select(ResolutionInput).where(ResolutionInput.run_id == 7)
-        ).all()
+        surviving = session.exec(select(ResolutionInput).where(ResolutionInput.run_id == 7)).all()
         assert len(surviving) == 1
         assert surviving[0].source_id == "legacy"
-
 
 
 @pytest.mark.parametrize(
     "dirty",
     [
-        "123 Main St Apt, Austin, TX 78701",   # occupancy type, no identifier
+        "123 Main St Apt, Austin, TX 78701",  # occupancy type, no identifier
         "500 W 2nd St Unit, Dallas TX",
         "1 Plaza Fl, Houston, TX",
     ],

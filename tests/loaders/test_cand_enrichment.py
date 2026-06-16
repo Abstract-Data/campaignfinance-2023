@@ -2,6 +2,7 @@
 name (UnifiedTransactionPerson role=CANDIDATE) instead of creating a duplicate
 EXPENDITURE transaction that collides on the dedup index and double-counts.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -70,7 +71,11 @@ def test_cand_links_candidate_to_existing_expenditure(session):
     session.commit()
 
     status = _persist_cand_link(
-        session, _cand_row(), state="texas", state_id=1, state_code="TX",
+        session,
+        _cand_row(),
+        state="texas",
+        state_id=1,
+        state_code="TX",
         cache=BuilderCache(),
     )
     session.commit()
@@ -89,8 +94,12 @@ def test_cand_links_candidate_to_existing_expenditure(session):
 
 def test_cand_without_matching_expenditure_is_unlinked_not_error(session):
     status = _persist_cand_link(
-        session, _cand_row(expend_id="999999"), state="texas", state_id=1,
-        state_code="TX", cache=BuilderCache(),
+        session,
+        _cand_row(expend_id="999999"),
+        state="texas",
+        state_id=1,
+        state_code="TX",
+        cache=BuilderCache(),
     )
     session.commit()
     assert status == "unlinked_no_expenditure"
@@ -107,9 +116,13 @@ def test_cand_link_is_idempotent(session):
     )
     session.commit()
     cache = BuilderCache()
-    s1 = _persist_cand_link(session, _cand_row(), state="texas", state_id=1, state_code="TX", cache=cache)
+    s1 = _persist_cand_link(
+        session, _cand_row(), state="texas", state_id=1, state_code="TX", cache=cache
+    )
     session.commit()
-    s2 = _persist_cand_link(session, _cand_row(), state="texas", state_id=1, state_code="TX", cache=cache)
+    s2 = _persist_cand_link(
+        session, _cand_row(), state="texas", state_id=1, state_code="TX", cache=cache
+    )
     session.commit()
     assert s1 == s2 == "linked"
     links = session.exec(select(UnifiedTransactionPerson)).all()
@@ -118,8 +131,12 @@ def test_cand_link_is_idempotent(session):
 
 def test_cand_with_no_expend_id_is_skipped(session):
     status = _persist_cand_link(
-        session, {"recordType": "CAND", "candidateNameLast": "X"},
-        state="texas", state_id=1, state_code="TX", cache=BuilderCache(),
+        session,
+        {"recordType": "CAND", "candidateNameLast": "X"},
+        state="texas",
+        state_id=1,
+        state_code="TX",
+        cache=BuilderCache(),
     )
     assert status == "skipped_no_id"
 
@@ -135,8 +152,22 @@ def test_two_candidates_on_same_expenditure_both_link(session):
     )
     session.commit()
     cache = BuilderCache()
-    _persist_cand_link(session, _cand_row(last="CHISUM", first="WARREN"), state="texas", state_id=1, state_code="TX", cache=cache)
-    _persist_cand_link(session, _cand_row(last="SMITH", first="JANE"), state="texas", state_id=1, state_code="TX", cache=cache)
+    _persist_cand_link(
+        session,
+        _cand_row(last="CHISUM", first="WARREN"),
+        state="texas",
+        state_id=1,
+        state_code="TX",
+        cache=cache,
+    )
+    _persist_cand_link(
+        session,
+        _cand_row(last="SMITH", first="JANE"),
+        state="texas",
+        state_id=1,
+        state_code="TX",
+        cache=cache,
+    )
     session.commit()
     links = session.exec(select(UnifiedTransactionPerson)).all()
     assert len(links) == 2  # two distinct candidates linked to one expenditure

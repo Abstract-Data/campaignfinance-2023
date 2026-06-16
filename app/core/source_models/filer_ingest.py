@@ -208,9 +208,7 @@ def build_filer_committee(
     return committee
 
 
-def _ensure_person_entity(
-    session: Session, person: UnifiedPerson, state_id: int | None
-) -> None:
+def _ensure_person_entity(session: Session, person: UnifiedPerson, state_id: int | None) -> None:
     """Attach a deduped ``UnifiedEntity`` to a committee officer person.
 
     Officers created here would otherwise have no entity and be invisible to the

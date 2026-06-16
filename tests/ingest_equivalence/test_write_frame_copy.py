@@ -47,7 +47,9 @@ def _drop_create(db_name: str) -> None:
         pg = raw.driver_connection
         pg.autocommit = True
         cur = pg.cursor()
-        cur.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(db_name)))
+        cur.execute(
+            sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(db_name))
+        )
         cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name)))
         cur.close()
     finally:
@@ -64,7 +66,9 @@ def _drop(db_name: str) -> None:
         pg = raw.driver_connection
         pg.autocommit = True
         cur = pg.cursor()
-        cur.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(db_name)))
+        cur.execute(
+            sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(db_name))
+        )
         cur.close()
     finally:
         raw.close()
@@ -120,7 +124,9 @@ def _write(engine, model, frame, *, conflict_cols, update_cols=None, disable_cop
         os.environ.pop("VECTORIZED_DISABLE_COPY", None)
     try:
         with _session(engine) as s:
-            common.write_frame(s, model, frame, conflict_cols=conflict_cols, update_cols=update_cols)
+            common.write_frame(
+                s, model, frame, conflict_cols=conflict_cols, update_cols=update_cols
+            )
     finally:
         if prev is None:
             os.environ.pop("VECTORIZED_DISABLE_COPY", None)
@@ -188,7 +194,10 @@ def test_write_frame_isolates_bad_rows_to_ingest_errors(pg_engine, disable_copy)
     try:
         with _session(pg_engine) as s:
             written = common.write_frame(
-                s, UnifiedPerson, frame, conflict_cols=None,
+                s,
+                UnifiedPerson,
+                frame,
+                conflict_cols=None,
                 error_ctx={"state_id": 1, "record_type": "RCPT", "source_file": "contribs.parquet"},
             )
     finally:
@@ -219,7 +228,9 @@ def test_copy_equals_bulk_upsert_on_conflict(pg_engine):
     uc = ["name"]
 
     _write(pg_engine, UnifiedCommittee, base, conflict_cols=cc, update_cols=uc, disable_copy=False)
-    _write(pg_engine, UnifiedCommittee, update, conflict_cols=cc, update_cols=uc, disable_copy=False)
+    _write(
+        pg_engine, UnifiedCommittee, update, conflict_cols=cc, update_cols=uc, disable_copy=False
+    )
     copy_snap = _snap_one(pg_engine, "unified_committees")
 
     _clear(pg_engine, UnifiedCommittee)

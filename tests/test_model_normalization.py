@@ -7,7 +7,6 @@ for all 7 former __post_init__ hooks, now replaced with Pydantic v2
 (plain Pydantic models).
 """
 
-
 # Register UnifiedReport before any unified model import so SQLAlchemy
 # can resolve the forward reference in UnifiedTransaction.report relationship.
 import app.core.source_models.reports  # noqa: F401
@@ -155,6 +154,6 @@ class TestNoUtcnow:
         import pathlib
 
         src = pathlib.Path("app/core/models/tables.py").read_text()
-        assert (
-            "utcnow" not in src
-        ), "datetime.utcnow must be replaced with datetime.now(timezone.utc)"
+        assert "utcnow" not in src, (
+            "datetime.utcnow must be replaced with datetime.now(timezone.utc)"
+        )

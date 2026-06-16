@@ -24,9 +24,7 @@ def _reachable_false(_url: str) -> bool:
 # --------------------------------------------------------------------------- #
 def test_force_sqlite_returns_in_memory() -> None:
     # --sqlite never touches Postgres and never writes a file.
-    url = resolve_runtime_database_url(
-        force_sqlite=True, reachable=_reachable_false, isatty=True
-    )
+    url = resolve_runtime_database_url(force_sqlite=True, reachable=_reachable_false, isatty=True)
     assert url == "sqlite://"
 
 
@@ -49,17 +47,13 @@ def test_prompt_choose_sqlite_returns_file() -> None:
 
 def test_prompt_choose_postgres_setup_exits() -> None:
     with pytest.raises(SystemExit):
-        resolve_runtime_database_url(
-            reachable=_reachable_false, isatty=True, prompt=lambda _p: "p"
-        )
+        resolve_runtime_database_url(reachable=_reachable_false, isatty=True, prompt=lambda _p: "p")
 
 
 def test_prompt_default_blank_is_postgres_setup() -> None:
     # Anything not starting with 's' means "I'll set up Postgres" → exit, not SQLite.
     with pytest.raises(SystemExit):
-        resolve_runtime_database_url(
-            reachable=_reachable_false, isatty=True, prompt=lambda _p: ""
-        )
+        resolve_runtime_database_url(reachable=_reachable_false, isatty=True, prompt=lambda _p: "")
 
 
 def test_non_interactive_unreachable_raises_not_sqlite() -> None:

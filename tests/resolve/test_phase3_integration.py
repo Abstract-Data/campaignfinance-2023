@@ -250,9 +250,9 @@ class TestApprovedReviewMergesCycle:
 
         assert str(p1_id) in xwalk2
         assert str(p2_id) in xwalk2
-        assert (
-            xwalk2[str(p1_id)] == xwalk2[str(p2_id)]
-        ), "run 2: p1 and p2 must be in the same canonical entity after approval"
+        assert xwalk2[str(p1_id)] == xwalk2[str(p2_id)], (
+            "run 2: p1 and p2 must be in the same canonical entity after approval"
+        )
 
     def test_approved_pair_crosswalk_uses_approved_review_method(self, engine):
         """EntityCrosswalk for the approved pair should carry match_method=approved_review."""
@@ -295,9 +295,9 @@ class TestApprovedReviewMergesCycle:
         assert p1_row is not None
         assert p2_row is not None
         methods = {p1_row.match_method, p2_row.match_method}
-        assert (
-            MatchMethod.approved_review in methods
-        ), f"at least one member should have match_method=approved_review; got {methods}"
+        assert MatchMethod.approved_review in methods, (
+            f"at least one member should have match_method=approved_review; got {methods}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -348,9 +348,9 @@ class TestRejectedReviewNeverReQueued:
 
         assert str(p1_id) in xwalk2
         assert str(p2_id) in xwalk2
-        assert (
-            xwalk2[str(p1_id)] != xwalk2[str(p2_id)]
-        ), "run 2: rejected pair must remain in separate canonical entities"
+        assert xwalk2[str(p1_id)] != xwalk2[str(p2_id)], (
+            "run 2: rejected pair must remain in separate canonical entities"
+        )
 
     def test_rejected_pair_not_in_pending_queue_after_rerun(self, engine):
         """Phase 1 pipeline does not re-queue a previously rejected pair."""
@@ -522,9 +522,9 @@ class TestUnmergeRestoresGraph:
         # The approved MergeReview (run_id=run1_id) should survive.
         with Session(engine) as session:
             surviving = session.get(MergeReview, review_id)
-        assert (
-            surviving is not None
-        ), "approved MergeReview from run 1 must survive unmerge of run 2"
+        assert surviving is not None, (
+            "approved MergeReview from run 1 must survive unmerge of run 2"
+        )
         assert surviving.status == ReviewStatus.approved
 
     def test_canonical_rebuilt_after_unmerge_with_fastpath_pairs(self, engine):
@@ -617,9 +617,9 @@ class TestShowRendersExplanation:
             _run_show(session, review_id)
 
         captured = capsys.readouterr()
-        assert (
-            "Final match probability:" in captured.out
-        ), "show must render the explanation waterfall via render_explanation"
+        assert "Final match probability:" in captured.out, (
+            "show must render the explanation waterfall via render_explanation"
+        )
         assert "first_name" in captured.out
         assert "Exact match" in captured.out
 
@@ -661,9 +661,9 @@ class TestShowRendersExplanation:
 
         captured = capsys.readouterr()
         # Rendered output should contain "contribution=" not a bare JSON structure.
-        assert (
-            "contribution=" in captured.out
-        ), "rendered explanation should contain 'contribution=' waterfall lines"
+        assert "contribution=" in captured.out, (
+            "rendered explanation should contain 'contribution=' waterfall lines"
+        )
         assert '"bf"' not in captured.out, "raw JSON keys like '\"bf\"' must not appear in output"
 
 

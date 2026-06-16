@@ -44,40 +44,91 @@ _logger = Logger(__name__)
 # ---------------------------------------------------------------------------
 
 _RCPT_COLS = (
-    "recordType", "formTypeCd", "schedFormTypeCd", "reportInfoIdent",
-    "receivedDt", "infoOnlyFlag", "filerIdent", "filerTypeCd", "filerName",
-    "contributionInfoId", "contributionDt", "contributionAmount", "contributionDescr",
-    "itemizeFlag", "travelFlag",
-    "contributorPersentTypeCd", "contributorNameOrganization",
-    "contributorNameLast", "contributorNameSuffixCd", "contributorNameFirst",
-    "contributorNamePrefixCd", "contributorNameShort",
-    "contributorStreetCity", "contributorStreetStateCd", "contributorStreetCountyCd",
-    "contributorStreetCountryCd", "contributorStreetPostalCode", "contributorStreetRegion",
-    "contributorEmployer", "contributorOccupation", "contributorJobTitle",
-    "contributorPacFein", "contributorOosPacFlag",
-    "contributorLawFirmName", "contributorSpouseLawFirmName",
-    "contributorParent1LawFirmName", "contributorParent2LawFirmName",
+    "recordType",
+    "formTypeCd",
+    "schedFormTypeCd",
+    "reportInfoIdent",
+    "receivedDt",
+    "infoOnlyFlag",
+    "filerIdent",
+    "filerTypeCd",
+    "filerName",
+    "contributionInfoId",
+    "contributionDt",
+    "contributionAmount",
+    "contributionDescr",
+    "itemizeFlag",
+    "travelFlag",
+    "contributorPersentTypeCd",
+    "contributorNameOrganization",
+    "contributorNameLast",
+    "contributorNameSuffixCd",
+    "contributorNameFirst",
+    "contributorNamePrefixCd",
+    "contributorNameShort",
+    "contributorStreetCity",
+    "contributorStreetStateCd",
+    "contributorStreetCountyCd",
+    "contributorStreetCountryCd",
+    "contributorStreetPostalCode",
+    "contributorStreetRegion",
+    "contributorEmployer",
+    "contributorOccupation",
+    "contributorJobTitle",
+    "contributorPacFein",
+    "contributorOosPacFlag",
+    "contributorLawFirmName",
+    "contributorSpouseLawFirmName",
+    "contributorParent1LawFirmName",
+    "contributorParent2LawFirmName",
 )
 
 _EXPN_COLS = (
-    "recordType", "formTypeCd", "schedFormTypeCd", "reportInfoIdent",
-    "receivedDt", "infoOnlyFlag", "filerIdent", "filerTypeCd", "filerName",
-    "expendInfoId", "expendDt", "expendAmount", "expendDescr",
-    "expendCatCd", "expendCatDescr", "itemizeFlag", "travelFlag",
-    "politicalExpendCd", "reimburseIntendedFlag", "srcCorpContribFlag", "capitalLivingexpFlag",
-    "payeePersentTypeCd", "payeeNameOrganization",
-    "payeeNameLast", "payeeNameSuffixCd", "payeeNameFirst",
-    "payeeNamePrefixCd", "payeeNameShort",
-    "payeeStreetAddr1", "payeeStreetAddr2",
-    "payeeStreetCity", "payeeStreetStateCd", "payeeStreetCountyCd",
-    "payeeStreetCountryCd", "payeeStreetPostalCode", "payeeStreetRegion",
-    "creditCardIssuer", "repaymentDt",
+    "recordType",
+    "formTypeCd",
+    "schedFormTypeCd",
+    "reportInfoIdent",
+    "receivedDt",
+    "infoOnlyFlag",
+    "filerIdent",
+    "filerTypeCd",
+    "filerName",
+    "expendInfoId",
+    "expendDt",
+    "expendAmount",
+    "expendDescr",
+    "expendCatCd",
+    "expendCatDescr",
+    "itemizeFlag",
+    "travelFlag",
+    "politicalExpendCd",
+    "reimburseIntendedFlag",
+    "srcCorpContribFlag",
+    "capitalLivingexpFlag",
+    "payeePersentTypeCd",
+    "payeeNameOrganization",
+    "payeeNameLast",
+    "payeeNameSuffixCd",
+    "payeeNameFirst",
+    "payeeNamePrefixCd",
+    "payeeNameShort",
+    "payeeStreetAddr1",
+    "payeeStreetAddr2",
+    "payeeStreetCity",
+    "payeeStreetStateCd",
+    "payeeStreetCountyCd",
+    "payeeStreetCountryCd",
+    "payeeStreetPostalCode",
+    "payeeStreetRegion",
+    "creditCardIssuer",
+    "repaymentDt",
 )
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _read(files: list[Path]) -> pl.DataFrame | None:
     frames = [pl.read_parquet(p) for p in files]
@@ -106,6 +157,7 @@ def _nullify_expr(e: pl.Expr) -> pl.Expr:
 # Address building
 # ---------------------------------------------------------------------------
 
+
 def _address_frame_rcpt(df: pl.DataFrame) -> pl.DataFrame:
     """Extract address rows from RCPT contributor columns.
 
@@ -113,28 +165,32 @@ def _address_frame_rcpt(df: pl.DataFrame) -> pl.DataFrame:
     ``contributorStreetAddr1`` from the omit-null match against an existing fuller address
     (so the contributor inherits that street, matching the ORM). Null when no match.
     """
-    return df.select([
-        _cs("contributorStreetAddr1").alias("street_1"),
-        pl.lit(None, dtype=pl.Utf8).alias("street_2"),
-        _cs("contributorStreetCity").alias("city"),
-        common.upper_str("contributorStreetStateCd").alias("state"),
-        _cs("contributorStreetPostalCode").alias("zip_code"),
-        _cs("contributorStreetCountryCd").alias("country"),
-        _nullify_expr(pl.col("contributorStreetCountyCd").cast(pl.Utf8)).alias("county"),
-    ])
+    return df.select(
+        [
+            _cs("contributorStreetAddr1").alias("street_1"),
+            pl.lit(None, dtype=pl.Utf8).alias("street_2"),
+            _cs("contributorStreetCity").alias("city"),
+            common.upper_str("contributorStreetStateCd").alias("state"),
+            _cs("contributorStreetPostalCode").alias("zip_code"),
+            _cs("contributorStreetCountryCd").alias("country"),
+            _nullify_expr(pl.col("contributorStreetCountyCd").cast(pl.Utf8)).alias("county"),
+        ]
+    )
 
 
 def _address_frame_expn(df: pl.DataFrame) -> pl.DataFrame:
     """Extract address rows from EXPN payee columns."""
-    return df.select([
-        _cs("payeeStreetAddr1").alias("street_1"),
-        _cs("payeeStreetAddr2").alias("street_2"),
-        _cs("payeeStreetCity").alias("city"),
-        common.upper_str("payeeStreetStateCd").alias("state"),
-        _cs("payeeStreetPostalCode").alias("zip_code"),
-        _cs("payeeStreetCountryCd").alias("country"),
-        _nullify_expr(pl.col("payeeStreetCountyCd").cast(pl.Utf8)).alias("county"),
-    ])
+    return df.select(
+        [
+            _cs("payeeStreetAddr1").alias("street_1"),
+            _cs("payeeStreetAddr2").alias("street_2"),
+            _cs("payeeStreetCity").alias("city"),
+            common.upper_str("payeeStreetStateCd").alias("state"),
+            _cs("payeeStreetPostalCode").alias("zip_code"),
+            _cs("payeeStreetCountryCd").alias("country"),
+            _nullify_expr(pl.col("payeeStreetCountyCd").cast(pl.Utf8)).alias("county"),
+        ]
+    )
 
 
 def _address_valid(df: pl.DataFrame) -> pl.DataFrame:
@@ -162,12 +218,14 @@ def _address_dedup(df: pl.DataFrame) -> pl.DataFrame:
     "first-found address wins" behaviour.
     """
     return (
-        df.with_columns([
-            pl.col("street_1").cast(pl.Utf8).str.to_lowercase().alias("_k_s1"),
-            pl.col("city").cast(pl.Utf8).str.to_lowercase().alias("_k_city"),
-            pl.col("state").cast(pl.Utf8).str.to_lowercase().alias("_k_state"),
-            pl.col("zip_code").alias("_k_zip"),
-        ])
+        df.with_columns(
+            [
+                pl.col("street_1").cast(pl.Utf8).str.to_lowercase().alias("_k_s1"),
+                pl.col("city").cast(pl.Utf8).str.to_lowercase().alias("_k_city"),
+                pl.col("state").cast(pl.Utf8).str.to_lowercase().alias("_k_state"),
+                pl.col("zip_code").alias("_k_zip"),
+            ]
+        )
         .unique(
             subset=["_k_s1", "_k_city", "_k_state", "_k_zip"],
             keep="first",
@@ -181,9 +239,14 @@ def _address_dedup(df: pl.DataFrame) -> pl.DataFrame:
 # Persons: key helpers and frame builders
 # ---------------------------------------------------------------------------
 
-_PLACEHOLDER_NAMES_UPPER = frozenset({
-    "NON-ITEMIZED CONTRIBUTOR", "NON-ITEMIZED", "UNKNOWN", "ANONYMOUS",
-})
+_PLACEHOLDER_NAMES_UPPER = frozenset(
+    {
+        "NON-ITEMIZED CONTRIBUTOR",
+        "NON-ITEMIZED",
+        "UNKNOWN",
+        "ANONYMOUS",
+    }
+)
 
 
 def _person_type_expr(last_col: str, first_col: str, org_col: str) -> pl.Expr:
@@ -222,23 +285,26 @@ def _build_persons_frame_rcpt(df: pl.DataFrame) -> pl.DataFrame:
         occupation, job_title, person_type, dedup_addr_key,
         _pk_fn, _pk_ln, _pk_org, _pk_addr, _sort_key
     """
-    keyed = df.sort("contributionInfoId").with_columns([
-        _nullify_expr(pl.col("contributorNameOrganization").cast(pl.Utf8))
-            .str.to_lowercase().alias("_pk_org"),
-        _cs("contributorNameFirst").str.to_lowercase().alias("_pk_fn"),
-        _cs("contributorNameLast").str.to_lowercase().alias("_pk_ln"),
-        # Address key uses the omit-null-resolved street (contributorStreetAddr1, set by
-        # _with_resolved_rcpt_street) so a contributor that inherits an existing fuller
-        # address keys on the full street — matching the ORM's dedup_addr_key. Null street
-        # falls back to (city, state, zip), today's behavior.
-        common.person_addr_key_expr(
-            "contributorStreetAddr1",
-            "contributorStreetCity",
-            common.upper_str("contributorStreetStateCd"),
-            "contributorStreetPostalCode",
-        ).alias("_pk_addr"),
-        pl.col("contributionInfoId").cast(pl.Int64).alias("_row_id"),
-    ])
+    keyed = df.sort("contributionInfoId").with_columns(
+        [
+            _nullify_expr(pl.col("contributorNameOrganization").cast(pl.Utf8))
+            .str.to_lowercase()
+            .alias("_pk_org"),
+            _cs("contributorNameFirst").str.to_lowercase().alias("_pk_fn"),
+            _cs("contributorNameLast").str.to_lowercase().alias("_pk_ln"),
+            # Address key uses the omit-null-resolved street (contributorStreetAddr1, set by
+            # _with_resolved_rcpt_street) so a contributor that inherits an existing fuller
+            # address keys on the full street — matching the ORM's dedup_addr_key. Null street
+            # falls back to (city, state, zip), today's behavior.
+            common.person_addr_key_expr(
+                "contributorStreetAddr1",
+                "contributorStreetCity",
+                common.upper_str("contributorStreetStateCd"),
+                "contributorStreetPostalCode",
+            ).alias("_pk_addr"),
+            pl.col("contributionInfoId").cast(pl.Int64).alias("_row_id"),
+        ]
+    )
     # Org-persons dedup on lower(org) ALONE (null fn/ln/addr) — matches uix_persons_org_state.
     keyed = common.collapse_org_person_key(keyed)
 
@@ -278,57 +344,88 @@ def _build_persons_frame_rcpt(df: pl.DataFrame) -> pl.DataFrame:
 
     parts = [p for p in (org_first, ind_first) if p.height > 0]
     if not parts:
-        return pl.DataFrame(schema={
-            "first_name": pl.Utf8, "last_name": pl.Utf8, "middle_name": pl.Utf8,
-            "suffix": pl.Utf8, "organization": pl.Utf8,
-            "employer": pl.Utf8, "occupation": pl.Utf8, "job_title": pl.Utf8,
-            "person_type": pl.Utf8, "dedup_addr_key": pl.Utf8,
-            "_pk_fn": pl.Utf8, "_pk_ln": pl.Utf8, "_pk_org": pl.Utf8,
-            "_pk_addr": pl.Utf8, "_sort_key": pl.Int64,
-        })
+        return pl.DataFrame(
+            schema={
+                "first_name": pl.Utf8,
+                "last_name": pl.Utf8,
+                "middle_name": pl.Utf8,
+                "suffix": pl.Utf8,
+                "organization": pl.Utf8,
+                "employer": pl.Utf8,
+                "occupation": pl.Utf8,
+                "job_title": pl.Utf8,
+                "person_type": pl.Utf8,
+                "dedup_addr_key": pl.Utf8,
+                "_pk_fn": pl.Utf8,
+                "_pk_ln": pl.Utf8,
+                "_pk_org": pl.Utf8,
+                "_pk_addr": pl.Utf8,
+                "_sort_key": pl.Int64,
+            }
+        )
 
     combined = pl.concat(parts, how="diagonal_relaxed")
 
     result = (
-        combined
-        .join(emp_nn, on=_pk, how="left")
+        combined.join(emp_nn, on=_pk, how="left")
         .join(occ_nn, on=_pk, how="left")
         .join(sfx_nn, on=_pk, how="left")
-        .with_columns([
-            _cs("contributorNameFirst").alias("first_name"),
-            _cs("contributorNameLast").alias("last_name"),
-            pl.lit(None, dtype=pl.Utf8).alias("middle_name"),
-            pl.coalesce([
-                pl.col("sfx_nn").cast(pl.Utf8).str.strip_chars()
-                    .replace("", None),  # first non-null suffix
-                _cs("contributorNameSuffixCd"),
-            ]).alias("suffix"),
-            # organization: set from source column for org contributors; null for individuals
-            _cs("contributorNameOrganization").alias("organization"),
-            pl.coalesce([
-                pl.col("emp_nn").cast(pl.Utf8).str.strip_chars()
-                    .replace("", None),
-                _cs("contributorEmployer"),
-            ]).alias("employer"),
-            pl.coalesce([
-                pl.col("occ_nn").cast(pl.Utf8).str.strip_chars()
-                    .replace("", None),
-                _cs("contributorOccupation"),
-            ]).alias("occupation"),
-            pl.lit(None, dtype=pl.Utf8).alias("job_title"),
-            _person_type_expr(
-                "contributorNameLast", "contributorNameFirst", "contributorNameOrganization"
-            ).alias("person_type"),
-            # Persisted dedup key column (NULL for org-persons via collapse).
-            pl.col("_pk_addr").alias("dedup_addr_key"),
-            pl.col("_row_id").alias("_sort_key"),
-        ])
-        .select([
-            "first_name", "last_name", "middle_name", "suffix",
-            "organization", "employer", "occupation", "job_title", "person_type",
-            "dedup_addr_key",
-            "_pk_fn", "_pk_ln", "_pk_org", "_pk_addr", "_sort_key",
-        ])
+        .with_columns(
+            [
+                _cs("contributorNameFirst").alias("first_name"),
+                _cs("contributorNameLast").alias("last_name"),
+                pl.lit(None, dtype=pl.Utf8).alias("middle_name"),
+                pl.coalesce(
+                    [
+                        pl.col("sfx_nn")
+                        .cast(pl.Utf8)
+                        .str.strip_chars()
+                        .replace("", None),  # first non-null suffix
+                        _cs("contributorNameSuffixCd"),
+                    ]
+                ).alias("suffix"),
+                # organization: set from source column for org contributors; null for individuals
+                _cs("contributorNameOrganization").alias("organization"),
+                pl.coalesce(
+                    [
+                        pl.col("emp_nn").cast(pl.Utf8).str.strip_chars().replace("", None),
+                        _cs("contributorEmployer"),
+                    ]
+                ).alias("employer"),
+                pl.coalesce(
+                    [
+                        pl.col("occ_nn").cast(pl.Utf8).str.strip_chars().replace("", None),
+                        _cs("contributorOccupation"),
+                    ]
+                ).alias("occupation"),
+                pl.lit(None, dtype=pl.Utf8).alias("job_title"),
+                _person_type_expr(
+                    "contributorNameLast", "contributorNameFirst", "contributorNameOrganization"
+                ).alias("person_type"),
+                # Persisted dedup key column (NULL for org-persons via collapse).
+                pl.col("_pk_addr").alias("dedup_addr_key"),
+                pl.col("_row_id").alias("_sort_key"),
+            ]
+        )
+        .select(
+            [
+                "first_name",
+                "last_name",
+                "middle_name",
+                "suffix",
+                "organization",
+                "employer",
+                "occupation",
+                "job_title",
+                "person_type",
+                "dedup_addr_key",
+                "_pk_fn",
+                "_pk_ln",
+                "_pk_org",
+                "_pk_addr",
+                "_sort_key",
+            ]
+        )
     )
     return result
 
@@ -343,20 +440,23 @@ def _build_persons_frame_expn(
     ``sort_key_offset`` is added to expendInfoId-derived sort keys so EXPN
     persons sort after all RCPT persons (mirrors priority 10 < 11 load order).
     """
-    keyed = df.sort("expendInfoId").with_columns([
-        _nullify_expr(pl.col("payeeNameOrganization").cast(pl.Utf8))
-            .str.to_lowercase().alias("_pk_org"),
-        _cs("payeeNameFirst").str.to_lowercase().alias("_pk_fn"),
-        _cs("payeeNameLast").str.to_lowercase().alias("_pk_ln"),
-        # EXPN carries street_1 — full (street, city, state, zip) address key.
-        common.person_addr_key_expr(
-            "payeeStreetAddr1",
-            "payeeStreetCity",
-            common.upper_str("payeeStreetStateCd"),
-            "payeeStreetPostalCode",
-        ).alias("_pk_addr"),
-        (pl.col("expendInfoId").cast(pl.Int64) + sort_key_offset).alias("_row_id"),
-    ])
+    keyed = df.sort("expendInfoId").with_columns(
+        [
+            _nullify_expr(pl.col("payeeNameOrganization").cast(pl.Utf8))
+            .str.to_lowercase()
+            .alias("_pk_org"),
+            _cs("payeeNameFirst").str.to_lowercase().alias("_pk_fn"),
+            _cs("payeeNameLast").str.to_lowercase().alias("_pk_ln"),
+            # EXPN carries street_1 — full (street, city, state, zip) address key.
+            common.person_addr_key_expr(
+                "payeeStreetAddr1",
+                "payeeStreetCity",
+                common.upper_str("payeeStreetStateCd"),
+                "payeeStreetPostalCode",
+            ).alias("_pk_addr"),
+            (pl.col("expendInfoId").cast(pl.Int64) + sort_key_offset).alias("_row_id"),
+        ]
+    )
     # Org-persons dedup on lower(org) ALONE (null fn/ln/addr) — matches uix_persons_org_state.
     keyed = common.collapse_org_person_key(keyed)
     _pk = ["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"]
@@ -371,7 +471,8 @@ def _build_persons_frame_expn(
     if rcpt_person_set:
         ind_rows = ind_first.to_dicts()
         ind_new_rows = [
-            r for r in ind_rows
+            r
+            for r in ind_rows
             if (r.get("_pk_fn"), r.get("_pk_ln"), r.get("_pk_addr")) not in rcpt_person_set
         ]
         ind_new = (
@@ -384,14 +485,25 @@ def _build_persons_frame_expn(
 
     parts = [p for p in (org_first, ind_new) if p.height > 0]
     if not parts:
-        return pl.DataFrame(schema={
-            "first_name": pl.Utf8, "last_name": pl.Utf8, "middle_name": pl.Utf8,
-            "suffix": pl.Utf8, "organization": pl.Utf8,
-            "employer": pl.Utf8, "occupation": pl.Utf8, "job_title": pl.Utf8,
-            "person_type": pl.Utf8, "dedup_addr_key": pl.Utf8,
-            "_pk_fn": pl.Utf8, "_pk_ln": pl.Utf8, "_pk_org": pl.Utf8,
-            "_pk_addr": pl.Utf8, "_sort_key": pl.Int64,
-        })
+        return pl.DataFrame(
+            schema={
+                "first_name": pl.Utf8,
+                "last_name": pl.Utf8,
+                "middle_name": pl.Utf8,
+                "suffix": pl.Utf8,
+                "organization": pl.Utf8,
+                "employer": pl.Utf8,
+                "occupation": pl.Utf8,
+                "job_title": pl.Utf8,
+                "person_type": pl.Utf8,
+                "dedup_addr_key": pl.Utf8,
+                "_pk_fn": pl.Utf8,
+                "_pk_ln": pl.Utf8,
+                "_pk_org": pl.Utf8,
+                "_pk_addr": pl.Utf8,
+                "_sort_key": pl.Int64,
+            }
+        )
 
     combined = pl.concat(parts, how="diagonal_relaxed")
 
@@ -405,32 +517,48 @@ def _build_persons_frame_expn(
     )
 
     result = (
-        combined
-        .join(sfx_nn, on=_pk, how="left")
-        .with_columns([
-            _cs("payeeNameFirst").alias("first_name"),
-            _cs("payeeNameLast").alias("last_name"),
-            pl.lit(None, dtype=pl.Utf8).alias("middle_name"),
-            pl.coalesce([
-                pl.col("sfx_nn").cast(pl.Utf8).str.strip_chars().replace("", None),
-                _cs("payeeNameSuffixCd"),
-            ]).alias("suffix"),
-            _cs("payeeNameOrganization").alias("organization"),
-            pl.lit(None, dtype=pl.Utf8).alias("employer"),
-            pl.lit(None, dtype=pl.Utf8).alias("occupation"),
-            pl.lit(None, dtype=pl.Utf8).alias("job_title"),
-            _person_type_expr(
-                "payeeNameLast", "payeeNameFirst", "payeeNameOrganization"
-            ).alias("person_type"),
-            pl.col("_pk_addr").alias("dedup_addr_key"),
-            pl.col("_row_id").alias("_sort_key"),
-        ])
-        .select([
-            "first_name", "last_name", "middle_name", "suffix",
-            "organization", "employer", "occupation", "job_title", "person_type",
-            "dedup_addr_key",
-            "_pk_fn", "_pk_ln", "_pk_org", "_pk_addr", "_sort_key",
-        ])
+        combined.join(sfx_nn, on=_pk, how="left")
+        .with_columns(
+            [
+                _cs("payeeNameFirst").alias("first_name"),
+                _cs("payeeNameLast").alias("last_name"),
+                pl.lit(None, dtype=pl.Utf8).alias("middle_name"),
+                pl.coalesce(
+                    [
+                        pl.col("sfx_nn").cast(pl.Utf8).str.strip_chars().replace("", None),
+                        _cs("payeeNameSuffixCd"),
+                    ]
+                ).alias("suffix"),
+                _cs("payeeNameOrganization").alias("organization"),
+                pl.lit(None, dtype=pl.Utf8).alias("employer"),
+                pl.lit(None, dtype=pl.Utf8).alias("occupation"),
+                pl.lit(None, dtype=pl.Utf8).alias("job_title"),
+                _person_type_expr("payeeNameLast", "payeeNameFirst", "payeeNameOrganization").alias(
+                    "person_type"
+                ),
+                pl.col("_pk_addr").alias("dedup_addr_key"),
+                pl.col("_row_id").alias("_sort_key"),
+            ]
+        )
+        .select(
+            [
+                "first_name",
+                "last_name",
+                "middle_name",
+                "suffix",
+                "organization",
+                "employer",
+                "occupation",
+                "job_title",
+                "person_type",
+                "dedup_addr_key",
+                "_pk_fn",
+                "_pk_ln",
+                "_pk_org",
+                "_pk_addr",
+                "_sort_key",
+            ]
+        )
     )
     return result
 
@@ -438,6 +566,7 @@ def _build_persons_frame_expn(
 # ---------------------------------------------------------------------------
 # Entity building
 # ---------------------------------------------------------------------------
+
 
 def _build_entities_from_persons(persons_df: pl.DataFrame) -> pl.DataFrame:
     """Build entity rows from a persons frame.
@@ -465,47 +594,60 @@ def _build_entities_from_persons(persons_df: pl.DataFrame) -> pl.DataFrame:
         .otherwise(full_name)
     )
 
-    df = persons_df.with_columns([
-        entity_type.alias("entity_type"),
-        entity_name.alias("name"),
-    ])
+    df = persons_df.with_columns(
+        [
+            entity_type.alias("entity_type"),
+            entity_name.alias("name"),
+        ]
+    )
 
     # normalized_name: normalize the name field
-    df = df.with_columns([
-        pl.col("name")
-        .cast(pl.Utf8)
-        .str.strip_chars()
-        .str.to_lowercase()
-        .str.replace_all(r"[^a-z0-9]+", " ")
-        .str.replace_all(r"\s+", " ")
-        .str.strip_chars()
-        .fill_null("")
-        .alias("normalized_name"),
-        pl.lit(None, dtype=pl.Utf8).alias("committee_id"),
-        pl.lit(None, dtype=pl.Utf8).alias("notes"),
-    ])
+    df = df.with_columns(
+        [
+            pl.col("name")
+            .cast(pl.Utf8)
+            .str.strip_chars()
+            .str.to_lowercase()
+            .str.replace_all(r"[^a-z0-9]+", " ")
+            .str.replace_all(r"\s+", " ")
+            .str.strip_chars()
+            .fill_null("")
+            .alias("normalized_name"),
+            pl.lit(None, dtype=pl.Utf8).alias("committee_id"),
+            pl.lit(None, dtype=pl.Utf8).alias("notes"),
+        ]
+    )
 
-    return df.select([
-        "entity_type", "name", "normalized_name", "committee_id", "notes",
-        "_sort_key",
-    ])
+    return df.select(
+        [
+            "entity_type",
+            "name",
+            "normalized_name",
+            "committee_id",
+            "notes",
+            "_sort_key",
+        ]
+    )
 
 
 def _build_committee_entity(committee_df: pl.DataFrame) -> pl.DataFrame:
     """Build the committee entity rows (one per committee)."""
-    return committee_df.with_columns([
-        pl.lit("COMMITTEE").alias("entity_type"),
-        pl.col("name").alias("name"),
-        common.normalize_entity_name("name").alias("normalized_name"),
-        pl.col("filer_id").alias("committee_id"),
-        pl.lit(None, dtype=pl.Utf8).alias("notes"),
-        pl.lit(0, dtype=pl.Int64).alias("_sort_key"),  # committees sort first
-    ]).select(["entity_type", "name", "normalized_name", "committee_id", "notes", "_sort_key"])
+    return committee_df.with_columns(
+        [
+            pl.lit("COMMITTEE").alias("entity_type"),
+            pl.col("name").alias("name"),
+            common.normalize_entity_name("name").alias("normalized_name"),
+            pl.col("filer_id").alias("committee_id"),
+            pl.lit(None, dtype=pl.Utf8).alias("notes"),
+            pl.lit(0, dtype=pl.Int64).alias("_sort_key"),  # committees sort first
+        ]
+    ).select(["entity_type", "name", "normalized_name", "committee_id", "notes", "_sort_key"])
 
 
 # ---------------------------------------------------------------------------
 # Committee building
 # ---------------------------------------------------------------------------
+
 
 def _build_committee_frame(rcpt: pl.DataFrame | None, expn: pl.DataFrame | None) -> pl.DataFrame:
     """Build committee rows from inline filerIdent/filerName/filerTypeCd data.
@@ -516,18 +658,24 @@ def _build_committee_frame(rcpt: pl.DataFrame | None, expn: pl.DataFrame | None)
     frames: list[pl.DataFrame] = []
     for df in (rcpt, expn):
         if df is not None and df.height > 0:
-            part = df.select([
-                _cs("filerIdent").alias("filer_id"),
-                _cs("filerName").alias("name"),
-                _cs("filerTypeCd").alias("committee_type"),
-            ]).filter(pl.col("filer_id").is_not_null())
+            part = df.select(
+                [
+                    _cs("filerIdent").alias("filer_id"),
+                    _cs("filerName").alias("name"),
+                    _cs("filerTypeCd").alias("committee_type"),
+                ]
+            ).filter(pl.col("filer_id").is_not_null())
             frames.append(part)
 
     if not frames:
-        return pl.DataFrame(schema={
-            "filer_id": pl.Utf8, "name": pl.Utf8,
-            "committee_type": pl.Utf8, "filer_status": pl.Utf8,
-        })
+        return pl.DataFrame(
+            schema={
+                "filer_id": pl.Utf8,
+                "name": pl.Utf8,
+                "committee_type": pl.Utf8,
+                "filer_status": pl.Utf8,
+            }
+        )
 
     combined = pl.concat(frames, how="diagonal_relaxed")
     # RCPT first -> first filerName wins
@@ -542,6 +690,7 @@ def _build_committee_frame(rcpt: pl.DataFrame | None, expn: pl.DataFrame | None)
 # ---------------------------------------------------------------------------
 # Addresses
 # ---------------------------------------------------------------------------
+
 
 def _has_name(first_col: str, last_col: str, org_col: str) -> pl.Expr:
     """Return True for rows where the ORM's build_person would produce a person
@@ -588,18 +737,21 @@ def _build_addresses(
                     "contributorNameFirst", "contributorNameLast", "contributorNameOrganization"
                 )
             )
-            .with_columns([
-                _nullify_expr(pl.col("contributorNameOrganization").cast(pl.Utf8))
-                    .str.to_lowercase().alias("_pk_org"),
-                _cs("contributorNameFirst").str.to_lowercase().alias("_pk_fn"),
-                _cs("contributorNameLast").str.to_lowercase().alias("_pk_ln"),
-                common.person_addr_key_expr(
-                    "contributorStreetAddr1",
-                    "contributorStreetCity",
-                    common.upper_str("contributorStreetStateCd"),
-                    "contributorStreetPostalCode",
-                ).alias("_pk_addr"),
-            ])
+            .with_columns(
+                [
+                    _nullify_expr(pl.col("contributorNameOrganization").cast(pl.Utf8))
+                    .str.to_lowercase()
+                    .alias("_pk_org"),
+                    _cs("contributorNameFirst").str.to_lowercase().alias("_pk_fn"),
+                    _cs("contributorNameLast").str.to_lowercase().alias("_pk_ln"),
+                    common.person_addr_key_expr(
+                        "contributorStreetAddr1",
+                        "contributorStreetCity",
+                        common.upper_str("contributorStreetStateCd"),
+                        "contributorStreetPostalCode",
+                    ).alias("_pk_addr"),
+                ]
+            )
         )
         rcpt_keyed = common.collapse_org_person_key(rcpt_keyed)
         rcpt_pk = ["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"]
@@ -624,21 +776,22 @@ def _build_addresses(
         # M3: filter rows with no name before taking addresses.
         expn_keyed = (
             expn.sort("expendInfoId")
-            .filter(
-                _has_name("payeeNameFirst", "payeeNameLast", "payeeNameOrganization")
+            .filter(_has_name("payeeNameFirst", "payeeNameLast", "payeeNameOrganization"))
+            .with_columns(
+                [
+                    _nullify_expr(pl.col("payeeNameOrganization").cast(pl.Utf8))
+                    .str.to_lowercase()
+                    .alias("_pk_org"),
+                    _cs("payeeNameFirst").str.to_lowercase().alias("_pk_fn"),
+                    _cs("payeeNameLast").str.to_lowercase().alias("_pk_ln"),
+                    common.person_addr_key_expr(
+                        "payeeStreetAddr1",
+                        "payeeStreetCity",
+                        common.upper_str("payeeStreetStateCd"),
+                        "payeeStreetPostalCode",
+                    ).alias("_pk_addr"),
+                ]
             )
-            .with_columns([
-                _nullify_expr(pl.col("payeeNameOrganization").cast(pl.Utf8))
-                    .str.to_lowercase().alias("_pk_org"),
-                _cs("payeeNameFirst").str.to_lowercase().alias("_pk_fn"),
-                _cs("payeeNameLast").str.to_lowercase().alias("_pk_ln"),
-                common.person_addr_key_expr(
-                    "payeeStreetAddr1",
-                    "payeeStreetCity",
-                    common.upper_str("payeeStreetStateCd"),
-                    "payeeStreetPostalCode",
-                ).alias("_pk_addr"),
-            ])
         )
         expn_keyed = common.collapse_org_person_key(expn_keyed)
         expn_pk = ["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"]
@@ -650,7 +803,8 @@ def _build_addresses(
         if rcpt_person_set:
             ind_rows = ind_first.to_dicts()
             ind_new_rows = [
-                r for r in ind_rows
+                r
+                for r in ind_rows
                 if (r.get("_pk_fn"), r.get("_pk_ln"), r.get("_pk_addr")) not in rcpt_person_set
             ]
             ind_new = (
@@ -666,11 +820,17 @@ def _build_addresses(
                 frames.append(_address_valid(_address_frame_expn(part)))
 
     if not frames:
-        return pl.DataFrame(schema={
-            "street_1": pl.Utf8, "street_2": pl.Utf8,
-            "city": pl.Utf8, "state": pl.Utf8,
-            "zip_code": pl.Utf8, "country": pl.Utf8, "county": pl.Utf8,
-        })
+        return pl.DataFrame(
+            schema={
+                "street_1": pl.Utf8,
+                "street_2": pl.Utf8,
+                "city": pl.Utf8,
+                "state": pl.Utf8,
+                "zip_code": pl.Utf8,
+                "country": pl.Utf8,
+                "county": pl.Utf8,
+            }
+        )
 
     return _address_dedup(pl.concat(frames, how="diagonal_relaxed"))
 
@@ -679,15 +839,14 @@ def _build_addresses(
 # Worker
 # ---------------------------------------------------------------------------
 
+
 class FlatTxnsDimsWorker:
     """Builds dim tables from RCPT/EXPN files ahead of flat_txns (priority 9 < 10)."""
 
     record_types = frozenset({"RCPT", "EXPN"})
     priority = 9  # must run before FlatTxnsWorker (priority=10)
 
-    def run(
-        self, files_by_type: dict[str, list[Path]], ctx: FamilyContext
-    ) -> dict[str, int]:
+    def run(self, files_by_type: dict[str, list[Path]], ctx: FamilyContext) -> dict[str, int]:
         rcpt = _read(files_by_type.get("RCPT", []))
         expn = _read(files_by_type.get("EXPN", []))
 
@@ -702,16 +861,22 @@ class FlatTxnsDimsWorker:
         if rcpt is not None:
             rcpt = _ensure_cols(rcpt, _RCPT_COLS)
             rcpt = common.add_resolved_street(
-                rcpt, addr_lookup,
-                city_col="contributorStreetCity", state_col="contributorStreetStateCd",
-                zip_col="contributorStreetPostalCode", out_col="contributorStreetAddr1",
+                rcpt,
+                addr_lookup,
+                city_col="contributorStreetCity",
+                state_col="contributorStreetStateCd",
+                zip_col="contributorStreetPostalCode",
+                out_col="contributorStreetAddr1",
             )
         if expn is not None:
             expn = _ensure_cols(expn, _EXPN_COLS)
             expn = common.add_resolved_street(
-                expn, addr_lookup,
-                city_col="payeeStreetCity", state_col="payeeStreetStateCd",
-                zip_col="payeeStreetPostalCode", out_col="payeeStreetAddr1",
+                expn,
+                addr_lookup,
+                city_col="payeeStreetCity",
+                state_col="payeeStreetStateCd",
+                zip_col="payeeStreetPostalCode",
+                out_col="payeeStreetAddr1",
                 own_s1_col="payeeStreetAddr1",
             )
 
@@ -729,19 +894,33 @@ class FlatTxnsDimsWorker:
         addr_df = _build_addresses(rcpt, expn)
         addr_new = self._anti_join_addresses(addr_df, ctx)
         counts["addresses"] = common.write_frame(
-            ctx.session, UnifiedAddress, addr_new, conflict_cols=None,
+            ctx.session,
+            UnifiedAddress,
+            addr_new,
+            conflict_cols=None,
         )
 
         # 2. Persons
         persons_df, rcpt_person_set = self._build_all_persons(rcpt, expn, ctx)
         persons_new = self._anti_join_persons(persons_df, ctx)
         counts["persons"] = common.write_frame(
-            ctx.session, UnifiedPerson,
-            persons_new.select([
-                "first_name", "last_name", "middle_name", "suffix",
-                "organization", "employer", "occupation", "job_title",
-                "person_type", "dedup_addr_key", "state_id",
-            ]),
+            ctx.session,
+            UnifiedPerson,
+            persons_new.select(
+                [
+                    "first_name",
+                    "last_name",
+                    "middle_name",
+                    "suffix",
+                    "organization",
+                    "employer",
+                    "occupation",
+                    "job_title",
+                    "person_type",
+                    "dedup_addr_key",
+                    "state_id",
+                ]
+            ),
             conflict_cols=None,
         )
 
@@ -749,11 +928,18 @@ class FlatTxnsDimsWorker:
         entity_df = self._build_all_entities(persons_df, rcpt, expn, ctx)
         entity_new = self._anti_join_entities(entity_df, ctx)
         counts["entities"] = common.write_frame(
-            ctx.session, UnifiedEntity,
-            entity_new.select([
-                "entity_type", "name", "normalized_name", "committee_id",
-                "notes", "state_id",
-            ]),
+            ctx.session,
+            UnifiedEntity,
+            entity_new.select(
+                [
+                    "entity_type",
+                    "name",
+                    "normalized_name",
+                    "committee_id",
+                    "notes",
+                    "state_id",
+                ]
+            ),
             conflict_cols=None,
         )
 
@@ -765,9 +951,11 @@ class FlatTxnsDimsWorker:
             # by an incidental transaction filerName. FILER runs first (priority 0); this
             # mirrors the ORM's find-or-create first-occurrence-wins.
             counts["committees"] = common.write_frame(
-                ctx.session, UnifiedCommittee,
+                ctx.session,
+                UnifiedCommittee,
                 comm_df.with_columns(pl.lit(ctx.state_id).alias("state_id")),
-                conflict_cols=["filer_id"], update_cols=[],
+                conflict_cols=["filer_id"],
+                update_cols=[],
             )
         else:
             counts["committees"] = 0
@@ -781,9 +969,7 @@ class FlatTxnsDimsWorker:
         # resolution to the harness so the linkage is actually verified.
 
         loaded = sum(counts.values())
-        _logger.info(
-            f"[vectorized.flat_txns_dims] loaded {loaded} dim rows: {counts}"
-        )
+        _logger.info(f"[vectorized.flat_txns_dims] loaded {loaded} dim rows: {counts}")
         return {"loaded": loaded, **counts}
 
     # ---- anti-joins against existing DB rows (shared dims) --------------
@@ -806,15 +992,12 @@ class FlatTxnsDimsWorker:
             pl.col("state").cast(pl.Utf8).str.to_lowercase().alias("_k_state"),
             pl.col("zip_code").alias("_k_zip"),
         )
-        return (
-            keyed.join(
-                existing.select("_k_s1", "_k_city", "_k_state", "_k_zip"),
-                on=["_k_s1", "_k_city", "_k_state", "_k_zip"],
-                how="anti",
-                join_nulls=True,
-            )
-            .drop("_k_s1", "_k_city", "_k_state", "_k_zip")
-        )
+        return keyed.join(
+            existing.select("_k_s1", "_k_city", "_k_state", "_k_zip"),
+            on=["_k_s1", "_k_city", "_k_state", "_k_zip"],
+            how="anti",
+            join_nulls=True,
+        ).drop("_k_s1", "_k_city", "_k_state", "_k_zip")
 
     @staticmethod
     def _anti_join_persons(persons_df: pl.DataFrame, ctx: FamilyContext) -> pl.DataFrame:
@@ -894,15 +1077,26 @@ class FlatTxnsDimsWorker:
 
         if not frames:
             return (
-                pl.DataFrame(schema={
-                    "first_name": pl.Utf8, "last_name": pl.Utf8,
-                    "middle_name": pl.Utf8, "suffix": pl.Utf8,
-                    "organization": pl.Utf8, "employer": pl.Utf8,
-                    "occupation": pl.Utf8, "job_title": pl.Utf8,
-                    "person_type": pl.Utf8, "dedup_addr_key": pl.Utf8,
-                    "_pk_fn": pl.Utf8, "_pk_ln": pl.Utf8, "_pk_org": pl.Utf8,
-                    "_pk_addr": pl.Utf8, "_sort_key": pl.Int64, "state_id": pl.Int64,
-                }),
+                pl.DataFrame(
+                    schema={
+                        "first_name": pl.Utf8,
+                        "last_name": pl.Utf8,
+                        "middle_name": pl.Utf8,
+                        "suffix": pl.Utf8,
+                        "organization": pl.Utf8,
+                        "employer": pl.Utf8,
+                        "occupation": pl.Utf8,
+                        "job_title": pl.Utf8,
+                        "person_type": pl.Utf8,
+                        "dedup_addr_key": pl.Utf8,
+                        "_pk_fn": pl.Utf8,
+                        "_pk_ln": pl.Utf8,
+                        "_pk_org": pl.Utf8,
+                        "_pk_addr": pl.Utf8,
+                        "_sort_key": pl.Int64,
+                        "state_id": pl.Int64,
+                    }
+                ),
                 rcpt_person_set,
             )
 
@@ -935,24 +1129,25 @@ class FlatTxnsDimsWorker:
             frames.append(_build_committee_entity(comm_df))
 
         if not frames:
-            return pl.DataFrame(schema={
-                "entity_type": pl.Utf8, "name": pl.Utf8,
-                "normalized_name": pl.Utf8, "committee_id": pl.Utf8,
-                "notes": pl.Utf8, "state_id": pl.Int64,
-            })
+            return pl.DataFrame(
+                schema={
+                    "entity_type": pl.Utf8,
+                    "name": pl.Utf8,
+                    "normalized_name": pl.Utf8,
+                    "committee_id": pl.Utf8,
+                    "notes": pl.Utf8,
+                    "state_id": pl.Int64,
+                }
+            )
 
         all_entities = pl.concat(frames, how="diagonal_relaxed")
 
         # Sort by _sort_key (ORM insertion order), then dedup on
         # (entity_type, normalized_name) — first-seen name wins.
-        all_entities = (
-            all_entities
-            .sort("_sort_key")
-            .unique(
-                subset=["entity_type", "normalized_name"],
-                keep="first",
-                maintain_order=True,
-            )
+        all_entities = all_entities.sort("_sort_key").unique(
+            subset=["entity_type", "normalized_name"],
+            keep="first",
+            maintain_order=True,
         )
         return all_entities.with_columns(pl.lit(ctx.state_id).alias("state_id"))
 

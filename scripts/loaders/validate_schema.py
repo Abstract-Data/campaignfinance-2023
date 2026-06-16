@@ -65,10 +65,12 @@ def main(state: str = "texas", *, verbose: bool = False) -> int:
             continue
         by_type[rtype].append((item.path.name, cols))
 
-    drift: list[str] = []      # human-readable drift lines
+    drift: list[str] = []  # human-readable drift lines
     has_drift = False
-    print(f"\nSchema audit — state={state!r}: {files_total} files, "
-          f"{len(by_type)} record types\n" + "=" * 64)
+    print(
+        f"\nSchema audit — state={state!r}: {files_total} files, "
+        f"{len(by_type)} record types\n" + "=" * 64
+    )
 
     for rtype in sorted(by_type):
         entries = by_type[rtype]
@@ -83,11 +85,14 @@ def main(state: str = "texas", *, verbose: bool = False) -> int:
             status = f"✗ DRIFT — {len(schemas)} distinct schemas"
         # unmapped columns in the majority schema (data we drop)
         unmapped = sorted(
-            c for c in majority
+            c
+            for c in majority
             if c not in mapped and c not in _STRUCTURAL_COLUMNS and not _is_handled(rtype, c)
         )
-        print(f"\n{rtype:8s} {n_files:3d} file(s)  {status}  "
-              f"| {len(majority)} cols, {len(unmapped)} unmapped(dropped)")
+        print(
+            f"\n{rtype:8s} {n_files:3d} file(s)  {status}  "
+            f"| {len(majority)} cols, {len(unmapped)} unmapped(dropped)"
+        )
 
         if len(schemas) > 1:
             for fname, cols in entries:
@@ -115,8 +120,10 @@ def main(state: str = "texas", *, verbose: bool = False) -> int:
     if has_drift or unreadable:
         print("RESULT: ✗ issues found — resolve drift / unreadable files before a full load.")
     else:
-        print("RESULT: ✓ every record type is schema-consistent across all its files.\n"
-              "        The subset already validated these schemas; a full load adds rows, not shape.")
+        print(
+            "RESULT: ✓ every record type is schema-consistent across all its files.\n"
+            "        The subset already validated these schemas; a full load adds rows, not shape."
+        )
     print("Tip: pass --verbose to list the unmapped (dropped) columns per type.\n")
     return 1 if (has_drift or unreadable) else 0
 

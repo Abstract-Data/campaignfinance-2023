@@ -94,8 +94,7 @@ def assert_colocation(
     """
     if entity_id_a == entity_id_b:
         raise SelfColocationError(
-            f"Cannot assert co-location: entity {entity_id_a} cannot be "
-            "linked to itself."
+            f"Cannot assert co-location: entity {entity_id_a} cannot be linked to itself."
         )
 
     association = UnifiedEntityAssociation(

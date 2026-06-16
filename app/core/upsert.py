@@ -128,15 +128,12 @@ def bulk_upsert(
         # An empty SET clause is invalid SQL: when the caller asked for no update
         # columns (explicit update_cols=[]) the intent is ON CONFLICT DO NOTHING.
         if not _update_col_names:
-            upsert_stmt = insert_stmt.on_conflict_do_nothing(
-                index_elements=list(conflict_cols)
-            )
+            upsert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=list(conflict_cols))
         else:
             # Build set_ from excluded pseudo-table so values reference the
             # incoming row, not a static literal.
             set_mapping: Dict[str, Any] = {
-                col_name: getattr(insert_stmt.excluded, col_name)
-                for col_name in _update_col_names
+                col_name: getattr(insert_stmt.excluded, col_name) for col_name in _update_col_names
             }
             upsert_stmt = insert_stmt.on_conflict_do_update(
                 index_elements=list(conflict_cols),

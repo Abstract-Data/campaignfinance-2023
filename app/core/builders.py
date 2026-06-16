@@ -119,7 +119,9 @@ class UnifiedSQLModelBuilder:
 
         return transaction
 
-    def _parse_person_name(self, raw_data: dict[str, Any], field_prefix: str = "person") -> PersonName:
+    def _parse_person_name(
+        self, raw_data: dict[str, Any], field_prefix: str = "person"
+    ) -> PersonName:
         """Extract normalized person name parts from raw state data.
 
         Args:
@@ -129,6 +131,7 @@ class UnifiedSQLModelBuilder:
                 as ``"contributor"`` or ``"payee"`` so that role-scoped column
                 mappings are used instead of the shared generic ones (Fix 1c).
         """
+
         # Role-scoped key first (contributor_first_name, payee_first_name, …)
         # with a fallback to the generic person_* key.  The fallback keeps the
         # committee/officer path and generically-normalized inputs working even
@@ -147,7 +150,9 @@ class UnifiedSQLModelBuilder:
             organization=_scoped("organization"),
         )
 
-    def _parse_address_parts(self, raw_data: dict[str, Any], field_prefix: str = "address") -> AddressParts:
+    def _parse_address_parts(
+        self, raw_data: dict[str, Any], field_prefix: str = "address"
+    ) -> AddressParts:
         """Extract normalized address components from raw state data.
 
         Args:
@@ -157,6 +162,7 @@ class UnifiedSQLModelBuilder:
                 role prefix (e.g. ``"contributor"``, ``"payee"``) for
                 role-scoped column resolution (Fix 1c).
         """
+
         # Role-scoped key first, falling back to the generic address_* key
         # (mirrors _parse_person_name) so generically-normalized inputs and the
         # committee/officer path still resolve under a role prefix (Fix 1c).
@@ -173,7 +179,9 @@ class UnifiedSQLModelBuilder:
             zip_code=_scoped("zip"),
         ).normalized()
 
-    def build_person(self, raw_data: dict[str, Any], role: PersonRole, field_prefix: str = "contributor") -> UnifiedPerson | None:
+    def build_person(
+        self, raw_data: dict[str, Any], role: PersonRole, field_prefix: str = "contributor"
+    ) -> UnifiedPerson | None:
         """Build a unified person from raw data.
 
         Args:
@@ -287,7 +295,9 @@ class UnifiedSQLModelBuilder:
 
         return person
 
-    def build_address(self, raw_data: dict[str, Any], entity_role: str, field_prefix: str = "address") -> UnifiedAddress | None:
+    def build_address(
+        self, raw_data: dict[str, Any], entity_role: str, field_prefix: str = "address"
+    ) -> UnifiedAddress | None:
         """Build a unified address from raw data.
 
         Args:
@@ -767,13 +777,10 @@ class UnifiedSQLModelBuilder:
             return None
         try:
             if organization:
-                stmt = (
-                    select(UnifiedPerson)
-                    .where(
-                        sa_func.lower(UnifiedPerson.organization) == organization.lower(),
-                        UnifiedPerson.state_id == self.state_id,
-                        UnifiedPerson.organization.is_not(None),
-                    )
+                stmt = select(UnifiedPerson).where(
+                    sa_func.lower(UnifiedPerson.organization) == organization.lower(),
+                    UnifiedPerson.state_id == self.state_id,
+                    UnifiedPerson.organization.is_not(None),
                 )
             elif first_name and last_name:
                 # NULL-aware equality on dedup_addr_key: ``is_(None)`` when the address
@@ -783,15 +790,12 @@ class UnifiedSQLModelBuilder:
                     if address_key is None
                     else UnifiedPerson.dedup_addr_key == address_key
                 )
-                stmt = (
-                    select(UnifiedPerson)
-                    .where(
-                        sa_func.lower(UnifiedPerson.first_name) == first_name.lower(),
-                        sa_func.lower(UnifiedPerson.last_name) == last_name.lower(),
-                        UnifiedPerson.state_id == self.state_id,
-                        UnifiedPerson.organization.is_(None),
-                        addr_match,
-                    )
+                stmt = select(UnifiedPerson).where(
+                    sa_func.lower(UnifiedPerson.first_name) == first_name.lower(),
+                    sa_func.lower(UnifiedPerson.last_name) == last_name.lower(),
+                    UnifiedPerson.state_id == self.state_id,
+                    UnifiedPerson.organization.is_(None),
+                    addr_match,
                 )
             else:
                 return None
@@ -900,11 +904,11 @@ class UnifiedSQLModelBuilder:
                 # "%Y%m%d" must come BEFORE ambiguous short formats — TEC (Texas) stores
                 # dates as compact 8-digit strings like "20120702".
                 for fmt in [
-                    "%Y%m%d",             # TEC compact: "20120702"
-                    "%Y-%m-%d",           # ISO: "2012-07-02"
-                    "%m/%d/%Y",           # US: "07/02/2012"
-                    "%m-%d-%Y",           # US dashed: "07-02-2012"
-                    "%Y/%m/%d",           # ISO slashed: "2012/07/02"
+                    "%Y%m%d",  # TEC compact: "20120702"
+                    "%Y-%m-%d",  # ISO: "2012-07-02"
+                    "%m/%d/%Y",  # US: "07/02/2012"
+                    "%m-%d-%Y",  # US dashed: "07-02-2012"
+                    "%Y/%m/%d",  # ISO slashed: "2012/07/02"
                     "%m/%d/%Y %H:%M:%S",  # US datetime: "07/02/2012 00:00:00"
                     "%Y-%m-%dT%H:%M:%S",  # ISO datetime: "2012-07-02T00:00:00"
                 ]:
@@ -974,9 +978,7 @@ class UnifiedSQLModelBuilder:
 
         # Check for explicit record_type field (Texas uses this).  TEC parquet
         # sources expose it as camelCase ``recordType``; accept both spellings.
-        record_type = (
-            raw_data.get("record_type") or raw_data.get("recordType") or ""
-        ).upper()
+        record_type = (raw_data.get("record_type") or raw_data.get("recordType") or "").upper()
         if record_type in RECORD_TYPE_TO_TRANSACTION:
             return RECORD_TYPE_TO_TRANSACTION[record_type]
 

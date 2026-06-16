@@ -75,15 +75,15 @@ def test_upper_str_strips_and_uppers():
 # The address state is stored upper-cased by the ORM (AddressParts.normalized()), so the
 # vec input mirrors that with upper_str before person_addr_key_expr lowercases it.
 ADDR_TUPLES = [
-    (None, None, None, None),          # 0 fields -> None
-    ("Main St", None, None, None),     # 1 field  -> None (degrades to name-only)
-    (None, "Austin", None, None),      # 1 field  -> None
-    (None, "Austin", "TX", None),      # 2 fields -> key
-    (None, "Austin", "tx", "78701"),   # RCPT-style (no street), mixed case
+    (None, None, None, None),  # 0 fields -> None
+    ("Main St", None, None, None),  # 1 field  -> None (degrades to name-only)
+    (None, "Austin", None, None),  # 1 field  -> None
+    (None, "Austin", "TX", None),  # 2 fields -> key
+    (None, "Austin", "tx", "78701"),  # RCPT-style (no street), mixed case
     ("PO Box 619", "Evans", "GA", "30809"),
     ("MAIN ST", "AUSTIN", "tx", "78701"),  # mixed case lowers consistently
-    ("", "  ", "  ", ""),              # blanks -> all null -> None
-    (None, None, "TX", "78701"),       # gap in the middle keeps separators
+    ("", "  ", "  ", ""),  # blanks -> all null -> None
+    (None, None, "TX", "78701"),  # gap in the middle keeps separators
 ]
 
 
@@ -96,6 +96,7 @@ def test_person_addr_key_expr_matches_builder_cache():
     the vec ``person_addr_key_expr`` cleans/uppercases inline. We mirror that
     normalization on the ORM side so the two see the same inputs.
     """
+
     def _norm(v):
         return v.strip() or None if isinstance(v, str) else v
 
@@ -105,17 +106,19 @@ def test_person_addr_key_expr_matches_builder_cache():
         schema={c: pl.Utf8 for c in cols},
     )
     got = df.select(
-        common.person_addr_key_expr(
-            "s1", "city", common.upper_str("state"), "zip"
-        ).alias("o")
+        common.person_addr_key_expr("s1", "city", common.upper_str("state"), "zip").alias("o")
     )["o"].to_list()
     want = []
     for t in ADDR_TUPLES:
         state = _norm(t[2])
         want.append(
             BuilderCache.address_key_str(
-                {"street_1": _norm(t[0]), "city": _norm(t[1]),
-                 "state": state.upper() if state else state, "zip_code": _norm(t[3])}
+                {
+                    "street_1": _norm(t[0]),
+                    "city": _norm(t[1]),
+                    "state": state.upper() if state else state,
+                    "zip_code": _norm(t[3]),
+                }
             )
         )
     for t, g, w in zip(ADDR_TUPLES, got, want):

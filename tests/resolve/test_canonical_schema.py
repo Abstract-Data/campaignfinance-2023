@@ -84,9 +84,7 @@ class TestCanonicalEntityStructure:
         inspector = inspect(sqlite_engine)
         columns = {c["name"]: c for c in inspector.get_columns("canonical_entity")}
         assert "master_entity_id" in columns, "master_entity_id column missing"
-        assert columns["master_entity_id"]["nullable"] is True, (
-            "master_entity_id must be nullable"
-        )
+        assert columns["master_entity_id"]["nullable"] is True, "master_entity_id must be nullable"
 
     def test_entity_type_column_present(self, sqlite_engine):
         inspector = inspect(sqlite_engine)
@@ -97,9 +95,17 @@ class TestCanonicalEntityStructure:
         inspector = inspect(sqlite_engine)
         columns = {c["name"] for c in inspector.get_columns("canonical_entity")}
         required = {
-            "id", "uuid", "entity_type", "canonical_name", "normalized_name",
-            "state_code", "first_seen_date", "last_seen_date",
-            "source_record_count", "created_at", "updated_at",
+            "id",
+            "uuid",
+            "entity_type",
+            "canonical_name",
+            "normalized_name",
+            "state_code",
+            "first_seen_date",
+            "last_seen_date",
+            "source_record_count",
+            "created_at",
+            "updated_at",
         }
         missing = required - columns
         assert not missing, f"canonical_entity missing columns: {missing}"
@@ -109,14 +115,10 @@ class TestCanonicalCampaignStructure:
     def test_identity_tuple_unique_constraint(self):
         """canonical_campaign must enforce uniqueness on (committee_entity_id, office_normalized, election_cycle)."""
         table = SQLModel.metadata.tables["canonical_campaign"]
-        unique_constraints = [
-            c for c in table.constraints
-            if isinstance(c, UniqueConstraint)
-        ]
+        unique_constraints = [c for c in table.constraints if isinstance(c, UniqueConstraint)]
         identity_cols = frozenset({"committee_entity_id", "office_normalized", "election_cycle"})
         found = any(
-            frozenset(col.name for col in uc.columns) == identity_cols
-            for uc in unique_constraints
+            frozenset(col.name for col in uc.columns) == identity_cols for uc in unique_constraints
         )
         assert found, (
             "canonical_campaign must have a UniqueConstraint on "
@@ -127,8 +129,14 @@ class TestCanonicalCampaignStructure:
         inspector = inspect(sqlite_engine)
         columns = {c["name"] for c in inspector.get_columns("canonical_campaign")}
         required = {
-            "id", "uuid", "committee_entity_id", "office_normalized",
-            "election_cycle", "state_code", "created_at", "updated_at",
+            "id",
+            "uuid",
+            "committee_entity_id",
+            "office_normalized",
+            "election_cycle",
+            "state_code",
+            "created_at",
+            "updated_at",
         }
         missing = required - columns
         assert not missing, f"canonical_campaign missing columns: {missing}"
@@ -154,8 +162,16 @@ class TestCanonicalAddressStructure:
         inspector = inspect(sqlite_engine)
         columns = {c["name"] for c in inspector.get_columns("canonical_address")}
         required = {
-            "id", "uuid", "standardized_line_1", "city", "state",
-            "zip5", "parse_status", "frequency", "created_at", "updated_at",
+            "id",
+            "uuid",
+            "standardized_line_1",
+            "city",
+            "state",
+            "zip5",
+            "parse_status",
+            "frequency",
+            "created_at",
+            "updated_at",
         }
         missing = required - columns
         assert not missing, f"canonical_address missing columns: {missing}"
@@ -164,8 +180,7 @@ class TestCanonicalAddressStructure:
         """canonical_address_id on canonical_entity must be many-to-one; no uniqueness."""
         entity_table = SQLModel.metadata.tables["canonical_entity"]
         unique_constraints = [
-            c for c in entity_table.constraints
-            if isinstance(c, UniqueConstraint)
+            c for c in entity_table.constraints if isinstance(c, UniqueConstraint)
         ]
         for uc in unique_constraints:
             col_names = {col.name for col in uc.columns}
@@ -180,8 +195,14 @@ class TestCanonicalNameHistoryStructure:
         inspector = inspect(sqlite_engine)
         columns = {c["name"] for c in inspector.get_columns("canonical_name_history")}
         required = {
-            "id", "subject_type", "subject_id", "name",
-            "first_seen_date", "last_seen_date", "occurrence_count", "created_at",
+            "id",
+            "subject_type",
+            "subject_id",
+            "name",
+            "first_seen_date",
+            "last_seen_date",
+            "occurrence_count",
+            "created_at",
         }
         missing = required - columns
         assert not missing, f"canonical_name_history missing columns: {missing}"
@@ -189,13 +210,10 @@ class TestCanonicalNameHistoryStructure:
     def test_subject_normalized_name_unique_constraint(self):
         """One normalized name per subject."""
         table = SQLModel.metadata.tables["canonical_name_history"]
-        unique_constraints = [
-            c for c in table.constraints if isinstance(c, UniqueConstraint)
-        ]
+        unique_constraints = [c for c in table.constraints if isinstance(c, UniqueConstraint)]
         expected = frozenset({"subject_type", "subject_id", "normalized_name"})
         found = any(
-            frozenset(col.name for col in uc.columns) == expected
-            for uc in unique_constraints
+            frozenset(col.name for col in uc.columns) == expected for uc in unique_constraints
         )
         assert found, (
             "canonical_name_history must have a UniqueConstraint on "

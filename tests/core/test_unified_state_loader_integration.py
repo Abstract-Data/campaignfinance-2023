@@ -129,9 +129,7 @@ def test_reload_same_file_yields_same_row_count(
 
     with Session(sqlite_engine) as session:
         rows_after_second = session.exec(select(UnifiedTransaction)).all()
-    assert len(rows_after_second) == 2, (
-        "Re-loading the same file must not create duplicate rows"
-    )
+    assert len(rows_after_second) == 2, "Re-loading the same file must not create duplicate rows"
 
 
 def test_natural_key_upsert_overwrites_mutable_fields(
@@ -189,4 +187,3 @@ def test_reload_creates_file_origin_provenance(
     with Session(sqlite_engine) as session:
         origins_after = session.exec(select(FileOrigin)).all()
     assert len(origins_after) == 1, "FileOrigin must not be duplicated on re-load"
-

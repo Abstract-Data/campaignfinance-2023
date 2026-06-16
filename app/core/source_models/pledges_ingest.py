@@ -63,9 +63,9 @@ def build_pledge(
     state_id: int,
 ) -> UnifiedPledge:
     """Build a pledge detail row from a transaction and entity pair."""
-    amount = _parse_amount(
-        _get_field_value(raw, "pledgeAmount", "amount")
-    ) or getattr(transaction, "amount", None)
+    amount = _parse_amount(_get_field_value(raw, "pledgeAmount", "amount")) or getattr(
+        transaction, "amount", None
+    )
     pledge_date = _parse_date(
         _get_field_value(raw, "pledgeDt", "transaction_date", "pledge_date")
     ) or getattr(transaction, "transaction_date", None)

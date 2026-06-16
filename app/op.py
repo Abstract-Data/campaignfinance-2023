@@ -5,12 +5,17 @@ from pathlib import Path
 from typing import Callable
 
 from onepassword.client import Client
-from onepassword.lib.aarch64.op_uniffi_core import Error
+from onepassword.core import core as _op_core
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
 from app.logger import Logger
+
+# onepassword ships per-architecture native cores (lib/aarch64, lib/x86_64) and selects
+# the right one via platform.machine() in onepassword.core. Reuse that resolution rather
+# than hardcoding an arch path, which raised ModuleNotFoundError on x86_64 CI runners.
+Error = _op_core.Error
 
 _logger: Logger | None = None
 
@@ -46,7 +51,7 @@ def return_if_not_empty(func: Callable):
 
 
 class OnePasswordSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=Path(__file__).parent / '.env', extra='forbid')
+    model_config = SettingsConfigDict(env_file=Path(__file__).parent / ".env", extra="forbid")
     op_service_account_token: str
 
     async def _get_value(self, secret_ref: str) -> SecretStr | None:
@@ -54,7 +59,7 @@ class OnePasswordSettings(BaseSettings):
             client = await Client.authenticate(
                 auth=self.op_service_account_token,
                 integration_name="My 1Password Integration",
-                integration_version="v1.0.0"
+                integration_version="v1.0.0",
             )
             if secret_ref.startswith("op://Dev/"):
                 secret_ref = secret_ref[5:]
@@ -152,11 +157,7 @@ class OnePasswordItem(BaseModel):
     @property
     def database_url(self) -> URL | None:
         if self.db_type.get_secret_value() == "postgresql":
-            query = (
-                {"currentSchema": self.db_schema.get_secret_value()}
-                if self.db_schema
-                else None
-            )
+            query = {"currentSchema": self.db_schema.get_secret_value()} if self.db_schema else None
             return URL.create(
                 "postgresql",
                 username=self.usr.get_secret_value() if self.usr else None,
@@ -170,14 +171,15 @@ class OnePasswordItem(BaseModel):
     @property
     def database_params(self) -> dict[str, str] | None:
         if self.db_type.get_secret_value() == "other":
-            params = {'account': self.account.get_secret_value() if self.account else None,
-                      'user': self.usr.get_secret_value() if self.usr else None,
-                      'password': self.pwd.get_secret_value() if self.pwd else None,
-                      'database': self.database.get_secret_value() if self.database else None,
-                      'schema': self.db_schema.get_secret_value() if self.db_schema else None,
-                      'warehouse': self.warehouse.get_secret_value() if self.warehouse else None,
-                      'role': self.role.get_secret_value() if self.role else None
-                      }
+            params = {
+                "account": self.account.get_secret_value() if self.account else None,
+                "user": self.usr.get_secret_value() if self.usr else None,
+                "password": self.pwd.get_secret_value() if self.pwd else None,
+                "database": self.database.get_secret_value() if self.database else None,
+                "schema": self.db_schema.get_secret_value() if self.db_schema else None,
+                "warehouse": self.warehouse.get_secret_value() if self.warehouse else None,
+                "role": self.role.get_secret_value() if self.role else None,
+            }
 
             for key in list(params.keys()):
                 if not params[key]:

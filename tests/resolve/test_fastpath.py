@@ -103,12 +103,8 @@ def test_committees_with_same_filer_id_produce_exact_merge_edge():
     with Session(engine) as session:
         _seed_run(session)
         filer_id = "CMT-100"
-        session.add(
-            _committee_row(run_id=1, source_id=filer_id, line_1="100 A St")
-        )
-        session.add(
-            _committee_row(run_id=1, source_id=filer_id, line_1="200 B St")
-        )
+        session.add(_committee_row(run_id=1, source_id=filer_id, line_1="100 A St"))
+        session.add(_committee_row(run_id=1, source_id=filer_id, line_1="200 B St"))
         session.commit()
 
         result = run_fastpath_stage(session, run_id=1, config={})
@@ -118,9 +114,7 @@ def test_committees_with_same_filer_id_produce_exact_merge_edge():
         assert len(edges) == 1
         assert edges[0].edge_source == "deterministic"
 
-        decisions = session.exec(
-            select(MatchDecision).where(MatchDecision.run_id == 1)
-        ).all()
+        decisions = session.exec(select(MatchDecision).where(MatchDecision.run_id == 1)).all()
         assert len(decisions) == 1
         assert decisions[0].method == MatchMethod.exact
         assert decisions[0].band == DecisionBand.auto
@@ -139,9 +133,7 @@ def test_persons_with_identical_name_and_address_merge():
         result = run_fastpath_stage(session, run_id=1, config={})
         assert result == {"auto_merges": 1}
 
-        decisions = session.exec(
-            select(MatchDecision).where(MatchDecision.run_id == 1)
-        ).all()
+        decisions = session.exec(select(MatchDecision).where(MatchDecision.run_id == 1)).all()
         assert len(decisions) == 1
         assert decisions[0].method == MatchMethod.exact
 
@@ -151,18 +143,14 @@ def test_persons_with_same_name_different_addresses_do_not_merge():
     with Session(engine) as session:
         _seed_run(session)
         session.add(_person_row(run_id=1, source_id="p-1", line_1="123 Main St"))
-        session.add(
-            _person_row(run_id=1, source_id="p-2", line_1="999 Other Blvd")
-        )
+        session.add(_person_row(run_id=1, source_id="p-2", line_1="999 Other Blvd"))
         session.commit()
 
         result = run_fastpath_stage(session, run_id=1, config={})
         assert result == {"auto_merges": 0}
 
         edges = session.exec(select(MergeEdge).where(MergeEdge.run_id == 1)).all()
-        decisions = session.exec(
-            select(MatchDecision).where(MatchDecision.run_id == 1)
-        ).all()
+        decisions = session.exec(select(MatchDecision).where(MatchDecision.run_id == 1)).all()
         assert edges == []
         assert decisions == []
 
@@ -177,9 +165,7 @@ def test_every_match_decision_has_nonempty_explanation_json():
 
         run_fastpath_stage(session, run_id=1, config={})
 
-        decisions = session.exec(
-            select(MatchDecision).where(MatchDecision.run_id == 1)
-        ).all()
+        decisions = session.exec(select(MatchDecision).where(MatchDecision.run_id == 1)).all()
         assert decisions
         for decision in decisions:
             assert decision.explanation_json
@@ -213,9 +199,7 @@ def test_identical_address_alone_does_not_merge():
         assert result == {"auto_merges": 0}
 
         edges = session.exec(select(MergeEdge).where(MergeEdge.run_id == 1)).all()
-        decisions = session.exec(
-            select(MatchDecision).where(MatchDecision.run_id == 1)
-        ).all()
+        decisions = session.exec(select(MatchDecision).where(MatchDecision.run_id == 1)).all()
         assert edges == []
         assert decisions == []
 
@@ -258,17 +242,11 @@ def test_running_fastpath_twice_is_deterministic():
         session.commit()
 
         run_fastpath_stage(session, run_id=1, config={})
-        first_edges = session.exec(
-            select(MergeEdge).where(MergeEdge.run_id == 1)
-        ).all()
-        first_decisions = session.exec(
-            select(MatchDecision).where(MatchDecision.run_id == 1)
-        ).all()
+        first_edges = session.exec(select(MergeEdge).where(MergeEdge.run_id == 1)).all()
+        first_decisions = session.exec(select(MatchDecision).where(MatchDecision.run_id == 1)).all()
 
         run_fastpath_stage(session, run_id=1, config={})
-        second_edges = session.exec(
-            select(MergeEdge).where(MergeEdge.run_id == 1)
-        ).all()
+        second_edges = session.exec(select(MergeEdge).where(MergeEdge.run_id == 1)).all()
         second_decisions = session.exec(
             select(MatchDecision).where(MatchDecision.run_id == 1)
         ).all()
@@ -296,9 +274,7 @@ def test_running_fastpath_twice_is_deterministic():
         )
 
     assert sorted(map(edge_key, first_edges)) == sorted(map(edge_key, second_edges))
-    assert sorted(map(decision_key, first_decisions)) == sorted(
-        map(decision_key, second_decisions)
-    )
+    assert sorted(map(decision_key, first_decisions)) == sorted(map(decision_key, second_decisions))
 
 
 def _entity_row(

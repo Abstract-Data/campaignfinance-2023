@@ -35,9 +35,7 @@ def _compose_raw_address(
     return ", ".join(part.strip() for part in parts if part and part.strip())
 
 
-def _entity_activity_dates(
-    session: Session, state_id: int
-) -> dict[int, list[Any]]:
+def _entity_activity_dates(session: Session, state_id: int) -> dict[int, list[Any]]:
     """Return ``{entity_id: [first_date, last_date]}`` from the transactions that
     reference each entity.
 
@@ -335,26 +333,22 @@ def _compute_features(rows: list[dict[str, Any]], run_id: int) -> list[Resolutio
     # schema inference ("could not append value ... of type date").  Polars is
     # only used for name/address standardization; dates are reattached by row
     # index below (iter_rows preserves input order).
-    activity_dates = [
-        (r.get("first_activity_date"), r.get("last_activity_date")) for r in rows
-    ]
+    activity_dates = [(r.get("first_activity_date"), r.get("last_activity_date")) for r in rows]
     # Keep the deterministic link ids out of the Polars frame too (mixed None/int and
     # None/str across source types); reattach by row index like the activity dates.
-    linked_ids = [
-        (r.get("linked_person_id"), r.get("linked_committee_id")) for r in rows
-    ]
+    linked_ids = [(r.get("linked_person_id"), r.get("linked_committee_id")) for r in rows]
     # Employer is only present on person rows; keep it out of the Polars frame so
     # that mixed-type schema inference (str | None vs absent key) does not break.
     # Normalize using the same org-name helper as normalized_org.
     raw_employers = [r.get("employer") for r in rows]
     _frame_skip = (
-        "first_activity_date", "last_activity_date", "linked_person_id", "linked_committee_id",
+        "first_activity_date",
+        "last_activity_date",
+        "linked_person_id",
+        "linked_committee_id",
         "employer",
     )
-    frame_rows = [
-        {k: v for k, v in r.items() if k not in _frame_skip}
-        for r in rows
-    ]
+    frame_rows = [{k: v for k, v in r.items() if k not in _frame_skip} for r in rows]
     frame = pl.DataFrame(frame_rows)
     # map_elements required here: standardize_name/standardize_address wrap
     # probablepeople, usaddress, and scourgify — no native Polars equivalent.

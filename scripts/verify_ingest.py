@@ -5,6 +5,7 @@ Usage (from the project root, with the venv active):
 
     uv run python scripts/verify_ingest.py
 """
+
 from __future__ import annotations
 
 import sys
@@ -13,9 +14,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import text  # noqa: E402
 from rich.console import Console  # noqa: E402
 from rich.table import Table  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 
 console = Console()
 

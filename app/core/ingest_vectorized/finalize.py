@@ -166,8 +166,7 @@ def finalize_entity_representatives(session: Any, state_id: int) -> int:
     )
 
     params = [
-        {"b_eid": r["_ent_id"], "b_pid": r["_pid"], "b_aid": r["_aid"]}
-        for r in reps.to_dicts()
+        {"b_eid": r["_ent_id"], "b_pid": r["_pid"], "b_aid": r["_aid"]} for r in reps.to_dicts()
     ]
     if not params:
         return 0

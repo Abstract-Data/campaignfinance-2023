@@ -44,9 +44,9 @@ class TestRunCustomQueryDeleted:
     ``app/`` and allowed arbitrary SQL execution (DROP TABLE, etc.)."""
 
     def test_run_custom_query_not_on_class(self) -> None:
-        assert not hasattr(
-            unified_database.UnifiedDatabaseManager, "run_custom_query"
-        ), "run_custom_query still exists — P1-SEC-002 not fixed"
+        assert not hasattr(unified_database.UnifiedDatabaseManager, "run_custom_query"), (
+            "run_custom_query still exists — P1-SEC-002 not fixed"
+        )
 
 
 # ---------------------------------------------------------------------------

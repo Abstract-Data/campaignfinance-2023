@@ -53,19 +53,55 @@ from sqlalchemy import create_engine, text
 # are ON DELETE NO ACTION, so descendants must be removed before ancestors.
 _CHILD_PURGES: tuple[tuple[str, str], ...] = (
     # grandchildren (reference the loan/debt detail tables) — purge first
-    ("loan_guarantors", "DELETE FROM loan_guarantors WHERE loan_id IN (SELECT id FROM unified_loans WHERE transaction_id IN (SELECT id FROM _doomed_txn))"),
-    ("loan_guarantors", "DELETE FROM loan_guarantors WHERE debt_id IN (SELECT id FROM unified_debts WHERE transaction_id IN (SELECT id FROM _doomed_txn))"),
+    (
+        "loan_guarantors",
+        "DELETE FROM loan_guarantors WHERE loan_id IN (SELECT id FROM unified_loans WHERE transaction_id IN (SELECT id FROM _doomed_txn))",
+    ),
+    (
+        "loan_guarantors",
+        "DELETE FROM loan_guarantors WHERE debt_id IN (SELECT id FROM unified_debts WHERE transaction_id IN (SELECT id FROM _doomed_txn))",
+    ),
     # children (reference unified_transactions.id via transaction_id)
-    ("unified_transaction_persons", "DELETE FROM unified_transaction_persons  WHERE transaction_id IN (SELECT id FROM _doomed_txn)"),
-    ("unified_transaction_versions", "DELETE FROM unified_transaction_versions WHERE transaction_id IN (SELECT id FROM _doomed_txn)"),
-    ("unified_contributions", "DELETE FROM unified_contributions        WHERE transaction_id IN (SELECT id FROM _doomed_txn)"),
-    ("unified_expenditures", "DELETE FROM unified_expenditures         WHERE transaction_id IN (SELECT id FROM _doomed_txn)"),
-    ("unified_loans", "DELETE FROM unified_loans                WHERE transaction_id IN (SELECT id FROM _doomed_txn)"),
-    ("unified_debts", "DELETE FROM unified_debts                WHERE transaction_id IN (SELECT id FROM _doomed_txn)"),
-    ("unified_credits", "DELETE FROM unified_credits              WHERE transaction_id IN (SELECT id FROM _doomed_txn)"),
-    ("unified_travel", "DELETE FROM unified_travel               WHERE transaction_id IN (SELECT id FROM _doomed_txn)"),
-    ("unified_assets", "DELETE FROM unified_assets               WHERE transaction_id IN (SELECT id FROM _doomed_txn)"),
-    ("unified_pledges", "DELETE FROM unified_pledges              WHERE transaction_id IN (SELECT id FROM _doomed_txn)"),
+    (
+        "unified_transaction_persons",
+        "DELETE FROM unified_transaction_persons  WHERE transaction_id IN (SELECT id FROM _doomed_txn)",
+    ),
+    (
+        "unified_transaction_versions",
+        "DELETE FROM unified_transaction_versions WHERE transaction_id IN (SELECT id FROM _doomed_txn)",
+    ),
+    (
+        "unified_contributions",
+        "DELETE FROM unified_contributions        WHERE transaction_id IN (SELECT id FROM _doomed_txn)",
+    ),
+    (
+        "unified_expenditures",
+        "DELETE FROM unified_expenditures         WHERE transaction_id IN (SELECT id FROM _doomed_txn)",
+    ),
+    (
+        "unified_loans",
+        "DELETE FROM unified_loans                WHERE transaction_id IN (SELECT id FROM _doomed_txn)",
+    ),
+    (
+        "unified_debts",
+        "DELETE FROM unified_debts                WHERE transaction_id IN (SELECT id FROM _doomed_txn)",
+    ),
+    (
+        "unified_credits",
+        "DELETE FROM unified_credits              WHERE transaction_id IN (SELECT id FROM _doomed_txn)",
+    ),
+    (
+        "unified_travel",
+        "DELETE FROM unified_travel               WHERE transaction_id IN (SELECT id FROM _doomed_txn)",
+    ),
+    (
+        "unified_assets",
+        "DELETE FROM unified_assets               WHERE transaction_id IN (SELECT id FROM _doomed_txn)",
+    ),
+    (
+        "unified_pledges",
+        "DELETE FROM unified_pledges              WHERE transaction_id IN (SELECT id FROM _doomed_txn)",
+    ),
 )
 
 _CREATE_DOOMED = text("CREATE TEMP TABLE _doomed_txn (id INTEGER PRIMARY KEY) ON COMMIT DROP")

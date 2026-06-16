@@ -45,8 +45,7 @@ class AlreadyDecidedError(ValueError):
 
     def __init__(self, review_id: int, current_status: ReviewStatus) -> None:
         super().__init__(
-            f"MergeReview {review_id} is already {current_status.value!r} "
-            "and cannot be re-decided."
+            f"MergeReview {review_id} is already {current_status.value!r} and cannot be re-decided."
         )
         self.review_id = review_id
         self.current_status = current_status

@@ -17,4 +17,4 @@ class OklahomaSettings(SQLModel):
         str_to_upper=True,
     )
 
-    _clear_blank_strings = model_validator(mode='before')(funcs.clear_blank_strings)
+    _clear_blank_strings = model_validator(mode="before")(funcs.clear_blank_strings)

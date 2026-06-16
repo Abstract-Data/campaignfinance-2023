@@ -118,9 +118,7 @@ _OK_EXPENDITURE_MINIMAL = {
 
 
 def test_oklahoma_expenditure_create_succeeds(ok_expenditure_models):
-    record = ok_expenditure_models.OklahomaExpenditureCreate.model_validate(
-        _OK_EXPENDITURE_MINIMAL
-    )
+    record = ok_expenditure_models.OklahomaExpenditureCreate.model_validate(_OK_EXPENDITURE_MINIMAL)
     assert record.expenditure_id == 42
 
 

@@ -297,9 +297,7 @@ class TestResolvedViewsIntegration:
         _seed_contribution_with_entities(session)
         build_resolved_views(session)
 
-        count = session.execute(
-            text("SELECT COUNT(*) FROM resolved_contributions")
-        ).scalar()
+        count = session.execute(text("SELECT COUNT(*) FROM resolved_contributions")).scalar()
         assert count >= 1
 
     def test_publish_views_are_idempotent(self, session):
@@ -342,9 +340,7 @@ class TestAddressOccupancyIntegration:
         _seed_contribution_with_entities(session)
         build_address_occupancy_view(session)
 
-        count = session.execute(
-            text("SELECT COUNT(*) FROM address_occupancy")
-        ).scalar()
+        count = session.execute(text("SELECT COUNT(*) FROM address_occupancy")).scalar()
         assert count == 2
 
     def test_address_occupancy_row_columns(self, session):

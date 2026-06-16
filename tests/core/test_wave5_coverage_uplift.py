@@ -333,8 +333,7 @@ class TestLoadStateDataConvenience:
         state_dir.mkdir()
         officer_file = state_dir / "committee_filers.csv"
         officer_file.write_text(
-            "filer_id,treasurer_name,chair_name\n"
-            "C1,Jane Treasurer,Bob Chair\n",
+            "filer_id,treasurer_name,chair_name\nC1,Jane Treasurer,Bob Chair\n",
             encoding="utf-8",
         )
         loader = UnifiedStateLoader("texas", tmp_path, db_manager=MagicMock())

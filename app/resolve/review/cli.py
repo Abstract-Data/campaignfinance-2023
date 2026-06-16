@@ -262,13 +262,9 @@ def main(argv: list[str] | None = None) -> int:
                 logger.error(f"Error: {exc}")
                 return 1
         elif args.command == "approve":
-            return _run_approve(
-                session, args.review_id, reviewer=args.reviewer, notes=args.notes
-            )
+            return _run_approve(session, args.review_id, reviewer=args.reviewer, notes=args.notes)
         elif args.command == "reject":
-            return _run_reject(
-                session, args.review_id, reviewer=args.reviewer, notes=args.notes
-            )
+            return _run_reject(session, args.review_id, reviewer=args.reviewer, notes=args.notes)
 
     return 0
 

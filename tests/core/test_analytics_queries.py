@@ -48,9 +48,7 @@ def sqlite_engine(tmp_path: Path):
 
 @pytest.fixture
 def analytics_db(sqlite_engine) -> UnifiedDatabaseManager:
-    manager = UnifiedDatabaseManager(
-        database_url=str(sqlite_engine.url), echo=False
-    )
+    manager = UnifiedDatabaseManager(database_url=str(sqlite_engine.url), echo=False)
     manager.engine = sqlite_engine
     return manager
 
@@ -255,9 +253,7 @@ class TestGetCommitteeByName:
         assert len(results) == 1
         assert results[0].filer_id == "F001"
 
-    def test_returns_empty_for_unknown_name(
-        self, analytics_db: UnifiedDatabaseManager
-    ) -> None:
+    def test_returns_empty_for_unknown_name(self, analytics_db: UnifiedDatabaseManager) -> None:
         results = analytics_db.get_committee_by_name("Nonexistent Committee XYZ")
         assert results == []
 
@@ -279,9 +275,7 @@ class TestGetPersonByName:
         results = analytics_db.get_person_by_name("Jane", "Doe")
         assert len(results) == 1
 
-    def test_returns_empty_for_unknown_person(
-        self, analytics_db: UnifiedDatabaseManager
-    ) -> None:
+    def test_returns_empty_for_unknown_person(self, analytics_db: UnifiedDatabaseManager) -> None:
         results = analytics_db.get_person_by_name("Nobody", "Exists")
         assert results == []
 

@@ -34,7 +34,7 @@ CANONICAL_TABLES: Final[tuple[str, ...]] = (
 def _validate_table_name(name: str) -> str:
     """Raise ValueError if *name* is not a safe SQL identifier."""
     if not _VALID_TABLE_NAME.match(name):
-        raise ValueError(f"Unsafe table name: {name!r}. " "Must match ^[a-z_][a-z0-9_]{{0,62}}$")
+        raise ValueError(f"Unsafe table name: {name!r}. Must match ^[a-z_][a-z0-9_]{{{{0,62}}}}$")
     return name
 
 

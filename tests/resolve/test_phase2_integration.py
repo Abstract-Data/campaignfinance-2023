@@ -371,9 +371,7 @@ class TestPhase2EndToEnd:
                 select(EntityCrosswalk).where(EntityCrosswalk.run_id == run.run_id)
             ).all()
 
-        probabilistic_rows = [
-            xw for xw in xwalks if xw.match_method == MatchMethod.probabilistic
-        ]
+        probabilistic_rows = [xw for xw in xwalks if xw.match_method == MatchMethod.probabilistic]
         assert len(probabilistic_rows) >= 1, (
             "entity_crosswalk must include rows merged via the probabilistic path "
             "when Splink auto-merges are enabled"
@@ -382,9 +380,7 @@ class TestPhase2EndToEnd:
             assert xw.match_score is not None, (
                 "probabilistic crosswalk rows must carry the Splink match_score"
             )
-            assert 0.0 <= xw.match_score <= 1.0, (
-                f"match_score {xw.match_score} out of [0, 1]"
-            )
+            assert 0.0 <= xw.match_score <= 1.0, f"match_score {xw.match_score} out of [0, 1]"
 
         exact_rows = [xw for xw in xwalks if xw.match_method == MatchMethod.exact]
         assert len(exact_rows) >= 1, "singleton or fastpath rows should remain exact"
@@ -419,9 +415,9 @@ class TestPhase2EndToEnd:
             cluster_sizes[row.cluster_id] += 1
 
         for cluster_id, size in cluster_sizes.items():
-            assert (
-                size <= max_size
-            ), f"Auto-published cluster {cluster_id} has size {size} > cap {max_size}"
+            assert size <= max_size, (
+                f"Auto-published cluster {cluster_id} has size {size} > cap {max_size}"
+            )
 
     def test_config_json_contains_thresholds(self, seeded_engine):
         """match_run.config_json must record auto_threshold and review_threshold."""

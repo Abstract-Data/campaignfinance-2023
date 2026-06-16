@@ -35,18 +35,18 @@ from app.core.models import (
 # latent bug: PLDG/CRED/TRVL records never matched the old PLEDGE/CREDIT/TRAVEL
 # keys and silently fell back to the contributor mapping.
 RECORD_TYPE_ROLE_MAP: dict[str, dict[PersonRole, str]] = {
-    "RCPT":  {PersonRole.CONTRIBUTOR: "contributor"},   # contributions
-    "EXPN":  {PersonRole.PAYEE: "payee"},               # expenditures
-    "LOAN":  {PersonRole.CONTRIBUTOR: "lender"},        # loans (lender acts as contributor)
-    "DEBT":  {PersonRole.CONTRIBUTOR: "lender"},        # debts (creditor via lenderName* cols)
-    "PLDG":  {PersonRole.CONTRIBUTOR: "pledger"},       # pledges
-    "CRED":  {PersonRole.CONTRIBUTOR: "payor"},         # credits/refunds
-    "TRVL":  {PersonRole.PAYEE: "traveller"},           # travel (traveller acts as payee)
+    "RCPT": {PersonRole.CONTRIBUTOR: "contributor"},  # contributions
+    "EXPN": {PersonRole.PAYEE: "payee"},  # expenditures
+    "LOAN": {PersonRole.CONTRIBUTOR: "lender"},  # loans (lender acts as contributor)
+    "DEBT": {PersonRole.CONTRIBUTOR: "lender"},  # debts (creditor via lenderName* cols)
+    "PLDG": {PersonRole.CONTRIBUTOR: "pledger"},  # pledges
+    "CRED": {PersonRole.CONTRIBUTOR: "payor"},  # credits/refunds
+    "TRVL": {PersonRole.PAYEE: "traveller"},  # travel (traveller acts as payee)
     # CAND — direct expenditure to a candidate.  The candidate is the PAYEE;
     # the field prefix is "candidate" (candidateNameFirst/Last/Organization etc.)
     # matching the TEC cand_*.csv column naming convention.
-    "CAND":  {PersonRole.PAYEE: "candidate"},
-    "ASSET": {},                                        # assets have no external person
+    "CAND": {PersonRole.PAYEE: "candidate"},
+    "ASSET": {},  # assets have no external person
 }
 
 
@@ -221,9 +221,7 @@ def _build_debt_detail(
         payment_amount=builder._parse_amount(
             builder._get_field_value(raw_data, "debt_payment_amount")
         ),
-        payment_date=builder._parse_date(
-            builder._get_field_value(raw_data, "debt_payment_date")
-        ),
+        payment_date=builder._parse_date(builder._get_field_value(raw_data, "debt_payment_date")),
         state_id=builder.state_id,
     )
     transaction.debt.guarantors = _build_guarantors(raw_data, state_id=builder.state_id)
@@ -278,9 +276,7 @@ def _build_travel_detail(
         travel_date=transaction.transaction_date,
         transportation_type=builder._get_field_value(raw_data, "transportation_type_cd")
         or builder._get_field_value(raw_data, "transportation_type"),
-        transportation_description=builder._get_field_value(
-            raw_data, "transportation_type_descr"
-        ),
+        transportation_description=builder._get_field_value(raw_data, "transportation_type_descr"),
         departure_city=builder._get_field_value(raw_data, "departure_city"),
         departure_state=builder._get_field_value(raw_data, "departure_state"),
         arrival_city=builder._get_field_value(raw_data, "arrival_city"),
@@ -367,9 +363,7 @@ DETAIL_BUILDERS: dict[TransactionType, DetailBuilder] = {
 }
 
 
-def _resolve_record_type(
-    raw_data: dict[str, Any], record_type: str | None = None
-) -> str:
+def _resolve_record_type(raw_data: dict[str, Any], record_type: str | None = None) -> str:
     """Return the upper-cased TEC record type for *raw_data*.
 
     Prefers the authoritative *record_type* threaded by the loader.  Falls back
@@ -390,9 +384,7 @@ def _build_participants(
     # each TEC record type, with the matching field prefix.  All other roles
     # default to None, eliminating phantom RECIPIENT/PAYEE/CANDIDATE rows.
     resolved_type = _resolve_record_type(raw_data, record_type)
-    role_map = RECORD_TYPE_ROLE_MAP.get(
-        resolved_type, {PersonRole.CONTRIBUTOR: "contributor"}
-    )
+    role_map = RECORD_TYPE_ROLE_MAP.get(resolved_type, {PersonRole.CONTRIBUTOR: "contributor"})
     result: dict[PersonRole, UnifiedPerson | None] = {role: None for role in PersonRole}
     for role, prefix in role_map.items():
         result[role] = builder.build_person(raw_data, role, field_prefix=prefix)
@@ -481,9 +473,7 @@ class UnifiedSQLDataProcessor:
         builder every call, preserving the original contract.
         """
         if cache is None:
-            return UnifiedSQLModelBuilder(
-                state, state_id, state_code, session=session
-            )
+            return UnifiedSQLModelBuilder(state, state_id, state_code, session=session)
         memo_key = (state, state_id, state_code, id(session))
         if cache.builder is not None and cache.builder_key == memo_key:
             return cache.builder

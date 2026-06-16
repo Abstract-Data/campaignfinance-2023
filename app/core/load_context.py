@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.core.models import UnifiedAddress, UnifiedCommittee, UnifiedPerson
+from app.core.models import UnifiedCommittee, UnifiedPerson
 
 AddressCacheKey = tuple[str, str, str, str]
 PersonCacheKey = str

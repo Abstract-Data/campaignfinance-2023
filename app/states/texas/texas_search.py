@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 from nameparser import HumanName
+
 from app.states.texas.texas import TECContributionRecord, TECExpenseRecord, TECFilerRecord
 from app.states.texas.texas_database import SessionLocal
 
@@ -16,17 +17,23 @@ class TECCampaignSearch:
 
     def search_for_campaign(self):
         with SessionLocal() as session:
-            results = session.query(TECFilerRecord).where(TECFilerRecord.org_names.ilike(f'%%{self.query}%%')).all()
+            results = (
+                session.query(TECFilerRecord)
+                .where(TECFilerRecord.org_names.ilike(f"%%{self.query}%%"))
+                .all()
+            )
             result_dict = [x.__dict__ for x in results]
-            result_list = {x[0]: {
-                'Names': x[1]['org_names'],
-                'id': x[1]['filerIdent']} for x in enumerate(result_dict, 1)}
+            result_list = {
+                x[0]: {"Names": x[1]["org_names"], "id": x[1]["filerIdent"]}
+                for x in enumerate(result_dict, 1)
+            }
             for x in result_list:
                 print(f"{x}: {result_list[x]['Names']}")
 
             _choice = int(input("Choose a filer: "))
-            self.filer_id = result_list[_choice]['id']
+            self.filer_id = result_list[_choice]["id"]
             return self.filer_id
+
 
 @dataclass
 class TECCriteriaPrompts:
@@ -43,24 +50,24 @@ class TECCriteriaPrompts:
         2. Expense
         """)
         fields = {}
-        if _choice == '1':
-            self.type_of_search = 'contribution'
+        if _choice == "1":
+            self.type_of_search = "contribution"
             self.type_model = TECContributionRecord
-            fields['name_filer'] = self.type_model.filerName
-            fields['name_first'] = self.type_model.contributorNameFirst
-            fields['name_last'] = self.type_model.contributorNameLast
-            fields['name_organization'] = self.type_model.contributorNameOrganization
-            fields['date_field'] = self.type_model.contributionDt
-            fields['amount_field'] = self.type_model.contributionAmount
-        elif _choice == '2':
-            self.type_of_search = 'expense'
+            fields["name_filer"] = self.type_model.filerName
+            fields["name_first"] = self.type_model.contributorNameFirst
+            fields["name_last"] = self.type_model.contributorNameLast
+            fields["name_organization"] = self.type_model.contributorNameOrganization
+            fields["date_field"] = self.type_model.contributionDt
+            fields["amount_field"] = self.type_model.contributionAmount
+        elif _choice == "2":
+            self.type_of_search = "expense"
             self.type_model = TECExpenseRecord
-            fields['name_filer'] = self.type_model.filerName
-            fields['name_first'] = self.type_model.payeeNameFirst
-            fields['name_last'] = self.type_model.payeeNameLast
-            fields['name_organization'] = self.type_model.payeeNameOrganization
-            fields['date_field'] = self.type_model.expendDt
-            fields['amount_field'] = self.type_model.expendAmount
+            fields["name_filer"] = self.type_model.filerName
+            fields["name_first"] = self.type_model.payeeNameFirst
+            fields["name_last"] = self.type_model.payeeNameLast
+            fields["name_organization"] = self.type_model.payeeNameOrganization
+            fields["date_field"] = self.type_model.expendDt
+            fields["amount_field"] = self.type_model.expendAmount
         else:
             raise ValueError("Invalid choice")
         self._fields = fields
@@ -74,14 +81,14 @@ class TECCriteriaPrompts:
         4. Search {self.type_of_search.lower()}s made by a person to a specific campaign
         5. Search {self.type_of_search.lower()}s made by an organization to a specific campaign
         """)
-        if _choice in ['1', '4', '5']:
+        if _choice in ["1", "4", "5"]:
             self.campaign_details = TECCampaignSearch(input("Enter a campaign name: "))
-        if _choice in ['2', '4']:
+        if _choice in ["2", "4"]:
             _person_name = HumanName(input("Enter a person's name: "))
             if not _person_name.first and not _person_name.last:
                 raise ValueError("Name must have a first and last name")
             self.person_name = _person_name
-        if _choice in ['3', '5']:
+        if _choice in ["3", "5"]:
             self.organization_name = input("Enter an organization's name: ")
         return self
 
@@ -95,29 +102,44 @@ class TECResults:
             print(x)
 
     def to_dataframe(self):
-        pd.set_option('display.max_columns', None)
-        pd.set_option('display.max_rows', None)
-        return pd.DataFrame.from_records([x.__dict__ for x in self.results]).drop(columns=['_sa_instance_state'])
+        pd.set_option("display.max_columns", None)
+        pd.set_option("display.max_rows", None)
+        return pd.DataFrame.from_records([x.__dict__ for x in self.results]).drop(
+            columns=["_sa_instance_state"]
+        )
 
     def by_year(self, **kwargs):
-        _campaign = kwargs.get('name_filer').name
-        _date_col = kwargs.get('date_field').name
-        _amount_col = kwargs.get('amount_field').name
+        _campaign = kwargs.get("name_filer").name
+        _date_col = kwargs.get("date_field").name
+        _amount_col = kwargs.get("amount_field").name
 
         _df = self.to_dataframe()
         _df[_date_col] = pd.to_datetime(_df[_date_col])
 
-        _df['year'] = _df[_date_col].dt.year
-        _df['quarter'] = _df[_date_col].dt.quarter
+        _df["year"] = _df[_date_col].dt.year
+        _df["quarter"] = _df[_date_col].dt.quarter
 
-        if kwargs.get('name_first') and kwargs.get('name_last'):
-            _crosstabs = pd.crosstab(index=_df[_campaign], columns=_df['year'], values=_df[_amount_col], aggfunc='sum', margins=True)
+        if kwargs.get("name_first") and kwargs.get("name_last"):
+            _crosstabs = pd.crosstab(
+                index=_df[_campaign],
+                columns=_df["year"],
+                values=_df[_amount_col],
+                aggfunc="sum",
+                margins=True,
+            )
         else:
-            _crosstabs = pd.crosstab(index=_df[_campaign], columns=_df['year'], values=_df[_amount_col], aggfunc='sum', margins=True)
+            _crosstabs = pd.crosstab(
+                index=_df[_campaign],
+                columns=_df["year"],
+                values=_df[_amount_col],
+                aggfunc="sum",
+                margins=True,
+            )
         # Change sum values to dollar amounts
         _crosstabs = _crosstabs.map(lambda x: f"${x:,.2f}")
         print(_crosstabs)
         return _crosstabs
+
 
 @dataclass
 class TECSearchQuery:
@@ -132,17 +154,27 @@ class TECSearchQuery:
         with self.__session() as session:
             query = session.query(self.data.type_model)
             if self.data.campaign_details:
-                query = query.where(self.data.type_model.filerIdent == self.data.campaign_details.filer_id)
+                query = query.where(
+                    self.data.type_model.filerIdent == self.data.campaign_details.filer_id
+                )
             else:
                 pass
             if self.data.person_name:
-                query = query.where(self.data._fields['name_first'].ilike(f"%%{self.data.person_name.first}%%"))
-                query = query.where(self.data._fields['name_last'].ilike(self.data.person_name.last))
+                query = query.where(
+                    self.data._fields["name_first"].ilike(f"%%{self.data.person_name.first}%%")
+                )
+                query = query.where(
+                    self.data._fields["name_last"].ilike(self.data.person_name.last)
+                )
             else:
                 pass
 
             if self.data.organization_name:
-                query = query.where(self.data._fields['name_organization'].ilike(f"%%{self.data.organization_name}%%"))
+                query = query.where(
+                    self.data._fields["name_organization"].ilike(
+                        f"%%{self.data.organization_name}%%"
+                    )
+                )
             else:
                 pass
 

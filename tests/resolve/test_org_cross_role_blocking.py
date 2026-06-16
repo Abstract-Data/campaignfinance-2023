@@ -47,9 +47,8 @@ def test_prediction_blocking_rules_includes_normalized_org_state():
         and "state" in _splink_rule_column_names(rule)
         for rule in org_config.PREDICTION_BLOCKING_RULES
     )
-    assert found, (
-        "No rule references both normalized_org and state. Rules present: "
-        + repr(org_config.PREDICTION_BLOCKING_RULES)
+    assert found, "No rule references both normalized_org and state. Rules present: " + repr(
+        org_config.PREDICTION_BLOCKING_RULES
     )
     # The coarse first-token phonetic rule must NOT be present (it exploded pairs).
     for rule in org_config.PREDICTION_BLOCKING_RULES:

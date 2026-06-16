@@ -37,9 +37,7 @@ def run_convert(
         )
 
     console.print(
-        f"Converted: {result.converted}, "
-        f"Skipped: {result.skipped}, "
-        f"Failed: {len(result.failed)}"
+        f"Converted: {result.converted}, Skipped: {result.skipped}, Failed: {len(result.failed)}"
     )
     for path, error in result.failed:
         console.print(f"  [red]{path.name}:[/red] {error}")

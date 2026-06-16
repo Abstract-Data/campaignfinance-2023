@@ -58,7 +58,9 @@ def _derive_supported_name(
     if support_type == "measure":
         return _clean_str(raw.get("ctaSeekOfficeDescr")) or _clean_str(raw.get("ctaSeekOfficeCd"))
     if supported_filer_id is None:
-        return _clean_str(raw.get("candidateFilerName")) or _clean_str(raw.get("ctaSeekOfficeDescr"))
+        return _clean_str(raw.get("candidateFilerName")) or _clean_str(
+            raw.get("ctaSeekOfficeDescr")
+        )
     return _clean_str(raw.get("candidateFilerName"))
 
 

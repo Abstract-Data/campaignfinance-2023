@@ -97,6 +97,7 @@ def _dims_only(snap: dict) -> dict:
 # Vectorized-only fixture directory containing ONLY RCPT / EXPN files
 # ---------------------------------------------------------------------------
 
+
 def _make_rcpt_expn_fixtures_dir(tmp_path: Path) -> Path:
     """Symlink (or copy) only contribs/expend golden parquets into a sub-dir.
 
@@ -118,6 +119,7 @@ def _make_rcpt_expn_fixtures_dir(tmp_path: Path) -> Path:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_flat_txns_family_matches_orm(tmp_path: Path):
     """unified_transactions from RCPT+EXPN must be row-for-row equal (ORM vs vectorized)."""
     # ORM side: load ONLY RCPT+EXPN into its own DB (FK=ON is fine; committees
@@ -138,9 +140,7 @@ def test_flat_txns_family_matches_orm(tmp_path: Path):
     assert vec["unified_transactions"], "vectorized produced no transactions — family not running"
 
     diffs = diff_snapshots(orm, vec)
-    assert diffs == [], (
-        "unified_transactions diverge from ORM:\n" + "\n".join(diffs)
-    )
+    assert diffs == [], "unified_transactions diverge from ORM:\n" + "\n".join(diffs)
 
 
 def test_flat_txns_contribution_count(tmp_path: Path):
@@ -168,6 +168,7 @@ def test_flat_txns_expenditure_count(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # Dim layer gate (flat_txns_dims family)
 # ---------------------------------------------------------------------------
+
 
 def test_flat_txns_dims_family_matches_orm(tmp_path: Path):
     """The 4 dim tables (unified_addresses, unified_persons, unified_entities,

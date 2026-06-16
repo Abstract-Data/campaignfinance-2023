@@ -156,8 +156,10 @@ def _office_expr(sources: tuple[str, ...]) -> pl.Expr:
     for col in sources:
         # json_path_match returns null when the key is absent; clean blank -> null.
         got = pl.col("_raw").str.json_path_match("$." + col)
-        got = pl.when(got.cast(pl.Utf8).str.strip_chars().str.len_chars() > 0).then(got).otherwise(
-            None
+        got = (
+            pl.when(got.cast(pl.Utf8).str.strip_chars().str.len_chars() > 0)
+            .then(got)
+            .otherwise(None)
         )
         expr = got if expr is None else expr.fill_null(got)
     assert expr is not None
@@ -191,9 +193,7 @@ def finalize_campaigns(session: Any, state_id: int) -> dict[str, int]:
     # Dedup key = (normalized_name, committee_filer_id, candidate_id=None, election_year).
     # First occurrence wins for the stored display name / office / district (the ORM
     # keeps the first-built campaign's values; later same-key transactions reuse it).
-    campaigns = joined.sort(
-        ["_norm", "_committee_id", "_txn_year"], nulls_last=True
-    ).unique(
+    campaigns = joined.sort(["_norm", "_committee_id", "_txn_year"], nulls_last=True).unique(
         subset=["_norm", "_committee_id", "_txn_year"],
         keep="first",
         maintain_order=True,

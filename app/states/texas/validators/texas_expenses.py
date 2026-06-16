@@ -80,15 +80,9 @@ class TECExpense(TECSettings, table=True):
         default=None, description="For INDIVIDUAL, the payee full name"
     )
     # Address — city/state/country are expected; addr1 and county are often blank
-    payeeStreetAddr1: Optional[str] = Field(
-        default=None, description="Payee street address line 1"
-    )
-    payeeStreetAddr2: Optional[str] = Field(
-        default=None, description="Payee street address line 2"
-    )
-    payeeStreetCity: Optional[str] = Field(
-        default=None, description="Payee street address city"
-    )
+    payeeStreetAddr1: Optional[str] = Field(default=None, description="Payee street address line 1")
+    payeeStreetAddr2: Optional[str] = Field(default=None, description="Payee street address line 2")
+    payeeStreetCity: Optional[str] = Field(default=None, description="Payee street address city")
     payeeStreetStateCd: str = Field(..., description="Payee street address state code")
     payeeStreetCountyCd: Optional[str] = Field(
         default=None, description="Payee street address Texas county"

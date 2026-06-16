@@ -78,9 +78,7 @@ def _target_tables(inspector: Any) -> list[str]:
     return sorted(
         t
         for t in names
-        if t.startswith("unified_")
-        or t.startswith("canonical_")
-        or t in _EXTRA_TARGET_TABLES
+        if t.startswith("unified_") or t.startswith("canonical_") or t in _EXTRA_TARGET_TABLES
     )
 
 

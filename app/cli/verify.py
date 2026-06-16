@@ -143,7 +143,9 @@ def field_coverage(
     ] = "texas",
     db_url: Annotated[
         Optional[str],
-        typer.Option("--db-url", help="Database URL (defaults to DATABASE_URL env var or sqlite://)."),
+        typer.Option(
+            "--db-url", help="Database URL (defaults to DATABASE_URL env var or sqlite://)."
+        ),
     ] = None,
     sample_rows: Annotated[
         int,

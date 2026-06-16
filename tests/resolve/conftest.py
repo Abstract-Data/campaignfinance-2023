@@ -71,9 +71,7 @@ class StubUnifiedTransaction(StubSQLModel, table=True):
     transaction_date: date | None = None
     description: str | None = None
     state_id: int | None = Field(default=None, foreign_key="states.id")
-    committee_id: str | None = Field(
-        default=None, foreign_key="unified_committees.filer_id"
-    )
+    committee_id: str | None = Field(default=None, foreign_key="unified_committees.filer_id")
     report_ident: str | None = Field(default=None, max_length=20, index=True)
     report_id: int | None = Field(default=None, index=True)
 
@@ -151,9 +149,7 @@ def postgres_env_configured() -> bool:
 def skip_unless_texas_data() -> None:
     """Skip the current test when ``tmp/texas`` is not populated."""
     if not texas_data_available():
-        pytest.skip(
-            "tmp/texas not present — run `uv run cf prepare texas` for integration tests"
-        )
+        pytest.skip("tmp/texas not present — run `uv run cf prepare texas` for integration tests")
 
 
 def skip_unless_postgres_env() -> None:

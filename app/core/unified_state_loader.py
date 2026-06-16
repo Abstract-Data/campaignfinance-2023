@@ -403,6 +403,7 @@ class UnifiedStateLoader:
             file_origin_id: str | None = None
             if file_path and state_id is not None:
                 from app.core.models import FileOrigin
+
                 origin_key = FileOrigin.build_key(state_id, file_name)
                 existing_origin = session.get(FileOrigin, origin_key)
                 if existing_origin is not None:
@@ -413,9 +414,7 @@ class UnifiedStateLoader:
                     )
                     file_origin_id = origin_key
                 else:
-                    new_origin = FileOrigin(
-                        id=origin_key, state_id=state_id, filename=file_name
-                    )
+                    new_origin = FileOrigin(id=origin_key, state_id=state_id, filename=file_name)
                     session.add(new_origin)
                     session.flush()
                     file_origin_id = origin_key

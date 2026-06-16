@@ -114,10 +114,7 @@ def verify_markup(
     if missing_links:
         details.append(f"missing required link text: {', '.join(missing_links)}")
 
-    msg = (
-        f"Portal markup drift detected for {expectation.scraper_id}: "
-        + "; ".join(details)
-    )
+    msg = f"Portal markup drift detected for {expectation.scraper_id}: " + "; ".join(details)
     log.error(msg)
     raise ScraperMarkupError(msg)
 

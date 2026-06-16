@@ -62,8 +62,13 @@ _HANDLED_PREFIXES: dict[str, tuple[str, ...]] = {
     "FINL": ("final",),
     # build_report captures the cover-sheet totals + period dates.
     "CVR1": (
-        "total", "unitemized", "loanBalance", "contribsMaintained",
-        "cashOnHand", "period", "filedDt",
+        "total",
+        "unitemized",
+        "loanBalance",
+        "contribsMaintained",
+        "cashOnHand",
+        "period",
+        "filedDt",
     ),
     # _build_guarantors extracts guarantor 1–5 name/address into loan_guarantors.
     "LOAN": ("guarantor",),
@@ -122,9 +127,7 @@ def audit_field_coverage(
     from app.core.unified_field_library import field_library
 
     state_code = _STATE_CODES.get(state.lower(), state[:2].upper())
-    mappings = {
-        m.state_field: m.unified_field for m in field_library.get_state_mappings(state)
-    }
+    mappings = {m.state_field: m.unified_field for m in field_library.get_state_mappings(state)}
 
     discovered = discover_state_files(state, base_dir=base_dir)
     # One representative file per record type.

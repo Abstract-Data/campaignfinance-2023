@@ -50,10 +50,7 @@ def _blocking_rule_col_names(rule) -> set[str]:
 
 def test_comparisons_contains_employer():
     """COMPARISONS must include exactly one employer comparison."""
-    employer_comps = [
-        c for c in COMPARISONS
-        if c.create_output_column_name() == "employer"
-    ]
+    employer_comps = [c for c in COMPARISONS if c.create_output_column_name() == "employer"]
     assert len(employer_comps) == 1, (
         f"Expected 1 employer comparison in COMPARISONS, found {len(employer_comps)}"
     )

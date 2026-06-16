@@ -5,6 +5,7 @@ snapshots the unified tables, and asserts the snapshot is non-trivial, determini
 (load twice -> identical), and that `diff_snapshots` flags an injected change. This
 is the gate the future vectorized engine must pass (orm_snap == vec_snap).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -76,8 +77,15 @@ def _load_golden(engine) -> None:
         assert discovered, "no golden fixtures discovered"
         for path, rtype in discovered:
             _n, _rej, cache = P._load_file(
-                path, rtype, cfg, state="texas", state_id=state.id,
-                state_code=state.code, session=session, cache=cache, max_remaining=None,
+                path,
+                rtype,
+                cfg,
+                state="texas",
+                state_id=state.id,
+                state_code=state.code,
+                session=session,
+                cache=cache,
+                max_remaining=None,
             )
         link_transactions_to_reports(session)
         session.commit()
@@ -103,8 +111,9 @@ def test_snapshot_is_non_trivial(golden_snapshot):
     assert golden_snapshot.get("unified_persons"), "no persons loaded"
     # CAND enrichment present (candidate-role links on expenditures).
     tp = golden_snapshot.get("unified_transaction_persons", [])
-    assert any(r.get("role") in ("CANDIDATE", "candidate") for r in tp), \
+    assert any(r.get("role") in ("CANDIDATE", "candidate") for r in tp), (
         "expected at least one candidate-role link from the CAND fixture"
+    )
 
 
 def test_snapshot_excludes_volatile_columns(golden_snapshot):
@@ -133,5 +142,6 @@ def test_diff_detects_injected_change(golden_snapshot):
     assert mutated["unified_transactions"], "need transactions to mutate"
     mutated["unified_transactions"].pop()
     diffs = diff_snapshots(golden_snapshot, mutated)
-    assert any("unified_transactions" in d for d in diffs), \
+    assert any("unified_transactions" in d for d in diffs), (
         "diff_snapshots failed to detect a dropped transaction row"
+    )

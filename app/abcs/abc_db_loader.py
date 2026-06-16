@@ -86,10 +86,12 @@ class DBLoaderClass(abc.ABC):
         return [c.name for c in model.__table__.primary_key.columns]
 
     @inject.autoparams()
-    def remove_existing_records(self,
-                                records: List[SQLModel] | Iterator[SQLModel],
-                                validator: Type[SQLModel],
-                                session: Session) -> Iterator[SQLModel]:
+    def remove_existing_records(
+        self,
+        records: List[SQLModel] | Iterator[SQLModel],
+        validator: Type[SQLModel],
+        session: Session,
+    ) -> Iterator[SQLModel]:
         """Check for existing data in the database and return only new records.
 
         .. deprecated::
@@ -183,7 +185,9 @@ class DBLoaderClass(abc.ABC):
             self.logger.info(f"Upserted {total:,} records in batch (limit={limit:,}).")
 
     @inject.autoparams()
-    def add(self, records: Iterator[SQLModel], record_type: SQLModel, session: Session, **kwargs) -> None:
+    def add(
+        self, records: Iterator[SQLModel], record_type: SQLModel, session: Session, **kwargs
+    ) -> None:
         """
         Add records to the database with optional limit.
         Uses add_all or add_with_limits.

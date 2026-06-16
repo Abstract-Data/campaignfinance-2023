@@ -116,12 +116,10 @@ def test_cand_family_matches_orm(tmp_path: Path):
 
     # The candidate links must actually be present on BOTH sides.
     assert any(
-        r.get("role") in ("CANDIDATE", "candidate")
-        for r in orm_full["unified_transaction_persons"]
+        r.get("role") in ("CANDIDATE", "candidate") for r in orm_full["unified_transaction_persons"]
     ), "ORM produced no CANDIDATE junction rows"
     assert any(
-        r.get("role") in ("CANDIDATE", "candidate")
-        for r in vec_full["unified_transaction_persons"]
+        r.get("role") in ("CANDIDATE", "candidate") for r in vec_full["unified_transaction_persons"]
     ), "vectorized produced no CANDIDATE junction rows"
 
     orm = {t: orm_full.get(t, []) for t in TABLES}
@@ -139,5 +137,6 @@ def test_cand_family_links_present(tmp_path: Path):
     run_vectorized(vec_engine, cand_fixtures)
     snap = snapshot_unified(vec_engine)
     tp = snap.get("unified_transaction_persons", [])
-    assert any(r.get("role") in ("CANDIDATE", "candidate") for r in tp), \
+    assert any(r.get("role") in ("CANDIDATE", "candidate") for r in tp), (
         "expected candidate-role links from the CAND fixture"
+    )

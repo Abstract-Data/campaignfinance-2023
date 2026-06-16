@@ -187,6 +187,7 @@ def person_addr_key_expr(
     Inputs may be column names (cleaned via ``clean_str``) or already-built expressions
     (e.g. ``upper_str`` for state); pass expressions when the caller normalizes a field.
     """
+
     def _expr(c: str | pl.Expr) -> pl.Expr:
         return clean_str(c) if isinstance(c, str) else c
 
@@ -214,7 +215,13 @@ def person_addr_key_expr(
 
 # Standard address column names a frame must carry for ``resolve_partial_address``.
 _ADDR_COLS: tuple[str, ...] = (
-    "street_1", "street_2", "city", "state", "zip_code", "country", "county",
+    "street_1",
+    "street_2",
+    "city",
+    "state",
+    "zip_code",
+    "country",
+    "county",
 )
 
 
@@ -233,8 +240,14 @@ def full_address_lookup(engine: Any) -> pl.DataFrame:
 
     tbl = Table("unified_addresses", MetaData(), autoload_with=engine)
     sel = select(
-        tbl.c.id, tbl.c.street_1, tbl.c.street_2, tbl.c.city, tbl.c.state,
-        tbl.c.zip_code, tbl.c.country, tbl.c.county,
+        tbl.c.id,
+        tbl.c.street_1,
+        tbl.c.street_2,
+        tbl.c.city,
+        tbl.c.state,
+        tbl.c.zip_code,
+        tbl.c.country,
+        tbl.c.county,
     )
     with engine.connect() as conn:
         rows = [dict(m) for m in conn.execute(sel).mappings().all()]
@@ -345,9 +358,7 @@ def resolve_partial_address(df: pl.DataFrame, lookup: pl.DataFrame) -> pl.DataFr
     out = joined.with_columns(
         [pl.when(do).then(pl.col(f"a_{c}")).otherwise(pl.col(c)).alias(c) for c in _ADDR_COLS]
     )
-    return out.drop(
-        ["_lk_city", "_lk_state", "_lk_zip", *(f"a_{c}" for c in _ADDR_COLS)]
-    )
+    return out.drop(["_lk_city", "_lk_state", "_lk_zip", *(f"a_{c}" for c in _ADDR_COLS)])
 
 
 def collapse_org_person_key(frame: pl.DataFrame) -> pl.DataFrame:
@@ -372,9 +383,7 @@ def collapse_org_person_key(frame: pl.DataFrame) -> pl.DataFrame:
         pl.when(has_org).then(None).otherwise(pl.col("_pk_ln")).alias("_pk_ln"),
     ]
     if "_pk_addr" in frame.columns:
-        updates.append(
-            pl.when(has_org).then(None).otherwise(pl.col("_pk_addr")).alias("_pk_addr")
-        )
+        updates.append(pl.when(has_org).then(None).otherwise(pl.col("_pk_addr")).alias("_pk_addr"))
     return frame.with_columns(updates)
 
 
@@ -494,9 +503,9 @@ def _write_frame_postgres(
         else:
             stg = f"_stg_{table_name}"
             cur.execute(
-                sql.SQL(
-                    "CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS) ON COMMIT DROP"
-                ).format(sql.Identifier(stg), sql.Identifier(table_name))
+                sql.SQL("CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS) ON COMMIT DROP").format(
+                    sql.Identifier(stg), sql.Identifier(table_name)
+                )
             )
             copy_stmt = sql.SQL("COPY {} ({}) FROM STDIN WITH (FORMAT csv, NULL '\\N')").format(
                 sql.Identifier(stg), col_idents
@@ -520,8 +529,7 @@ def _write_frame_postgres(
                 action = sql.SQL("DO NOTHING")
             cur.execute(
                 sql.SQL(
-                    "INSERT INTO {tbl} ({cols}) SELECT {cols} FROM {stg} "
-                    "ON CONFLICT ({conf}) {act}"
+                    "INSERT INTO {tbl} ({cols}) SELECT {cols} FROM {stg} ON CONFLICT ({conf}) {act}"
                 ).format(
                     tbl=sql.Identifier(table_name),
                     cols=col_idents,
@@ -613,27 +621,44 @@ def _write_isolating(
     integrity/data errors are isolated; operational errors propagate (handled by ``write_frame``)."""
     try:
         return _attempt_write(
-            session, model, rows, conflict_cols=conflict_cols,
-            update_cols=update_cols, is_postgres=is_postgres,
+            session,
+            model,
+            rows,
+            conflict_cols=conflict_cols,
+            update_cols=update_cols,
+            is_postgres=is_postgres,
         )
     except _ROW_LEVEL_ERRORS as exc:
         session.rollback()
         if len(rows) == 1:
             orig = getattr(exc, "orig", None)
             _record_ingest_errors(
-                session, model, rows, error_type=type(exc).__name__,
+                session,
+                model,
+                rows,
+                error_type=type(exc).__name__,
                 error_message=str(orig) if orig is not None else str(exc),
                 error_ctx=error_ctx,
             )
             return 0
         mid = len(rows) // 2
         left = _write_isolating(
-            session, model, rows[:mid], conflict_cols=conflict_cols,
-            update_cols=update_cols, is_postgres=is_postgres, error_ctx=error_ctx,
+            session,
+            model,
+            rows[:mid],
+            conflict_cols=conflict_cols,
+            update_cols=update_cols,
+            is_postgres=is_postgres,
+            error_ctx=error_ctx,
         )
         right = _write_isolating(
-            session, model, rows[mid:], conflict_cols=conflict_cols,
-            update_cols=update_cols, is_postgres=is_postgres, error_ctx=error_ctx,
+            session,
+            model,
+            rows[mid:],
+            conflict_cols=conflict_cols,
+            update_cols=update_cols,
+            is_postgres=is_postgres,
+            error_ctx=error_ctx,
         )
         return left + right
 
@@ -680,8 +705,12 @@ def write_frame(
     is_postgres = session.get_bind().dialect.name == "postgresql"
     try:
         return _attempt_write(
-            session, model, rows, conflict_cols=conflict_cols,
-            update_cols=update_cols, is_postgres=is_postgres,
+            session,
+            model,
+            rows,
+            conflict_cols=conflict_cols,
+            update_cols=update_cols,
+            is_postgres=is_postgres,
         )
     except _ROW_LEVEL_ERRORS as exc:
         session.rollback()
@@ -690,8 +719,13 @@ def write_frame(
             f"({type(exc).__name__}); isolating bad rows to ingest_errors"
         )
         written = _write_isolating(
-            session, model, rows, conflict_cols=conflict_cols,
-            update_cols=update_cols, is_postgres=is_postgres, error_ctx=error_ctx,
+            session,
+            model,
+            rows,
+            conflict_cols=conflict_cols,
+            update_cols=update_cols,
+            is_postgres=is_postgres,
+            error_ctx=error_ctx,
         )
         rejected = len(rows) - written
         if rejected:

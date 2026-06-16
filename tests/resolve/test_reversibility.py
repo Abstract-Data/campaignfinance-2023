@@ -366,9 +366,9 @@ class TestUnmergeRestoresCanonicalState:
         with Session(engine) as session:
             snap_after = _canonical_state_snapshot(session, run1_id)
 
-        assert (
-            snap_after == snap_before
-        ), "cluster structure after unmerging run2 must match snapshot after run1"
+        assert snap_after == snap_before, (
+            "cluster structure after unmerging run2 must match snapshot after run1"
+        )
 
     def test_unmerge_removes_run2_crosswalk_rows(self, seeded_engine_two_runs):
         engine, run1_id, run2_id = seeded_engine_two_runs
@@ -514,9 +514,9 @@ class TestReversalTransactionality:
             xwalk_count_after = len(
                 session.exec(select(EntityCrosswalk).where(EntityCrosswalk.run_id == run2_id)).all()
             )
-        assert (
-            xwalk_count_after == xwalk_count_before
-        ), "entity_crosswalk rows must be intact after a rolled-back reversal"
+        assert xwalk_count_after == xwalk_count_before, (
+            "entity_crosswalk rows must be intact after a rolled-back reversal"
+        )
 
     def test_failed_reversal_run_status_unchanged(self, seeded_engine_two_runs):
         """Run status must remain 'completed' if the reversal fails and rolls back."""

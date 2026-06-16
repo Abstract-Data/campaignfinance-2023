@@ -89,6 +89,10 @@ def test_discover_real_texas_directory_when_present() -> None:
 
     discovered = discover_state_files("texas", base_dir=Path("tmp/texas"))
     names = {d.path.name for d in discovered}
+    # Opportunistic: tmp/texas can exist as an empty/partial dir on CI (it is not
+    # git-tracked). Only assert when the prepared data is actually discoverable.
+    if not names:
+        pytest.skip("tmp/texas present but contains no discoverable state files")
     assert "cont_ss_20260524.csv" in names or any("cont_ss" in n for n in names)
     assert "cover_t_20260524.csv" in names or any("cover_t" in n for n in names)
 

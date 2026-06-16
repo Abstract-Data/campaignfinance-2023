@@ -8,9 +8,7 @@ from sqlmodel import Session
 ADDRESS_OCCUPANCY_VIEW_NAME = "address_occupancy"
 
 _ROLE_WHEN_PERSON_SQLITE = "WHEN lower(ce.entity_type) = 'person' THEN 'resident'"
-_ROLE_WHEN_PERSON_POSTGRES = (
-    "WHEN lower(ce.entity_type::text) = 'person' THEN 'resident'"
-)
+_ROLE_WHEN_PERSON_POSTGRES = "WHEN lower(ce.entity_type::text) = 'person' THEN 'resident'"
 
 _ADDRESS_OCCUPANCY_SELECT_BODY = """
 WITH entity_transactions AS (
@@ -124,11 +122,10 @@ LEFT JOIN entity_transaction_rollup AS etr
   ON etr.canonical_entity_id = ce.id
 """
 
+
 def _occupancy_select_sql(dialect_name: str) -> str:
     role_case = (
-        _ROLE_WHEN_PERSON_POSTGRES
-        if dialect_name == "postgresql"
-        else _ROLE_WHEN_PERSON_SQLITE
+        _ROLE_WHEN_PERSON_POSTGRES if dialect_name == "postgresql" else _ROLE_WHEN_PERSON_SQLITE
     )
     return _ADDRESS_OCCUPANCY_SELECT_BODY.replace("__ROLE_WHEN_PERSON__", role_case)
 
@@ -148,9 +145,7 @@ def build_address_occupancy_view(session: Session) -> str:
     dialect_name = bind.dialect.name
     select_sql = _occupancy_select_sql(dialect_name)
     if dialect_name == "postgresql":
-        session.execute(
-            text("CREATE OR REPLACE VIEW address_occupancy AS " + select_sql)
-        )
+        session.execute(text("CREATE OR REPLACE VIEW address_occupancy AS " + select_sql))
     else:
         session.execute(text(_DROP_SQLITE_VIEW_SQL))
         session.execute(text("CREATE VIEW address_occupancy AS " + select_sql))

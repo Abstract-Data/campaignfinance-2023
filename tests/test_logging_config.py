@@ -82,9 +82,9 @@ def test_obtaining_same_logger_twice_does_not_duplicate_handlers(
     assert logger_a is logger_b
     assert first_count == second_count, f"handler count grew from {first_count} to {second_count}"
     handler_ids = [id(h) for h in logging.getLogger(project_root).handlers]
-    assert len(set(handler_ids)) == len(
-        handler_ids
-    ), "duplicate handler instances attached to project root logger"
+    assert len(set(handler_ids)) == len(handler_ids), (
+        "duplicate handler instances attached to project root logger"
+    )
 
 
 def test_unreachable_papertrail_host_does_not_stall(
@@ -119,9 +119,9 @@ def test_legacy_logger_shim_preserves_public_api(
         "exception",
         "silent_error",
     ):
-        assert callable(
-            getattr(shim, method_name)
-        ), f"shim is missing required method: {method_name}"
+        assert callable(getattr(shim, method_name)), (
+            f"shim is missing required method: {method_name}"
+        )
 
     shim.info("info via shim")
     shim.debug("debug via shim")

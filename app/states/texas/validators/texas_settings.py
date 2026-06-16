@@ -1,8 +1,8 @@
+from pydantic import ConfigDict, model_validator
+from sqlmodel import SQLModel
+
 import app.states.texas.funcs.tx_validation_funcs as tx_funcs
 from app.funcs.record_keygen import RecordKeyGenerator
-from pydantic import ConfigDict
-from pydantic import model_validator
-from sqlmodel import SQLModel
 
 from ._mixins import AddressValidatedModel
 

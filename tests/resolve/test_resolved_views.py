@@ -208,9 +208,10 @@ def test_build_resolved_views_creates_views_and_resolves_contributions(session: 
         "cross_role_entities",
     }
 
-    row = session.execute(
-        text(
-            """
+    row = (
+        session.execute(
+            text(
+                """
             SELECT
                 contributor_canonical_entity_id,
                 contributor_canonical_name,
@@ -219,8 +220,11 @@ def test_build_resolved_views_creates_views_and_resolves_contributions(session: 
             FROM resolved_contributions
             WHERE id = 1
             """
+            )
         )
-    ).mappings().one()
+        .mappings()
+        .one()
+    )
     assert row["contributor_canonical_entity_id"] == 101
     assert row["contributor_canonical_name"] == "Alice Canonical"
     assert row["recipient_canonical_entity_id"] == 102
@@ -251,9 +255,10 @@ def test_uncrosswalked_party_is_preserved_with_null_canonical_columns(session: S
 
     build_resolved_views(session)
 
-    row = session.execute(
-        text(
-            """
+    row = (
+        session.execute(
+            text(
+                """
             SELECT
                 id,
                 payee_source_entity_id,
@@ -262,8 +267,11 @@ def test_uncrosswalked_party_is_preserved_with_null_canonical_columns(session: S
             FROM resolved_transactions
             WHERE id = 2
             """
+            )
         )
-    ).mappings().one()
+        .mappings()
+        .one()
+    )
     assert row["id"] == 2
     assert row["payee_source_entity_id"] == 9999
     assert row["payee_canonical_entity_id"] is None
@@ -285,9 +293,10 @@ def test_build_resolved_views_is_idempotent(session: Session) -> None:
 
     assert first == second
 
-    views = session.execute(
-        text(
-            """
+    views = (
+        session.execute(
+            text(
+                """
             SELECT name
             FROM sqlite_master
             WHERE type = 'view'
@@ -298,8 +307,11 @@ def test_build_resolved_views_is_idempotent(session: Session) -> None:
               )
             ORDER BY name
             """
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert views == [
         "resolved_contributions",
         "resolved_expenditures",

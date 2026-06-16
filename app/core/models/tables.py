@@ -46,6 +46,7 @@ class CommitteeType(SQLModel, table=True):
 
     committees: List["UnifiedCommittee"] = Relationship(back_populates="committee_type_ref")
 
+
 class State(SQLModel, table=True):
     """Reference table containing US states."""
 
@@ -1187,5 +1188,3 @@ class UnifiedTransactionIndexes:
     )
     idx_assets_type = Index("idx_assets_type", UnifiedAsset.asset_type)
     idx_assets_is_disposed = Index("idx_assets_is_disposed", UnifiedAsset.is_disposed)
-
-

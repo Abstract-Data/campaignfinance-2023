@@ -1,12 +1,18 @@
 import sys
-sys.path.insert(0, '/Users/johneakin/PyCharmProjects/campaignfinance')
 
-import polars as pl
+sys.path.insert(0, "/Users/johneakin/PyCharmProjects/campaignfinance")
+
 from pathlib import Path
 
+import polars as pl
+
 # Check actual column names in parquet files
-contribs_file = Path('/Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas/contribs_05_20260524.parquet')
-expend_file = Path('/Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas/expend_03_20260524.parquet')
+contribs_file = Path(
+    "/Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas/contribs_05_20260524.parquet"
+)
+expend_file = Path(
+    "/Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas/expend_03_20260524.parquet"
+)
 
 print("=== CONTRIBUTION FILE COLUMNS ===")
 df = pl.scan_parquet(contribs_file).limit(1).collect()

@@ -53,9 +53,7 @@ def sqlite_engine(tmp_path: Path):
 
 @pytest.fixture
 def db_manager(sqlite_engine) -> UnifiedDatabaseManager:
-    manager = UnifiedDatabaseManager(
-        database_url=str(sqlite_engine.url), echo=False
-    )
+    manager = UnifiedDatabaseManager(database_url=str(sqlite_engine.url), echo=False)
     manager.engine = sqlite_engine
     return manager
 
@@ -259,18 +257,14 @@ class TestBuilderWithSession:
 
     def test_build_transaction_returns_instance(self, sqlite_engine) -> None:
         with Session(sqlite_engine) as session:
-            builder = UnifiedSQLModelBuilder(
-                "texas", state_id=1, state_code="TX", session=session
-            )
+            builder = UnifiedSQLModelBuilder("texas", state_id=1, state_code="TX", session=session)
             raw = _base_raw("RCPT")
             txn = builder.build_transaction(raw)
         assert isinstance(txn, UnifiedTransaction)
 
     def test_find_committee_returns_none_when_absent(self, sqlite_engine) -> None:
         with Session(sqlite_engine) as session:
-            builder = UnifiedSQLModelBuilder(
-                "texas", state_id=1, state_code="TX", session=session
-            )
+            builder = UnifiedSQLModelBuilder("texas", state_id=1, state_code="TX", session=session)
             result = builder._find_committee_by_filer_id("nonexistent-filer-999")
         assert result is None
 
@@ -284,18 +278,14 @@ class TestBuilderWithSession:
             session.add(committee)
             session.commit()
 
-            builder = UnifiedSQLModelBuilder(
-                "texas", state_id=1, state_code="TX", session=session
-            )
+            builder = UnifiedSQLModelBuilder("texas", state_id=1, state_code="TX", session=session)
             result = builder._find_committee_by_filer_id("FILER-001")
         assert result is not None
         assert result.name == "Test Committee"
 
     def test_build_committee_creates_instance(self, sqlite_engine) -> None:
         with Session(sqlite_engine) as session:
-            builder = UnifiedSQLModelBuilder(
-                "texas", state_id=1, state_code="TX", session=session
-            )
+            builder = UnifiedSQLModelBuilder("texas", state_id=1, state_code="TX", session=session)
             raw = _base_raw("RCPT", filerName="My Test Committee")
             committee = builder.build_committee(raw)
         # May be None if filer_id cannot be resolved — that is valid behaviour
@@ -372,9 +362,7 @@ class TestDatabaseManagerSQLite:
         assert "2024-06-15" in dates
         assert "2025-01-01" not in dates
 
-    def test_update_transaction_creates_version(
-        self, db_manager: UnifiedDatabaseManager
-    ) -> None:
+    def test_update_transaction_creates_version(self, db_manager: UnifiedDatabaseManager) -> None:
         with db_manager.get_session() as session:
             txn = UnifiedTransaction(
                 amount=Decimal("200.00"),

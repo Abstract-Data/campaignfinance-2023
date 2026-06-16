@@ -121,8 +121,7 @@ class TECDownloader(FileDownloaderABC):
                     zip_ref.extract(file, tmp)
                     file_name = Path(file.filename)
                     rename = (
-                        f"{file_name.stem}_{datetime.now().strftime('%Y%m%d')}"
-                        f"{file_name.suffix}"
+                        f"{file_name.stem}_{datetime.now().strftime('%Y%m%d')}{file_name.suffix}"
                     )
                     Path(tmp / file.filename).rename(tmp / rename)
             logger.info(f"Removing {latest_file}")

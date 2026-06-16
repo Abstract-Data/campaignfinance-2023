@@ -94,9 +94,7 @@ def test_connected_components_collapse_transitive_edges(session: Session):
 
     result = run_cluster_stage(session, run_id, {"max_cluster_size": 50})
 
-    rows = session.exec(
-        select(ClusterAssignment).where(ClusterAssignment.run_id == run_id)
-    ).all()
+    rows = session.exec(select(ClusterAssignment).where(ClusterAssignment.run_id == run_id)).all()
     by_cluster: dict[str, set[tuple[str, str]]] = {}
     for row in rows:
         by_cluster.setdefault(row.cluster_id, set()).add((row.source_type, row.source_id))
@@ -120,9 +118,7 @@ def test_records_with_no_edges_are_singletons(session: Session):
 
     result = run_cluster_stage(session, run_id, {"max_cluster_size": 50})
 
-    rows = session.exec(
-        select(ClusterAssignment).where(ClusterAssignment.run_id == run_id)
-    ).all()
+    rows = session.exec(select(ClusterAssignment).where(ClusterAssignment.run_id == run_id)).all()
     by_cluster: dict[str, set[tuple[str, str]]] = {}
     for row in rows:
         by_cluster.setdefault(row.cluster_id, set()).add((row.source_type, row.source_id))

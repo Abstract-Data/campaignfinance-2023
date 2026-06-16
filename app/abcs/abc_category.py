@@ -12,15 +12,16 @@ from typing import (
     Type,
 )
 
+import inject
+from sqlmodel import SQLModel
+
 import app.abcs.abc_validation as validation
 import app.funcs as funcs
-import inject
 
 # from app.abcs.abc_download import FileDownloader
 from app.abcs.abc_db_loader import DBLoaderClass
 from app.abcs.abc_state_config import StateConfig
 from app.logger import Logger
-from sqlmodel import SQLModel
 
 logger = Logger(__name__)
 
@@ -80,12 +81,13 @@ class StateCategoryClass(abc.ABC):
     @property
     def validation(self):
         """
-    Get the validator based on the category.
-    :return: Type[validators.TECSettings]
-    """
+        Get the validator based on the category.
+        :return: Type[validators.TECSettings]
+        """
         if self.category in self.config.CATEGORY_TYPES:
             return validation.StateFileValidation(
-                validator_to_use=self.config.CATEGORY_TYPES[self.category].VALIDATOR)
+                validator_to_use=self.config.CATEGORY_TYPES[self.category].VALIDATOR
+            )
         else:
             raise ValueError(f"Invalid category: {self.category}")
 
@@ -115,9 +117,10 @@ class StateCategoryClass(abc.ABC):
             """
             for _file in list(self.files):
                 for record in file_reader.read_csv(
-                        _file,
-                        change_space_in_headers=self.config.CSV_CONFIG.replace_space_in_headers,
-                        lowercase_headers=self.config.CSV_CONFIG.lowercase_headers):
+                    _file,
+                    change_space_in_headers=self.config.CSV_CONFIG.replace_space_in_headers,
+                    lowercase_headers=self.config.CSV_CONFIG.lowercase_headers,
+                ):
                     file_reader.record_count += 1
                     yield record
 
@@ -134,9 +137,7 @@ class StateCategoryClass(abc.ABC):
             self.read()
         return list(self.records)
 
-    def validate(self,
-                 records: FileRecords = None
-                 ) -> validation.PassedFailedRecordList:
+    def validate(self, records: FileRecords = None) -> validation.PassedFailedRecordList:
         """
         Validate the records based on the category.
         :param records: Generator[Dict, None, None]
@@ -148,16 +149,14 @@ class StateCategoryClass(abc.ABC):
 
             records = self.records
 
-        return self.validation.validate(
-            records=records
-        )
+        return self.validation.validate(records=records)
 
     def write_to_csv(self, records, validation_status):
         funcs.write_records_to_csv_validation(
             records=records,
             folder_path=self.config.TEMP_FOLDER,
             record_type=self.category,
-            validation_status=validation_status
+            validation_status=validation_status,
         )
         return self
 
@@ -166,5 +165,9 @@ class StateCategoryClass(abc.ABC):
         _db_loader = DBLoaderClass(engine=self.config.DATABASE_ENGINE)
         if kwargs.get("create_table") is True:
             _db_loader.create_all(_db_loader.engine)
-        _db_loader.add(records, record_type=self.validation.validator_to_use, add_limit=kwargs.get("limit", None))
+        _db_loader.add(
+            records,
+            record_type=self.validation.validator_to_use,
+            add_limit=kwargs.get("limit", None),
+        )
         return None

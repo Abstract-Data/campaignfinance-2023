@@ -99,6 +99,7 @@ def ensure_unified_additive_columns(engine: Any) -> None:
             conn.execute(text(ddl))
         _logger.info(f"bootstrap: added missing column {table}.{column}")
 
+
 _REPO_DELEGATES = (
     "update_transaction",
     "get_transaction_versions",

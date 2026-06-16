@@ -16,7 +16,7 @@ class RecordKeyGenerator(object):
 
     def generate_hash(self):
         _hasher = hashlib.blake2b(digest_size=RecordKeyGenerator.__KEY_LENGTH)
-        _hasher.update(self.record.encode('utf-8'))
+        _hasher.update(self.record.encode("utf-8"))
         self.hash = _hasher.hexdigest()
         return self.hash
 
@@ -32,15 +32,15 @@ class RecordKeyGenerator(object):
     def generate_static_key(values: Tuple[Any, ...] | str) -> str:
         def format_value(val: Any) -> str:
             if val is None:
-                return 'None'
+                return "None"
             elif isinstance(val, (str, int, float, bool)):
                 return str(val)
             elif isinstance(val, (list, tuple, set)) and all(isinstance(x, date) for x in val):
-                return '_'.join(sorted(d.isoformat() for d in val))
+                return "_".join(sorted(d.isoformat() for d in val))
             elif isinstance(val, (list, tuple, set)):
-                return '_'.join(format_value(v) for v in val)
+                return "_".join(format_value(v) for v in val)
             elif isinstance(val, dict):
-                return '_'.join(f"{k}:{format_value(v)}" for k, v in sorted(val.items()))
+                return "_".join(f"{k}:{format_value(v)}" for k, v in sorted(val.items()))
             elif isinstance(val, date):
                 return val.isoformat()
             else:
@@ -48,10 +48,12 @@ class RecordKeyGenerator(object):
 
         if isinstance(values, tuple):
             key_parts = [format_value(value) for value in values]
-            key_string = '_'.join(key_parts)
+            key_string = "_".join(key_parts)
         elif isinstance(values, str):
             key_string = values
         else:
             raise ValueError(f"Unsupported type for hash key generation: {type(values)}")
 
-        return hashlib.sha256(key_string.encode()).hexdigest()[:16]  # Using first 16 characters for brevity
+        return hashlib.sha256(key_string.encode()).hexdigest()[
+            :16
+        ]  # Using first 16 characters for brevity

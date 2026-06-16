@@ -6,9 +6,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Generator
 
-from app.abcs.abc_state_config import CategoryTypes, StateConfig
 from pydantic import Field as PydanticField
 
+from app.abcs.abc_state_config import CategoryTypes, StateConfig
 from app.logger import Logger
 
 logger = Logger(__name__)
@@ -34,12 +34,10 @@ class FileDownloaderABC(abc.ABC):
         return self.folder
 
     @abc.abstractmethod
-    def download(self, *, overwrite: bool = False, headless: bool = False) -> Path:
-        ...
+    def download(self, *, overwrite: bool = False, headless: bool = False) -> Path: ...
 
     @abc.abstractmethod
-    def read(self):
-        ...
+    def read(self): ...
 
     def sort_categories(self) -> CategoryTypes:
         """Filter data into respective categories"""

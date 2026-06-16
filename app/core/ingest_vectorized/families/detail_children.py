@@ -341,9 +341,7 @@ def _person_type_expr(last: pl.Expr, first: pl.Expr, org: pl.Expr) -> pl.Expr:
 
 def _full_name(first: pl.Expr, last: pl.Expr, suffix: pl.Expr, org: pl.Expr) -> pl.Expr:
     """Mirror PersonName.full_name (no middle column for these types)."""
-    joined = pl.concat_str(
-        [first, last, suffix], separator=" ", ignore_nulls=True
-    )
+    joined = pl.concat_str([first, last, suffix], separator=" ", ignore_nulls=True)
     joined = pl.when(joined.str.len_chars() > 0).then(joined).otherwise(pl.lit(""))
     return pl.when(org.is_not_null()).then(org).otherwise(joined)
 
@@ -391,9 +389,9 @@ def _spec_party_frame(df: pl.DataFrame, spec: TypeSpec, sort_offset: int) -> pl.
             last.str.to_lowercase().alias("_pk_ln"),
             # Address dimension of the individual dedup key (these record types carry no
             # street_1). collapse_org_person_key nulls it for org-persons below.
-            common.person_addr_key_expr(
-                pl.lit(None, dtype=pl.Utf8), city, state, zip_code
-            ).alias("_pk_addr"),
+            common.person_addr_key_expr(pl.lit(None, dtype=pl.Utf8), city, state, zip_code).alias(
+                "_pk_addr"
+            ),
             row_id,
         ]
     )
@@ -503,7 +501,10 @@ def _person_id_map(engine: Any, state_id: int) -> pl.DataFrame:
     uix_persons_org_state; individuals split by dedup_addr_key per uix_persons_name_state)."""
     tbl = _reflect(engine, "unified_persons")
     stmt = select(
-        tbl.c.id, tbl.c.first_name, tbl.c.last_name, tbl.c.organization,
+        tbl.c.id,
+        tbl.c.first_name,
+        tbl.c.last_name,
+        tbl.c.organization,
         tbl.c.dedup_addr_key,
     ).where(tbl.c.state_id == state_id)
     with engine.connect() as conn:
@@ -546,8 +547,7 @@ def _txn_id_map(engine: Any, state_id: int, record_types: list[str]) -> pl.DataF
         {
             "txn_pk": [r["id"] for r in keep],
             "transaction_id": [
-                None if r["transaction_id"] is None else str(r["transaction_id"])
-                for r in keep
+                None if r["transaction_id"] is None else str(r["transaction_id"]) for r in keep
             ],
             "transaction_type": [_enum_name(r["transaction_type"]) for r in keep],
         },
@@ -685,9 +685,7 @@ class DetailChildrenWorker:
 
     # ---- dims (addresses, persons, entities) ----------------------------
 
-    def _all_parties(
-        self, frames: dict[str, pl.DataFrame], ordered: list[str]
-    ) -> pl.DataFrame:
+    def _all_parties(self, frames: dict[str, pl.DataFrame], ordered: list[str]) -> pl.DataFrame:
         """Concatenated per-row party frame across all types in load order."""
         parts: list[pl.DataFrame] = []
         offset = 0
@@ -733,8 +731,12 @@ class DetailChildrenWorker:
         # the ORM's. a_city/a_state/a_zip are already the cleaned/cased dim columns. Then
         # recompute _pk_addr from the (possibly inherited) street; org-persons keep NULL.
         parties = common.add_resolved_street(
-            parties, self._addr_lookup,
-            city_col="a_city", state_col="a_state", zip_col="a_zip", out_col="a_street_1",
+            parties,
+            self._addr_lookup,
+            city_col="a_city",
+            state_col="a_state",
+            zip_col="a_zip",
+            out_col="a_street_1",
         )
         parties = parties.with_columns(
             pl.when(pl.col("_pk_org").is_not_null())
@@ -747,7 +749,8 @@ class DetailChildrenWorker:
         # The address dimension splits same-name individuals at distinct locations
         # (matching uix_persons_name_state); org-persons keep _pk_addr NULL.
         persons = parties.unique(
-            subset=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"], keep="first",
+            subset=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
+            keep="first",
             maintain_order=True,
         )
         # Each deduped person carries the 4-field address key of its first address
@@ -762,7 +765,8 @@ class DetailChildrenWorker:
         addr = (
             persons.filter(_address_has_anchor(persons))
             .unique(
-                subset=["_k_s1", "_k_city", "_k_state", "_k_zip"], keep="first",
+                subset=["_k_s1", "_k_city", "_k_state", "_k_zip"],
+                keep="first",
                 maintain_order=True,
             )
             .join(
@@ -825,9 +829,7 @@ class DetailChildrenWorker:
             "address_id",
             "state_id",
         )
-        n_persons = common.write_frame(
-            ctx.session, UnifiedPerson, persons_out, conflict_cols=None
-        )
+        n_persons = common.write_frame(ctx.session, UnifiedPerson, persons_out, conflict_cols=None)
 
         # Entities: person entities + committee entities (carry committee_id), deduped on
         # (entity_type, normalized_name) first-seen. The entity's representative person_id /
@@ -857,8 +859,14 @@ class DetailChildrenWorker:
                 pl.lit(None, dtype=pl.Int64).alias("address_id"),
             )
             .select(
-                "entity_type", "name", "normalized_name", "committee_id", "notes",
-                "person_id", "address_id", "_sort_key",
+                "entity_type",
+                "name",
+                "normalized_name",
+                "committee_id",
+                "notes",
+                "person_id",
+                "address_id",
+                "_sort_key",
             )
         )
 
@@ -881,11 +889,15 @@ class DetailChildrenWorker:
                 on=["entity_type", "normalized_name"],
                 how="anti",
             )
-            entities_out = entities.with_columns(
-                pl.lit(ctx.state_id).alias("state_id")
-            ).select(
-                "entity_type", "name", "normalized_name", "committee_id", "notes",
-                "person_id", "address_id", "state_id",
+            entities_out = entities.with_columns(pl.lit(ctx.state_id).alias("state_id")).select(
+                "entity_type",
+                "name",
+                "normalized_name",
+                "committee_id",
+                "notes",
+                "person_id",
+                "address_id",
+                "state_id",
             )
             n_entities = common.write_frame(
                 ctx.session, UnifiedEntity, entities_out, conflict_cols=None
@@ -927,13 +939,13 @@ class DetailChildrenWorker:
             pl.col("filer_id").alias("committee_id"),
             pl.lit(None, dtype=pl.Utf8).alias("notes"),
             pl.lit(-1, dtype=pl.Int64).alias("_sort_key"),
-        ).select(
-            "entity_type", "name", "normalized_name", "committee_id", "notes", "_sort_key"
-        )
+        ).select("entity_type", "name", "normalized_name", "committee_id", "notes", "_sort_key")
 
     # ---- transactions ---------------------------------------------------
 
-    def _transaction_frame(self, df: pl.DataFrame, spec: TypeSpec, ctx: FamilyContext) -> pl.DataFrame:
+    def _transaction_frame(
+        self, df: pl.DataFrame, spec: TypeSpec, ctx: FamilyContext
+    ) -> pl.DataFrame:
         # raw_data provenance must match json.dumps(raw) over the ORIGINAL source
         # columns only — not the null-padded columns _ensure_cols added.
         orig_cols = self._orig_cols.get(spec.record_type, list(df.columns))
@@ -1003,9 +1015,7 @@ class DetailChildrenWorker:
         total = 0
         for rt in ordered:
             out = self._transaction_frame(frames[rt], _SPECS[rt], ctx)
-            total += common.write_frame(
-                ctx.session, UnifiedTransaction, out, conflict_cols=None
-            )
+            total += common.write_frame(ctx.session, UnifiedTransaction, out, conflict_cols=None)
         return total
 
     # ---- detail children ------------------------------------------------
@@ -1023,14 +1033,17 @@ class DetailChildrenWorker:
             spec = _SPECS[rt]
             df = frames[rt]
             if rt == "LOAN":
-                counts["loans"] = self._build_loan(df, spec, ctx, entity_map, txn_map,
-                                                    committee_entity)
+                counts["loans"] = self._build_loan(
+                    df, spec, ctx, entity_map, txn_map, committee_entity
+                )
             elif rt == "DEBT":
-                counts["debts"] = self._build_debt(df, spec, ctx, entity_map, txn_map,
-                                                   committee_entity)
+                counts["debts"] = self._build_debt(
+                    df, spec, ctx, entity_map, txn_map, committee_entity
+                )
             elif rt == "CRED":
-                counts["credits"] = self._build_credit(df, spec, ctx, entity_map, txn_map,
-                                                       committee_entity)
+                counts["credits"] = self._build_credit(
+                    df, spec, ctx, entity_map, txn_map, committee_entity
+                )
             elif rt == "TRVL":
                 counts["travel"] = self._build_travel(df, spec, ctx, txn_map)
             elif rt == "ASSET":
@@ -1064,11 +1077,17 @@ class DetailChildrenWorker:
         # enriched person stored by _write_dims. Materialize city/state/zip as columns for
         # add_resolved_street, then key on the resolved street.
         keyed = df.with_columns(
-            city.alias("_rc_city"), state.alias("_rc_state"), zip_code.alias("_rc_zip"),
+            city.alias("_rc_city"),
+            state.alias("_rc_state"),
+            zip_code.alias("_rc_zip"),
         )
         keyed = common.add_resolved_street(
-            keyed, self._addr_lookup,
-            city_col="_rc_city", state_col="_rc_state", zip_col="_rc_zip", out_col="_res_street",
+            keyed,
+            self._addr_lookup,
+            city_col="_rc_city",
+            state_col="_rc_state",
+            zip_col="_rc_zip",
+            out_col="_res_street",
         )
         return common.collapse_org_person_key(
             keyed.with_columns(
@@ -1078,7 +1097,9 @@ class DetailChildrenWorker:
                 # Address dimension of the individual key — uses the inherited street so it
                 # matches the dim-layer person. collapse_org_person_key nulls it for orgs.
                 common.person_addr_key_expr(
-                    pl.col("_res_street"), pl.col("_rc_city"), pl.col("_rc_state"),
+                    pl.col("_res_street"),
+                    pl.col("_rc_city"),
+                    pl.col("_rc_state"),
                     pl.col("_rc_zip"),
                 ).alias("_pk_addr"),
                 _full_name(first, last, _opt_col(df, spec.name_suffix), org).alias("_full_name"),
@@ -1086,11 +1107,14 @@ class DetailChildrenWorker:
             )
         ).drop("_rc_city", "_rc_state", "_rc_zip", "_res_street")
 
-    def _join_party_entity(self, keyed: pl.DataFrame, person_map: pl.DataFrame,
-                           entity_map: pl.DataFrame) -> pl.DataFrame:
+    def _join_party_entity(
+        self, keyed: pl.DataFrame, person_map: pl.DataFrame, entity_map: pl.DataFrame
+    ) -> pl.DataFrame:
         """Resolve party -> person id -> entity id (PERSON or ORGANIZATION entity)."""
         joined = keyed.join(
-            person_map, on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"], how="left",
+            person_map,
+            on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
+            how="left",
             join_nulls=True,
         )
         # The party's entity normalized_name == normalize(org) for orgs else
@@ -1103,8 +1127,11 @@ class DetailChildrenWorker:
             _norm_name(pl.col("_full_name")).alias("_party_nname"),
         )
         emap = entity_map.rename(
-            {"entity_id": "_party_entity_id", "entity_type": "_party_etype",
-             "normalized_name": "_party_nname"}
+            {
+                "entity_id": "_party_entity_id",
+                "entity_type": "_party_etype",
+                "normalized_name": "_party_nname",
+            }
         )
         return joined.join(emap, on=["_party_etype", "_party_nname"], how="left")
 
@@ -1114,7 +1141,9 @@ class DetailChildrenWorker:
         )
         return df.join(tmap, on="_txn_id", how="left")
 
-    def _committee_entity_expr(self, df: pl.DataFrame, committee_entity: dict[str, int]) -> pl.DataFrame:
+    def _committee_entity_expr(
+        self, df: pl.DataFrame, committee_entity: dict[str, int]
+    ) -> pl.DataFrame:
         filer = _cs("filerIdent")
         mapping = pl.DataFrame(
             {
@@ -1127,30 +1156,40 @@ class DetailChildrenWorker:
 
     def _build_loan(self, df, spec, ctx, entity_map, txn_map, committee_entity) -> int:
         keyed = self._party_keys(df, spec)
-        keyed = self._join_party_entity(keyed, _person_id_map(ctx.engine, ctx.state_id),
-                                        entity_map)
+        keyed = self._join_party_entity(keyed, _person_id_map(ctx.engine, ctx.state_id), entity_map)
         keyed = self._join_txn(keyed, txn_map, spec.transaction_type)
         keyed = self._committee_entity_expr(keyed, committee_entity)
         # ORM skips loans with no lender entity or no borrower (committee) entity.
-        out = keyed.filter(
-            pl.col("_party_entity_id").is_not_null()
-            & pl.col("_committee_entity_id").is_not_null()
-            & pl.col("txn_pk").is_not_null()
-        ).with_columns(
-            pl.col("txn_pk").alias("transaction_id"),
-            pl.col("_party_entity_id").alias("lender_entity_id"),
-            pl.col("_committee_entity_id").alias("borrower_entity_id"),
-            pl.lit(ctx.state_id).alias("state_id"),
-            common.builder_amount(spec.amount_col).alias("amount")
-            if spec.amount_col in df.columns
-            else pl.lit(None, dtype=pl.Decimal(38, 4)).alias("amount"),
-            self._loan_date_expr(spec, df).alias("loan_date"),
-            common.builder_date("maturityDt").alias("due_date"),
-            common.builder_amount("interestRate").alias("interest_rate"),
-            _get_unstripped(df, "collateralDescr").alias("collateral"),
-        ).select(
-            "transaction_id", "lender_entity_id", "borrower_entity_id", "state_id",
-            "amount", "loan_date", "due_date", "interest_rate", "collateral",
+        out = (
+            keyed.filter(
+                pl.col("_party_entity_id").is_not_null()
+                & pl.col("_committee_entity_id").is_not_null()
+                & pl.col("txn_pk").is_not_null()
+            )
+            .with_columns(
+                pl.col("txn_pk").alias("transaction_id"),
+                pl.col("_party_entity_id").alias("lender_entity_id"),
+                pl.col("_committee_entity_id").alias("borrower_entity_id"),
+                pl.lit(ctx.state_id).alias("state_id"),
+                common.builder_amount(spec.amount_col).alias("amount")
+                if spec.amount_col in df.columns
+                else pl.lit(None, dtype=pl.Decimal(38, 4)).alias("amount"),
+                self._loan_date_expr(spec, df).alias("loan_date"),
+                common.builder_date("maturityDt").alias("due_date"),
+                common.builder_amount("interestRate").alias("interest_rate"),
+                _get_unstripped(df, "collateralDescr").alias("collateral"),
+            )
+            .select(
+                "transaction_id",
+                "lender_entity_id",
+                "borrower_entity_id",
+                "state_id",
+                "amount",
+                "loan_date",
+                "due_date",
+                "interest_rate",
+                "collateral",
+            )
         )
         return common.write_frame(ctx.session, UnifiedLoan, out, conflict_cols=None)
 
@@ -1165,64 +1204,84 @@ class DetailChildrenWorker:
 
     def _build_debt(self, df, spec, ctx, entity_map, txn_map, committee_entity) -> int:
         keyed = self._party_keys(df, spec)
-        keyed = self._join_party_entity(keyed, _person_id_map(ctx.engine, ctx.state_id),
-                                        entity_map)
+        keyed = self._join_party_entity(keyed, _person_id_map(ctx.engine, ctx.state_id), entity_map)
         keyed = self._join_txn(keyed, txn_map, spec.transaction_type)
         keyed = self._committee_entity_expr(keyed, committee_entity)
         # ORM skips debts with no creditor entity. debtor falls back to committee
         # entity, else to creditor entity.
         debtor = pl.coalesce([pl.col("_committee_entity_id"), pl.col("_party_entity_id")])
         # amount is None for debts (no amount column); original_amount = parse or amount.
-        out = keyed.filter(
-            pl.col("_party_entity_id").is_not_null() & pl.col("txn_pk").is_not_null()
-        ).with_columns(
-            pl.col("txn_pk").alias("transaction_id"),
-            pl.col("_party_entity_id").alias("creditor_entity_id"),
-            debtor.alias("debtor_entity_id"),
-            pl.lit(ctx.state_id).alias("state_id"),
-            pl.lit(None, dtype=pl.Decimal(38, 4)).alias("amount"),
-            pl.lit(None, dtype=pl.Decimal(38, 4)).alias("original_amount"),
-            self._loan_date_expr(spec, df).alias("debt_date"),
-            pl.lit(None, dtype=pl.Date).alias("due_date"),
-            pl.lit(None, dtype=pl.Utf8).alias("description"),
-            common.bool_expr("loanGuaranteedFlag").alias("is_guaranteed"),
-            pl.lit(None, dtype=pl.Utf8).alias("guarantor_name"),
-            common.builder_amount("loanGuaranteeAmount").alias("guarantee_amount")
-            if "loanGuaranteeAmount" in df.columns
-            else pl.lit(None, dtype=pl.Decimal(38, 4)).alias("guarantee_amount"),
-            pl.lit(False).alias("is_paid"),
-            pl.lit(None, dtype=pl.Decimal(38, 4)).alias("payment_amount"),
-            pl.lit(None, dtype=pl.Date).alias("payment_date"),
-        ).select(
-            "transaction_id", "creditor_entity_id", "debtor_entity_id", "state_id",
-            "amount", "original_amount", "debt_date", "due_date", "description",
-            "is_guaranteed", "guarantor_name", "guarantee_amount", "is_paid",
-            "payment_amount", "payment_date",
+        out = (
+            keyed.filter(pl.col("_party_entity_id").is_not_null() & pl.col("txn_pk").is_not_null())
+            .with_columns(
+                pl.col("txn_pk").alias("transaction_id"),
+                pl.col("_party_entity_id").alias("creditor_entity_id"),
+                debtor.alias("debtor_entity_id"),
+                pl.lit(ctx.state_id).alias("state_id"),
+                pl.lit(None, dtype=pl.Decimal(38, 4)).alias("amount"),
+                pl.lit(None, dtype=pl.Decimal(38, 4)).alias("original_amount"),
+                self._loan_date_expr(spec, df).alias("debt_date"),
+                pl.lit(None, dtype=pl.Date).alias("due_date"),
+                pl.lit(None, dtype=pl.Utf8).alias("description"),
+                common.bool_expr("loanGuaranteedFlag").alias("is_guaranteed"),
+                pl.lit(None, dtype=pl.Utf8).alias("guarantor_name"),
+                common.builder_amount("loanGuaranteeAmount").alias("guarantee_amount")
+                if "loanGuaranteeAmount" in df.columns
+                else pl.lit(None, dtype=pl.Decimal(38, 4)).alias("guarantee_amount"),
+                pl.lit(False).alias("is_paid"),
+                pl.lit(None, dtype=pl.Decimal(38, 4)).alias("payment_amount"),
+                pl.lit(None, dtype=pl.Date).alias("payment_date"),
+            )
+            .select(
+                "transaction_id",
+                "creditor_entity_id",
+                "debtor_entity_id",
+                "state_id",
+                "amount",
+                "original_amount",
+                "debt_date",
+                "due_date",
+                "description",
+                "is_guaranteed",
+                "guarantor_name",
+                "guarantee_amount",
+                "is_paid",
+                "payment_amount",
+                "payment_date",
+            )
         )
         return common.write_frame(ctx.session, UnifiedDebt, out, conflict_cols=None)
 
     def _build_credit(self, df, spec, ctx, entity_map, txn_map, committee_entity) -> int:
         keyed = self._party_keys(df, spec)
-        keyed = self._join_party_entity(keyed, _person_id_map(ctx.engine, ctx.state_id),
-                                        entity_map)
+        keyed = self._join_party_entity(keyed, _person_id_map(ctx.engine, ctx.state_id), entity_map)
         keyed = self._join_txn(keyed, txn_map, spec.transaction_type)
         keyed = self._committee_entity_expr(keyed, committee_entity)
         recipient = pl.coalesce([pl.col("_committee_entity_id"), pl.col("_party_entity_id")])
-        out = keyed.filter(
-            pl.col("_party_entity_id").is_not_null() & pl.col("txn_pk").is_not_null()
-        ).with_columns(
-            pl.col("txn_pk").alias("transaction_id"),
-            pl.col("_party_entity_id").alias("payor_entity_id"),
-            recipient.alias("recipient_entity_id"),
-            pl.lit(ctx.state_id).alias("state_id"),
-            common.builder_amount(spec.amount_col).alias("amount"),
-            common.builder_date(spec.date_col).alias("credit_date"),
-            pl.lit(None, dtype=pl.Utf8).alias("credit_type"),
-            _get_unstripped(df, spec.descr_col).alias("description"),
-            pl.lit(None, dtype=pl.Utf8).alias("related_transaction_id"),
-        ).select(
-            "transaction_id", "payor_entity_id", "recipient_entity_id", "state_id",
-            "amount", "credit_date", "credit_type", "description", "related_transaction_id",
+        out = (
+            keyed.filter(pl.col("_party_entity_id").is_not_null() & pl.col("txn_pk").is_not_null())
+            .with_columns(
+                pl.col("txn_pk").alias("transaction_id"),
+                pl.col("_party_entity_id").alias("payor_entity_id"),
+                recipient.alias("recipient_entity_id"),
+                pl.lit(ctx.state_id).alias("state_id"),
+                common.builder_amount(spec.amount_col).alias("amount"),
+                common.builder_date(spec.date_col).alias("credit_date"),
+                pl.lit(None, dtype=pl.Utf8).alias("credit_type"),
+                _get_unstripped(df, spec.descr_col).alias("description"),
+                pl.lit(None, dtype=pl.Utf8).alias("related_transaction_id"),
+            )
+            .select(
+                "transaction_id",
+                "payor_entity_id",
+                "recipient_entity_id",
+                "state_id",
+                "amount",
+                "credit_date",
+                "credit_type",
+                "description",
+                "related_transaction_id",
+            )
         )
         return common.write_frame(ctx.session, UnifiedCredit, out, conflict_cols=None)
 
@@ -1239,68 +1298,104 @@ class DetailChildrenWorker:
         )
         # traveler_name <- traveler_name (no source col) or parent_full_name.
         traveler_name = _get_unstripped(df, "parentFullName")
-        out = keyed.filter(pl.col("txn_pk").is_not_null()).with_columns(
-            pl.col("txn_pk").alias("transaction_id"),
-            pl.lit(None, dtype=pl.Int64).alias("traveler_person_id"),
-            pl.lit(ctx.state_id).alias("state_id"),
-            _get_unstripped(df, "parentType").alias("parent_transaction_type"),
-            _get_unstripped(df, "parentId").alias("parent_transaction_id"),
-            common.builder_amount("parentAmount").alias("parent_amount"),
-            common.builder_amount("parentAmount").alias("amount"),
-            common.builder_date(spec.date_col).alias("travel_date"),
-            _get_unstripped(df, "transportationTypeCd").alias("transportation_type"),
-            _get_unstripped(df, "transportationTypeDescr").alias("transportation_description"),
-            _get_unstripped(df, "departureCity").alias("departure_city"),
-            pl.lit(None, dtype=pl.Utf8).alias("departure_state"),
-            _get_unstripped(df, "arrivalCity").alias("arrival_city"),
-            pl.lit(None, dtype=pl.Utf8).alias("arrival_state"),
-            common.builder_date("departureDt").alias("departure_date"),
-            common.builder_date("arrivalDt").alias("arrival_date"),
-            pl.coalesce([_get_unstripped(df, "travelPurpose"), descr]).alias("travel_purpose"),
-            traveler_name.alias("traveler_name"),
-        ).select(
-            "transaction_id", "traveler_person_id", "state_id",
-            "parent_transaction_type", "parent_transaction_id", "parent_amount",
-            "amount", "travel_date", "transportation_type", "transportation_description",
-            "departure_city", "departure_state", "arrival_city", "arrival_state",
-            "departure_date", "arrival_date", "travel_purpose", "traveler_name",
+        out = (
+            keyed.filter(pl.col("txn_pk").is_not_null())
+            .with_columns(
+                pl.col("txn_pk").alias("transaction_id"),
+                pl.lit(None, dtype=pl.Int64).alias("traveler_person_id"),
+                pl.lit(ctx.state_id).alias("state_id"),
+                _get_unstripped(df, "parentType").alias("parent_transaction_type"),
+                _get_unstripped(df, "parentId").alias("parent_transaction_id"),
+                common.builder_amount("parentAmount").alias("parent_amount"),
+                common.builder_amount("parentAmount").alias("amount"),
+                common.builder_date(spec.date_col).alias("travel_date"),
+                _get_unstripped(df, "transportationTypeCd").alias("transportation_type"),
+                _get_unstripped(df, "transportationTypeDescr").alias("transportation_description"),
+                _get_unstripped(df, "departureCity").alias("departure_city"),
+                pl.lit(None, dtype=pl.Utf8).alias("departure_state"),
+                _get_unstripped(df, "arrivalCity").alias("arrival_city"),
+                pl.lit(None, dtype=pl.Utf8).alias("arrival_state"),
+                common.builder_date("departureDt").alias("departure_date"),
+                common.builder_date("arrivalDt").alias("arrival_date"),
+                pl.coalesce([_get_unstripped(df, "travelPurpose"), descr]).alias("travel_purpose"),
+                traveler_name.alias("traveler_name"),
+            )
+            .select(
+                "transaction_id",
+                "traveler_person_id",
+                "state_id",
+                "parent_transaction_type",
+                "parent_transaction_id",
+                "parent_amount",
+                "amount",
+                "travel_date",
+                "transportation_type",
+                "transportation_description",
+                "departure_city",
+                "departure_state",
+                "arrival_city",
+                "arrival_state",
+                "departure_date",
+                "arrival_date",
+                "travel_purpose",
+                "traveler_name",
+            )
         )
         return common.write_frame(ctx.session, UnifiedTravel, out, conflict_cols=None)
 
     def _build_asset(self, df, spec, ctx, txn_map) -> int:
         keyed = df.with_columns(
-            (pl.col(spec.id_col).cast(pl.Utf8) if spec.id_col in df.columns
-             else pl.lit(None, dtype=pl.Utf8)).alias("_txn_id")
+            (
+                pl.col(spec.id_col).cast(pl.Utf8)
+                if spec.id_col in df.columns
+                else pl.lit(None, dtype=pl.Utf8)
+            ).alias("_txn_id")
         )
         keyed = self._join_txn(keyed, txn_map, spec.transaction_type)
         # description <- assetDescr (0.9) ; transaction.description set; detail
         # description = transaction.description or asset_descr.
         descr = _get_unstripped(df, "assetDescr")
         date_expr = common.builder_date("receivedDt")  # acquisition_date = txn date (fallback)
-        out = keyed.filter(pl.col("txn_pk").is_not_null()).with_columns(
-            pl.col("txn_pk").alias("transaction_id"),
-            _cs("filerIdent").alias("committee_id"),
-            pl.lit(ctx.state_id).alias("state_id"),
-            pl.lit(None, dtype=pl.Utf8).alias("asset_type"),
-            descr.alias("description"),
-            date_expr.alias("acquisition_date"),
-            pl.lit(None, dtype=pl.Decimal(38, 4)).alias("acquisition_cost"),
-            pl.lit(None, dtype=pl.Decimal(38, 4)).alias("current_value"),
-            pl.lit(None, dtype=pl.Date).alias("valuation_date"),
-            pl.lit(None, dtype=pl.Date).alias("disposition_date"),
-            pl.lit(None, dtype=pl.Decimal(38, 4)).alias("disposition_amount"),
-            pl.lit(False).alias("is_disposed"),
-        ).select(
-            "transaction_id", "committee_id", "state_id", "asset_type", "description",
-            "acquisition_date", "acquisition_cost", "current_value", "valuation_date",
-            "disposition_date", "disposition_amount", "is_disposed",
+        out = (
+            keyed.filter(pl.col("txn_pk").is_not_null())
+            .with_columns(
+                pl.col("txn_pk").alias("transaction_id"),
+                _cs("filerIdent").alias("committee_id"),
+                pl.lit(ctx.state_id).alias("state_id"),
+                pl.lit(None, dtype=pl.Utf8).alias("asset_type"),
+                descr.alias("description"),
+                date_expr.alias("acquisition_date"),
+                pl.lit(None, dtype=pl.Decimal(38, 4)).alias("acquisition_cost"),
+                pl.lit(None, dtype=pl.Decimal(38, 4)).alias("current_value"),
+                pl.lit(None, dtype=pl.Date).alias("valuation_date"),
+                pl.lit(None, dtype=pl.Date).alias("disposition_date"),
+                pl.lit(None, dtype=pl.Decimal(38, 4)).alias("disposition_amount"),
+                pl.lit(False).alias("is_disposed"),
+            )
+            .select(
+                "transaction_id",
+                "committee_id",
+                "state_id",
+                "asset_type",
+                "description",
+                "acquisition_date",
+                "acquisition_cost",
+                "current_value",
+                "valuation_date",
+                "disposition_date",
+                "disposition_amount",
+                "is_disposed",
+            )
         )
         return common.write_frame(ctx.session, UnifiedAsset, out, conflict_cols=None)
 
     def _build_pledge(self, df, spec, ctx, txn_map) -> int:
         keyed = df.with_columns(
-            (pl.col(spec.id_col).cast(pl.Utf8) if spec.id_col in df.columns
-             else pl.lit(None, dtype=pl.Utf8)).alias("_txn_id")
+            (
+                pl.col(spec.id_col).cast(pl.Utf8)
+                if spec.id_col in df.columns
+                else pl.lit(None, dtype=pl.Utf8)
+            ).alias("_txn_id")
         )
         keyed = self._join_txn(keyed, txn_map, spec.transaction_type)
         orig_cols = self._orig_cols.get(spec.record_type, list(df.columns))
@@ -1310,19 +1405,30 @@ class DetailChildrenWorker:
         amount = common.builder_amount("pledgeAmount")
         pdate = _pledge_date_expr("pledgeDt")
         descr = _get_unstripped(df, "pledgeDescr")
-        out = keyed.filter(pl.col("txn_pk").is_not_null()).with_columns(
-            pl.col("txn_pk").alias("transaction_id"),
-            pl.lit(None, dtype=pl.Int64).alias("pledgor_entity_id"),
-            pl.lit(None, dtype=pl.Int64).alias("recipient_entity_id"),
-            pl.lit(ctx.state_id).alias("state_id"),
-            amount.alias("amount"),
-            pdate.alias("pledge_date"),
-            pl.lit(False).alias("is_fulfilled"),
-            descr.alias("description"),
-            common.raw_json_expr(orig_cols, alias="metadata_json"),
-        ).select(
-            "transaction_id", "pledgor_entity_id", "recipient_entity_id", "state_id",
-            "amount", "pledge_date", "is_fulfilled", "description", "metadata_json",
+        out = (
+            keyed.filter(pl.col("txn_pk").is_not_null())
+            .with_columns(
+                pl.col("txn_pk").alias("transaction_id"),
+                pl.lit(None, dtype=pl.Int64).alias("pledgor_entity_id"),
+                pl.lit(None, dtype=pl.Int64).alias("recipient_entity_id"),
+                pl.lit(ctx.state_id).alias("state_id"),
+                amount.alias("amount"),
+                pdate.alias("pledge_date"),
+                pl.lit(False).alias("is_fulfilled"),
+                descr.alias("description"),
+                common.raw_json_expr(orig_cols, alias="metadata_json"),
+            )
+            .select(
+                "transaction_id",
+                "pledgor_entity_id",
+                "recipient_entity_id",
+                "state_id",
+                "amount",
+                "pledge_date",
+                "is_fulfilled",
+                "description",
+                "metadata_json",
+            )
         )
         return common.write_frame(ctx.session, UnifiedPledge, out, conflict_cols=None)
 
@@ -1346,13 +1452,12 @@ class DetailChildrenWorker:
             df = frames[rt]
             rows = self._guarantor_rows(df, spec, ctx, txn_map, pk_map, parent_table)
             if rows is not None and rows.height:
-                total += common.write_frame(
-                    ctx.session, LoanGuarantor, rows, conflict_cols=None
-                )
+                total += common.write_frame(ctx.session, LoanGuarantor, rows, conflict_cols=None)
         return total
 
-    def _guarantor_rows(self, df, spec, ctx, txn_map, pk_map: dict[int, int],
-                        parent_col: str) -> pl.DataFrame | None:
+    def _guarantor_rows(
+        self, df, spec, ctx, txn_map, pk_map: dict[int, int], parent_col: str
+    ) -> pl.DataFrame | None:
         # Map each row to its parent detail surrogate id via transaction id.
         txn_id = (
             pl.col(spec.id_col).cast(pl.Utf8)
@@ -1390,9 +1495,7 @@ class DetailChildrenWorker:
                     ]
                 )
             )
-        keyed = keyed.with_columns(
-            pl.concat_list(slot_structs).alias("_slots")
-        ).explode("_slots")
+        keyed = keyed.with_columns(pl.concat_list(slot_structs).alias("_slots")).explode("_slots")
         keyed = keyed.unnest("_slots")
         # Emit a slot only when last/first/org present (mirrors _build_guarantors).
         keyed = keyed.filter(
@@ -1405,14 +1508,25 @@ class DetailChildrenWorker:
             return None
         out = keyed.with_columns(
             pl.col("_detail_pk").alias(parent_col),
-            pl.lit(None, dtype=pl.Int64).alias(
-                "debt_id" if parent_col == "loan_id" else "loan_id"
-            ),
+            pl.lit(None, dtype=pl.Int64).alias("debt_id" if parent_col == "loan_id" else "loan_id"),
             pl.lit(None, dtype=pl.Int64).alias("entity_id"),
         ).select(
-            "loan_id", "debt_id", "entity_id", "position", "person_type",
-            "organization", "last_name", "first_name", "suffix", "prefix",
-            "city", "state_code", "county", "country", "postal_code", "region",
+            "loan_id",
+            "debt_id",
+            "entity_id",
+            "position",
+            "person_type",
+            "organization",
+            "last_name",
+            "first_name",
+            "suffix",
+            "prefix",
+            "city",
+            "state_code",
+            "county",
+            "country",
+            "postal_code",
+            "region",
         )
         return out
 

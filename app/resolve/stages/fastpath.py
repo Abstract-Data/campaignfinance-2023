@@ -192,9 +192,7 @@ def _collect_entity_to_source_candidates(
     in different blocks), so this deterministic edge guarantees co-clustering — the
     fix for near-zero cross-source dedup.
     """
-    persons_by_id = {
-        row.source_id: row for row in rows if row.source_type == "unified_person"
-    }
+    persons_by_id = {row.source_id: row for row in rows if row.source_type == "unified_person"}
     committees_by_filer = {
         row.source_id: row for row in rows if row.source_type == "unified_committee"
     }

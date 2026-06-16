@@ -257,9 +257,7 @@ _CREATE_POSTGRES_VIEW_SQL = {
     "resolved_expenditures": (
         f"CREATE OR REPLACE VIEW resolved_expenditures AS {_RESOLVED_EXPENDITURES_SELECT}"
     ),
-    "resolved_reports": (
-        f"CREATE OR REPLACE VIEW resolved_reports AS {_RESOLVED_REPORTS_SELECT}"
-    ),
+    "resolved_reports": (f"CREATE OR REPLACE VIEW resolved_reports AS {_RESOLVED_REPORTS_SELECT}"),
     "cross_role_entities": (
         f"CREATE OR REPLACE VIEW cross_role_entities AS {_CROSS_ROLE_ENTITIES_SELECT}"
     ),

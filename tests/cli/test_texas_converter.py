@@ -103,9 +103,7 @@ def test_metadata_txt_files_are_skipped_not_failed(tmp_path: Path) -> None:
 def test_mixed_type_columns_read_as_strings(tmp_path: Path) -> None:
     csv_path = tmp_path / "cand.csv"
     csv_path.write_text(
-        "candidateHoldOfficePlace,contributorStreetPostalCode\n"
-        "1,78701\n"
-        "Dallas,34682-0601\n",
+        "candidateHoldOfficePlace,contributorStreetPostalCode\n1,78701\nDallas,34682-0601\n",
         encoding="utf-8",
     )
 
