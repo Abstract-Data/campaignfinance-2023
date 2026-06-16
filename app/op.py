@@ -5,12 +5,17 @@ from pathlib import Path
 from typing import Callable
 
 from onepassword.client import Client
-from onepassword.lib.aarch64.op_uniffi_core import Error
+from onepassword.core import core as _op_core
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
 from app.logger import Logger
+
+# onepassword ships per-architecture native cores (lib/aarch64, lib/x86_64) and selects
+# the right one via platform.machine() in onepassword.core. Reuse that resolution rather
+# than hardcoding an arch path, which raised ModuleNotFoundError on x86_64 CI runners.
+Error = _op_core.Error
 
 _logger: Logger | None = None
 

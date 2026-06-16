@@ -1,8 +1,10 @@
 import sys
+
 sys.path.insert(0, '/Users/johneakin/PyCharmProjects/campaignfinance')
 
-import polars as pl
 from pathlib import Path
+
+import polars as pl
 
 # Check actual column names in parquet files
 contribs_file = Path('/Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas/contribs_05_20260524.parquet')

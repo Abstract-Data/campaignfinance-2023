@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 from nameparser import HumanName
+
 from app.states.texas.texas import TECContributionRecord, TECExpenseRecord, TECFilerRecord
 from app.states.texas.texas_database import SessionLocal
 

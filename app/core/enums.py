@@ -2,6 +2,7 @@
 
 from enum import Enum
 
+
 class TransactionType(str, Enum):
     """Types of campaign finance transactions"""
 

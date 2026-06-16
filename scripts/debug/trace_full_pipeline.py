@@ -3,15 +3,17 @@ Full end-to-end trace of the ingest pipeline for a single record.
 Does NOT save to DB — just traces what fields get set.
 """
 import sys
+
 sys.path.insert(0, '/Users/johneakin/PyCharmProjects/campaignfinance')
 
-import polars as pl
 from pathlib import Path
+
+import polars as pl
 
 # Must import processor first for side-effect UnifiedReport registration
 from app.core.processor import unified_sql_processor  # noqa: F401
-from app.core.unified_state_loader import UnifiedStateLoader
 from app.core.unified_database import get_db_manager
+from app.core.unified_state_loader import UnifiedStateLoader
 
 # Get a real record from the parquet file
 contribs_file = Path('/Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas/contribs_05_20260524.parquet')
@@ -32,8 +34,9 @@ loader = UnifiedStateLoader("texas", "/Users/johneakin/PyCharmProjects/campaignf
 # Get state_id
 with db.get_session() as session:
     state_id, state_code = None, None
-    from app.core.models.tables import State
     from sqlmodel import select
+
+    from app.core.models.tables import State
     state_rec = session.exec(select(State).where(State.code == "TX")).first()
     if state_rec:
         state_id = state_rec.id

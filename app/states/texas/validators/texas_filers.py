@@ -1,11 +1,12 @@
 from datetime import date
 from typing import Optional
 
-import app.states.texas.funcs.tx_validation_funcs as tx_funcs
 from pydantic import model_validator
 from pydantic_core import PydanticCustomError
 from pydantic_extra_types.phone_numbers import PhoneNumber
 from sqlmodel import JSON, Field, Relationship
+
+import app.states.texas.funcs.tx_validation_funcs as tx_funcs
 
 from ._mixins import (
     _tec_address,

@@ -3,15 +3,17 @@ Trace what actually ends up in the DB after saving one transaction.
 Uses a TEST transaction_id prefix so we can find and clean it up.
 """
 import sys
+
 sys.path.insert(0, '/Users/johneakin/PyCharmProjects/campaignfinance')
 
-import polars as pl
 from pathlib import Path
+
+import polars as pl
 from sqlmodel import select
 
+from app.core.models.tables import State, UnifiedTransaction
 from app.core.processor import unified_sql_processor  # noqa: F401 (side-effect import)
 from app.core.unified_database import get_db_manager
-from app.core.models.tables import UnifiedTransaction, State
 
 # Get a real contribution record
 contribs_file = Path('/Users/johneakin/PyCharmProjects/campaignfinance/tmp/texas/contribs_05_20260524.parquet')

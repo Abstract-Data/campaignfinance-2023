@@ -1,7 +1,8 @@
 from datetime import datetime
 
-import app.funcs.validator_functions as funcs
 from pydantic_core import PydanticCustomError
+
+import app.funcs.validator_functions as funcs
 
 
 def validate_dates(cls, values):
@@ -50,7 +51,6 @@ def check_zipcodes(cls, values):
         return values
     for key, value in values.items():
         if key.endswith("PostalCode") and value:
-            original_zip = value
             formatted_zip = funcs.format_zipcode(column=key, zipcode=value)
             values[key] = formatted_zip
     return values

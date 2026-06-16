@@ -12,15 +12,16 @@ from typing import (
     Type,
 )
 
+import inject
+from sqlmodel import SQLModel
+
 import app.abcs.abc_validation as validation
 import app.funcs as funcs
-import inject
 
 # from app.abcs.abc_download import FileDownloader
 from app.abcs.abc_db_loader import DBLoaderClass
 from app.abcs.abc_state_config import StateConfig
 from app.logger import Logger
-from sqlmodel import SQLModel
 
 logger = Logger(__name__)
 

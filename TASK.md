@@ -1,58 +1,47 @@
-# TASK — Migration gap: introduce a real migration framework (Alembic)
+# TASK — Green up CI: clear pre-existing ruff debt + fix x86 test-collection crash
 
-## Problem ([[schema-drift-no-migration]])
-No migration framework. Schema = `SQLModel.metadata.create_all` (creates MISSING TABLES only —
-never ALTERs) + two hand-maintained additive-column shim lists + raw-DDL dedup indexes:
-- `app/core/unified_database.py`: `_UNIFIED_ADDITIVE_COLUMNS` (3 cols: report committee/treasurer
-  name-at-filing, persons.dedup_addr_key) + `_apply_dedup_indexes` (partial unique indexes).
-- `app/resolve/run.py`: `_ADDITIVE_COLUMNS` (resolution_input links, canonical_entity.employer).
-Every NEW post-deploy column must be hand-added to a shim list or it breaks existing DBs; non-additive
-changes (type/constraint/drop/rename) have NO path at all. CI misses it (always create_all fresh).
+## Problem
+`main` CI is red for two reasons pre-dating the vectorized/Alembic work:
+1. **Ruff (Quality job):** 60 repo-wide errors. Breakdown by rule:
+   - 35× F821 — `app/states/texas/validators/direct_expenditures.py`: a class of bare,
+     un-annotated names. Dead (imported nowhere, no auto-discovery) AND broken (raises
+     `NameError` on import — never worked).
+   - 1× F821 — `app/states/texas/validators/texas_address.py:31`: `list['TECPersonName']`
+     string forward-ref, `TECPersonName` never imported (real latent bug).
+   - 21× I001 — import-block ordering across scripts/tests/app (mechanical).
+   - 1× F401 (unused import), 1× F841 (`original_zip` in tx_validation_funcs.py), 1× E402.
+2. **Tests (collection abort):** `tests/test_op_secrets.py` imports `app.op`, which does
+   `from onepassword.lib.aarch64.op_uniffi_core import Error` — hardcodes `aarch64`, so on
+   the x86_64 CI runner the path is `x86_64` → `ModuleNotFoundError` → pytest collection aborts.
 
-## DECISION: Full Alembic baseline (user-chosen).
+Neither was introduced by PRs #52–#54 (those files are ruff-clean; local suite is 982 green).
 
-## STATUS — foundation DONE + verified (branch `feat/alembic-migrations`, commit 83c9e9bb)
-- alembic added (1.18.4); `alembic.ini` + `migrations/env.py` (target_metadata=SQLModel.metadata
-  after importing all model modules; URL from PostgresConfig, `-x dburl=` override) + script template.
-- Baseline `0001_baseline`: create_all + Fix-7 dedup indexes (PG-only). VERIFIED `alembic upgrade
-  head` on a fresh DB == bootstrap schema (33 tables, 0 col/index mismatch; only alembic_version extra).
-- Inert/safe: nothing auto-invokes Alembic yet, so the test suite is unaffected.
+## Files in scope
+- DELETE `app/states/texas/validators/direct_expenditures.py` (user-confirmed: dead+broken).
+- `app/states/texas/validators/texas_address.py` — add `TYPE_CHECKING` import of `TECPersonName`.
+- `app/op.py` — replace the arch-hardcoded `Error` import with arch-agnostic resolution
+  (reuse onepassword's own `platform.machine()`-resolved `onepassword.core.core`).
+- `app/states/texas/funcs/tx_validation_funcs.py` — remove unused `original_zip` (F841) + I001.
+- Remaining I001/F401/E402 sites: `scripts/verify_ingest.py`, `scripts/reset_and_reingest.py`,
+  `scripts/debug/*.py`, `tests/resolve/test_phase0_reconciliation.py`, `app/states/texas/*`,
+  `app/funcs/db_loader.py`, `app/core/load_context.py`, `app/core/enums.py`,
+  `app/abcs/abc_download.py`, `app/abcs/abc_category.py`, `app/states/texas/texas_search.py`.
+  Apply `ruff check --fix` (import sorting is safe-fixable); hand-fix the rest.
 
-## REMAINING (the integration step — behavior change, do next):
-1. Wire production bootstrap to Alembic: deploy runs `alembic upgrade head`; on a fresh app-bootstrap
-   (create_all path, kept FAST for the ~975 sqlite tests) `alembic stamp head` so future deltas apply.
-   DECISION inside: do NOT route every _get_session through alembic (per-test overhead) — keep
-   create_all for sqlite tests, use alembic for Postgres deploys/existing DBs.
-2. Retire the additive-shim lists (`_UNIFIED_ADDITIVE_COLUMNS`, resolve `_ADDITIVE_COLUMNS`) once a
-   migration covers their columns; or keep as belt-and-braces no-ops. Update [[schema-drift-no-migration]].
-3. Add a test: `alembic upgrade head` (fresh) == create_all schema; document the workflow (a MIGRATIONS.md).
+## Behavior to preserve
+- No runtime behavior change. `app.op` must still expose the SAME `Error` class on this
+  (aarch64) machine AND import successfully on x86_64. Deleting direct_expenditures.py must
+  not break any import (verified: zero references, no discovery). texas_address change is
+  TYPE_CHECKING-only (no runtime/circular-import effect).
 
-## Original plan / risks below.
-
-## Plan (assuming standard Alembic baseline adoption)
-1. Add Alembic (`alembic.ini`, `migrations/env.py`, `versions/`). Wire `env.py` to the project's
-   SQLModel `target_metadata` + DB URL resolution (reuse `get_db_manager` / `resolve_runtime_database_url`).
-   Handle the offline/online + the project's import-time table registration.
-2. **Baseline migration** capturing the CURRENT full schema (tables + the additive columns + the
-   partial-unique dedup indexes + resolve tables). Verify `alembic upgrade head` on an empty DB
-   produces a schema byte-equal to `create_all` + the shims (diff via reflection).
-3. **Existing DBs**: `alembic stamp head` marks them at-baseline (schema already present). Document.
-4. **Bootstrap rewire**: `UnifiedDatabaseManager.bootstrap()` / `production_loader._get_session` run
-   `alembic upgrade head` (idempotent) instead of / in addition to create_all. Keep create_all as a
-   fallback for test/sqlite if Alembic-on-sqlite is awkward.
-5. Retire the additive shims into the migration history (or keep as a belt-and-braces no-op) once the
-   baseline + an "additive cols" migration cover them; update [[schema-drift-no-migration]].
-6. Establish the forward pattern: `alembic revision --autogenerate` for future model changes.
-
-## Risks / unknowns to resolve during impl
-- The "migrations" + "alembic runs" PreToolUse gate will ASK for confirmation — expected.
-- sqlite (tests) vs Postgres (prod) — partial indexes + some DDL are PG-only; the baseline migration
-  must branch on dialect (or guard PG-only DDL), mirroring the current `_apply_dedup_indexes` logic.
-- Autogenerate vs the raw-DDL indexes / any schema-qualified models — verify autogenerate doesn't try
-  to drop them; may need `include_object` filters in env.py.
-- The vectorized engine + tests bootstrap via `_get_session`; ensure the rewire keeps them green.
+## Checks to run (evidence required before "done")
+1. `uv run ruff check .` → **0 errors** (was 60).
+2. `uv run python -c "import app.op; print(app.op.Error)"` → succeeds, prints the Error class.
+3. `uv run python -c "import platform; print(platform.machine())"` + confirm the new op.py
+   import uses arch detection (code reads x86_64/aarch64 via onepassword.core), so x86 CI imports.
+4. `uv run pytest tests/test_op_secrets.py -q` → collects + passes (was collection-abort on x86).
+5. `uv run pytest -q` → full suite still green (no regression from the deletion / edits).
+6. task-critic PASS; record gate verdict.
 
 ## Gates
-1. `alembic upgrade head` on empty DB == create_all+shims schema (reflection diff empty).
-2. Full test suite green (bootstrap rewire must not break the 975-test suite).
-3. ruff clean; no f-string SQL; task-critic PASS.
+- ruff 0 errors; full suite green; op.py import arch-agnostic & verified; task-critic PASS.

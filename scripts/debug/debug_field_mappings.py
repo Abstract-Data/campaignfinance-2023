@@ -1,10 +1,12 @@
 import sys
+
 sys.path.insert(0, '/Users/johneakin/PyCharmProjects/campaignfinance')
 
 # Must import processor first — it has the side-effect import of UnifiedReport
 # that SQLAlchemy needs to configure the UnifiedTransaction mapper
 from app.core.processor import unified_sql_processor  # noqa: F401
 from app.core.unified_field_library import UnifiedFieldLibrary
+
 lib = UnifiedFieldLibrary()
 mappings = lib.get_state_mappings('texas')
 print('Texas mappings count:', len(mappings))
@@ -41,7 +43,8 @@ print('transaction_date:', get_field_value(raw_data, 'transaction_date', field_m
 print('committee_filer_id:', get_field_value(raw_data, 'committee_filer_id', field_map))
 print('amount:', get_field_value(raw_data, 'amount', field_map))
 
-from app.core.builders import UnifiedSQLModelBuilder
+from app.core.builders import UnifiedSQLModelBuilder  # noqa: E402
+
 builder = UnifiedSQLModelBuilder('texas', state_id=1, state_code='TX', session=None)
 txn = builder.build_transaction(raw_data)
 print('--- build_transaction output ---')

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import usaddress
 from pydantic import (
@@ -11,6 +11,9 @@ from scourgify.exceptions import AddressNormalizationError
 from sqlmodel import Field
 
 from . import TECSettings
+
+if TYPE_CHECKING:
+    from .texas_personname import TECPersonName
 
 ADDRESS_LIST = {}
 

@@ -21,8 +21,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import text  # noqa: E402
 from rich.console import Console  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 
 console = Console()
 
