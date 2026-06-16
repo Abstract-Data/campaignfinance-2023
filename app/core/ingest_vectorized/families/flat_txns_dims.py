@@ -106,32 +106,21 @@ def _nullify_expr(e: pl.Expr) -> pl.Expr:
 # Address building
 # ---------------------------------------------------------------------------
 
-def _with_resolved_rcpt_street(rcpt: pl.DataFrame, lookup: pl.DataFrame) -> pl.DataFrame:
-    """Add ``contributorStreetAddr1`` = the street a no-street RCPT contributor inherits from
-    an existing fuller address sharing its (city, state, zip) — the omit-null match the ORM's
-    ``_find_address_by_fields`` performs (e.g. Conroe/77304 contributors inherit a committee
-    filer address '3115 Wilson Rd.'). Null when no street-bearing match exists (today's
-    behavior). Reuses the tested ``common.resolve_partial_address`` so the rule matches the
-    one verified in test_address_partial_match.py. The contributor's city/state/zip ARE the
-    match key, so only the inherited street needs threading; downstream key + address frame
-    pick it up from ``contributorStreetAddr1``."""
-    if lookup.height == 0:
-        return rcpt.with_columns(pl.lit(None, dtype=pl.Utf8).alias("contributorStreetAddr1"))
-    base = rcpt.with_row_index("_ridx")
-    addr = base.select(
-        "_ridx",
-        pl.lit(None, dtype=pl.Utf8).alias("street_1"),
-        pl.lit(None, dtype=pl.Utf8).alias("street_2"),
-        _cs("contributorStreetCity").alias("city"),
-        common.upper_str("contributorStreetStateCd").alias("state"),
-        _cs("contributorStreetPostalCode").alias("zip_code"),
-        pl.lit(None, dtype=pl.Utf8).alias("country"),
-        pl.lit(None, dtype=pl.Utf8).alias("county"),
+def _resolve_rcpt_street(rcpt: pl.DataFrame, ctx: FamilyContext) -> pl.DataFrame:
+    """Add ``contributorStreetAddr1`` via the shared omit-null address match: a no-street RCPT
+    contributor inherits the street of an existing fuller address sharing its (city, state,
+    zip) — e.g. a Conroe/77304 contributor inherits a committee filer address '3115 Wilson
+    Rd.'. The lookup is built from addresses already in the DB (FILER, priority 0). Null when
+    no street-bearing match exists (today's behavior). The detail family applies the SAME call
+    so the contributor person key stays consistent across both."""
+    return common.add_resolved_street(
+        rcpt,
+        common.full_address_lookup(ctx.engine),
+        city_col="contributorStreetCity",
+        state_col="contributorStreetStateCd",
+        zip_col="contributorStreetPostalCode",
+        out_col="contributorStreetAddr1",
     )
-    resolved = common.resolve_partial_address(addr, lookup).select(
-        "_ridx", pl.col("street_1").alias("contributorStreetAddr1")
-    )
-    return base.join(resolved, on="_ridx", how="left").drop("_ridx")
 
 
 def _address_frame_rcpt(df: pl.DataFrame) -> pl.DataFrame:
@@ -726,7 +715,7 @@ class FlatTxnsDimsWorker:
             # no-street contributor inherit a fuller existing address's street — exactly as
             # the ORM's _find_address_by_fields does. Done before any dim is built here so the
             # resolved street feeds both the person dedup key and the address frame.
-            rcpt = _with_resolved_rcpt_street(rcpt, common.full_address_lookup(ctx.engine))
+            rcpt = _resolve_rcpt_street(rcpt, ctx)
         if expn is not None:
             expn = _ensure_cols(expn, _EXPN_COLS)
 

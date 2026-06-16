@@ -238,6 +238,46 @@ def full_address_lookup(engine: Any) -> pl.DataFrame:
     )
 
 
+def add_resolved_street(
+    df: pl.DataFrame,
+    lookup: pl.DataFrame,
+    *,
+    city_col: str,
+    state_col: str,
+    zip_col: str,
+    out_col: str,
+) -> pl.DataFrame:
+    """Add *out_col* = the street a street-less row inherits from an existing fuller address
+    sharing its (city, state, zip) — the omit-null match of ``builders._find_address_by_fields``.
+
+    A thin per-row wrapper over ``resolve_partial_address`` (so the rule is the one verified in
+    test_address_partial_match.py): builds a standard address frame from this row's city/state/zip
+    with a null street, resolves it against *lookup* (``full_address_lookup`` output), and joins
+    the inherited street back as *out_col* (null when no street-bearing match exists). The two
+    transaction families (dims + detail) call this identically so the contributor person dedup
+    key they each compute stays consistent.
+    """
+    if out_col in df.columns:  # a padded/placeholder column would collide on the join
+        df = df.drop(out_col)
+    if lookup.height == 0:
+        return df.with_columns(pl.lit(None, dtype=pl.Utf8).alias(out_col))
+    base = df.with_row_index("_ridx")
+    addr = base.select(
+        "_ridx",
+        pl.lit(None, dtype=pl.Utf8).alias("street_1"),
+        pl.lit(None, dtype=pl.Utf8).alias("street_2"),
+        clean_str(city_col).alias("city"),
+        upper_str(state_col).alias("state"),
+        clean_str(zip_col).alias("zip_code"),
+        pl.lit(None, dtype=pl.Utf8).alias("country"),
+        pl.lit(None, dtype=pl.Utf8).alias("county"),
+    )
+    resolved = resolve_partial_address(addr, lookup).select(
+        "_ridx", pl.col("street_1").alias(out_col)
+    )
+    return base.join(resolved, on="_ridx", how="left").drop("_ridx")
+
+
 def resolve_partial_address(df: pl.DataFrame, lookup: pl.DataFrame) -> pl.DataFrame:
     """Resolve a PARTIAL (no-street) address to an existing fuller address — the vectorized
     equivalent of the ORM's ``builders._find_address_by_fields`` omit-null-fields match.
