@@ -624,6 +624,14 @@ class DetailChildrenWorker:
 
         ordered = sorted(frames, key=lambda r: _SPECS[r].priority)
 
+        # Omit-null address match lookup, built ONCE from addresses already in the DB (FILER +
+        # flat_txns, all earlier priorities) so a street-less loan/debt/etc. party inherits a
+        # fuller existing address's street — the ORM's _find_address_by_fields. Built before
+        # any address this family writes, and reused by BOTH the dim layer (_write_dims) and
+        # the detail->person link (_party_keys) so the two compute the SAME person key.
+        # Per-run instance state, like self._orig_cols above.
+        self._addr_lookup = common.full_address_lookup(ctx.engine)
+
         counts: dict[str, int] = {}
 
         # 1. Committees (shared natural-key dim).
@@ -719,6 +727,21 @@ class DetailChildrenWorker:
         parties = self._all_parties(frames, ordered)
         if parties.height == 0:
             return 0, 0, 0
+
+        # Omit-null address match: a street-less party (these record types carry no source
+        # street) inherits a fuller existing address's street, so its dedup_addr_key matches
+        # the ORM's. a_city/a_state/a_zip are already the cleaned/cased dim columns. Then
+        # recompute _pk_addr from the (possibly inherited) street; org-persons keep NULL.
+        parties = common.add_resolved_street(
+            parties, self._addr_lookup,
+            city_col="a_city", state_col="a_state", zip_col="a_zip", out_col="a_street_1",
+        )
+        parties = parties.with_columns(
+            pl.when(pl.col("_pk_org").is_not_null())
+            .then(None)
+            .otherwise(common.person_addr_key_expr("a_street_1", "a_city", "a_state", "a_zip"))
+            .alias("_pk_addr")
+        )
 
         # Deduped persons: first occurrence per (org, fn, ln, addr) key in load order.
         # The address dimension splits same-name individuals at distinct locations
@@ -1036,21 +1059,32 @@ class DetailChildrenWorker:
             if spec.id_col in df.columns
             else pl.lit(None, dtype=pl.Utf8)
         )
+        # Resolve the inherited street via the SAME omit-null match the dim layer used
+        # (self._addr_lookup, built once in run()), so this detail->person key matches the
+        # enriched person stored by _write_dims. Materialize city/state/zip as columns for
+        # add_resolved_street, then key on the resolved street.
+        keyed = df.with_columns(
+            city.alias("_rc_city"), state.alias("_rc_state"), zip_code.alias("_rc_zip"),
+        )
+        keyed = common.add_resolved_street(
+            keyed, self._addr_lookup,
+            city_col="_rc_city", state_col="_rc_state", zip_col="_rc_zip", out_col="_res_street",
+        )
         return common.collapse_org_person_key(
-            df.with_columns(
+            keyed.with_columns(
                 org.str.to_lowercase().alias("_pk_org"),
                 first.str.to_lowercase().alias("_pk_fn"),
                 last.str.to_lowercase().alias("_pk_ln"),
-                # Address dimension of the individual key (these types carry no street_1);
-                # collapse_org_person_key nulls it for org-parties. Keeps the person_map
-                # join 1:1 now that a name maps to one person PER address.
+                # Address dimension of the individual key — uses the inherited street so it
+                # matches the dim-layer person. collapse_org_person_key nulls it for orgs.
                 common.person_addr_key_expr(
-                    pl.lit(None, dtype=pl.Utf8), city, state, zip_code
+                    pl.col("_res_street"), pl.col("_rc_city"), pl.col("_rc_state"),
+                    pl.col("_rc_zip"),
                 ).alias("_pk_addr"),
                 _full_name(first, last, _opt_col(df, spec.name_suffix), org).alias("_full_name"),
                 txn_id.alias("_txn_id"),
             )
-        )
+        ).drop("_rc_city", "_rc_state", "_rc_zip", "_res_street")
 
     def _join_party_entity(self, keyed: pl.DataFrame, person_map: pl.DataFrame,
                            entity_map: pl.DataFrame) -> pl.DataFrame:

@@ -106,23 +106,6 @@ def _nullify_expr(e: pl.Expr) -> pl.Expr:
 # Address building
 # ---------------------------------------------------------------------------
 
-def _resolve_rcpt_street(rcpt: pl.DataFrame, ctx: FamilyContext) -> pl.DataFrame:
-    """Add ``contributorStreetAddr1`` via the shared omit-null address match: a no-street RCPT
-    contributor inherits the street of an existing fuller address sharing its (city, state,
-    zip) — e.g. a Conroe/77304 contributor inherits a committee filer address '3115 Wilson
-    Rd.'. The lookup is built from addresses already in the DB (FILER, priority 0). Null when
-    no street-bearing match exists (today's behavior). The detail family applies the SAME call
-    so the contributor person key stays consistent across both."""
-    return common.add_resolved_street(
-        rcpt,
-        common.full_address_lookup(ctx.engine),
-        city_col="contributorStreetCity",
-        state_col="contributorStreetStateCd",
-        zip_col="contributorStreetPostalCode",
-        out_col="contributorStreetAddr1",
-    )
-
-
 def _address_frame_rcpt(df: pl.DataFrame) -> pl.DataFrame:
     """Extract address rows from RCPT contributor columns.
 
@@ -708,16 +691,29 @@ class FlatTxnsDimsWorker:
         rcpt = _read(files_by_type.get("RCPT", []))
         expn = _read(files_by_type.get("EXPN", []))
 
+        # Omit-null address match: build the lookup ONCE from addresses already in the DB
+        # (the FILER family, priority 0, has written committee addresses), then let each
+        # street-less party inherit a fuller existing address's street — exactly as the ORM's
+        # _find_address_by_fields does. Done before any dim is built so the resolved street
+        # feeds both the person dedup key and the address frame. RCPT contributors carry no
+        # source street (out_col is a new column); EXPN payees keep their own street and only
+        # the street-less ones inherit (out_col overwrites payeeStreetAddr1 in place).
+        addr_lookup = common.full_address_lookup(ctx.engine)
         if rcpt is not None:
             rcpt = _ensure_cols(rcpt, _RCPT_COLS)
-            # Omit-null address match: build the lookup from addresses already in the DB
-            # (the FILER family, priority 0, has written committee addresses), then let each
-            # no-street contributor inherit a fuller existing address's street — exactly as
-            # the ORM's _find_address_by_fields does. Done before any dim is built here so the
-            # resolved street feeds both the person dedup key and the address frame.
-            rcpt = _resolve_rcpt_street(rcpt, ctx)
+            rcpt = common.add_resolved_street(
+                rcpt, addr_lookup,
+                city_col="contributorStreetCity", state_col="contributorStreetStateCd",
+                zip_col="contributorStreetPostalCode", out_col="contributorStreetAddr1",
+            )
         if expn is not None:
             expn = _ensure_cols(expn, _EXPN_COLS)
+            expn = common.add_resolved_street(
+                expn, addr_lookup,
+                city_col="payeeStreetCity", state_col="payeeStreetStateCd",
+                zip_col="payeeStreetPostalCode", out_col="payeeStreetAddr1",
+                own_s1_col="payeeStreetAddr1",
+            )
 
         counts: dict[str, int] = {}
 

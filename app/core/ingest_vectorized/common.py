@@ -246,25 +246,30 @@ def add_resolved_street(
     state_col: str,
     zip_col: str,
     out_col: str,
+    own_s1_col: str | None = None,
 ) -> pl.DataFrame:
-    """Add *out_col* = the street a street-less row inherits from an existing fuller address
-    sharing its (city, state, zip) — the omit-null match of ``builders._find_address_by_fields``.
+    """Add *out_col* = this row's street, inheriting one from an existing fuller address sharing
+    its (city, state, zip) when the row has none — the omit-null match of
+    ``builders._find_address_by_fields``.
 
     A thin per-row wrapper over ``resolve_partial_address`` (so the rule is the one verified in
     test_address_partial_match.py): builds a standard address frame from this row's city/state/zip
-    with a null street, resolves it against *lookup* (``full_address_lookup`` output), and joins
-    the inherited street back as *out_col* (null when no street-bearing match exists). The two
-    transaction families (dims + detail) call this identically so the contributor person dedup
-    key they each compute stays consistent.
+    with its OWN street (``own_s1_col``, or null for the street-less RCPT contributors), resolves
+    it against *lookup* (``full_address_lookup`` output), and joins the resulting street back as
+    *out_col*. A row that already carries a street keeps it (``resolve_partial_address`` only
+    fills nulls); a street-less row inherits one when a street-bearing match exists, else stays
+    null. Every family calls this identically so the person dedup key stays consistent across the
+    dim layer and the junction layer.
     """
-    if out_col in df.columns:  # a padded/placeholder column would collide on the join
-        df = df.drop(out_col)
+    own = clean_str(own_s1_col) if own_s1_col is not None else pl.lit(None, dtype=pl.Utf8)
     if lookup.height == 0:
-        return df.with_columns(pl.lit(None, dtype=pl.Utf8).alias(out_col))
+        # No DB addresses to match: out_col is just the row's own street (with_columns
+        # overwrites in place when out_col already exists, e.g. EXPN's payeeStreetAddr1).
+        return df.with_columns(own.alias(out_col))
     base = df.with_row_index("_ridx")
     addr = base.select(
         "_ridx",
-        pl.lit(None, dtype=pl.Utf8).alias("street_1"),
+        own.alias("street_1"),
         pl.lit(None, dtype=pl.Utf8).alias("street_2"),
         clean_str(city_col).alias("city"),
         upper_str(state_col).alias("state"),
@@ -275,6 +280,10 @@ def add_resolved_street(
     resolved = resolve_partial_address(addr, lookup).select(
         "_ridx", pl.col("street_1").alias(out_col)
     )
+    # Drop any existing out_col (own-street source or a padded placeholder) so the join that
+    # brings in the resolved out_col cannot collide.
+    if out_col in base.columns:
+        base = base.drop(out_col)
     return base.join(resolved, on="_ridx", how="left").drop("_ridx")
 
 

@@ -573,20 +573,27 @@ class FlatTxnsDetailWorker:
     def run(self, files_by_type: dict[str, list[Path]], ctx: FamilyContext) -> dict[str, int]:
         rcpt = _read(files_by_type.get("RCPT", []))
         expn = _read(files_by_type.get("EXPN", []))
+        # Mirror flat_txns_dims: each street-less party inherits a fuller existing address's
+        # street (omit-null match) so the participant person key + address retrofit here
+        # resolve to the SAME enriched person the dim layer created. The lookup is built from
+        # the DB, where FILER addresses keep the lowest ids, so this picks the same street the
+        # dim layer did. RCPT adds contributorStreetAddr1; EXPN overwrites payeeStreetAddr1.
+        addr_lookup = common.full_address_lookup(ctx.engine)
         if rcpt is not None:
             rcpt = _ensure_cols(rcpt, _RCPT_COLS)
-            # Mirror flat_txns_dims: each no-street contributor inherits a fuller existing
-            # address's street (omit-null match) so the participant person key + address
-            # retrofit here resolve to the SAME enriched person the dim layer created. The
-            # lookup is built from the DB, where FILER addresses keep the lowest ids, so this
-            # picks the same street the dim layer did.
             rcpt = common.add_resolved_street(
-                rcpt, common.full_address_lookup(ctx.engine),
+                rcpt, addr_lookup,
                 city_col="contributorStreetCity", state_col="contributorStreetStateCd",
                 zip_col="contributorStreetPostalCode", out_col="contributorStreetAddr1",
             )
         if expn is not None:
             expn = _ensure_cols(expn, _EXPN_COLS)
+            expn = common.add_resolved_street(
+                expn, addr_lookup,
+                city_col="payeeStreetCity", state_col="payeeStreetStateCd",
+                zip_col="payeeStreetPostalCode", out_col="payeeStreetAddr1",
+                own_s1_col="payeeStreetAddr1",
+            )
 
         # Id-maps from the already-populated dim + transaction tables.
         entity_map = _entity_id_map(ctx.session, ctx.state_id)
