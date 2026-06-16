@@ -106,13 +106,43 @@ def _nullify_expr(e: pl.Expr) -> pl.Expr:
 # Address building
 # ---------------------------------------------------------------------------
 
+def _with_resolved_rcpt_street(rcpt: pl.DataFrame, lookup: pl.DataFrame) -> pl.DataFrame:
+    """Add ``contributorStreetAddr1`` = the street a no-street RCPT contributor inherits from
+    an existing fuller address sharing its (city, state, zip) — the omit-null match the ORM's
+    ``_find_address_by_fields`` performs (e.g. Conroe/77304 contributors inherit a committee
+    filer address '3115 Wilson Rd.'). Null when no street-bearing match exists (today's
+    behavior). Reuses the tested ``common.resolve_partial_address`` so the rule matches the
+    one verified in test_address_partial_match.py. The contributor's city/state/zip ARE the
+    match key, so only the inherited street needs threading; downstream key + address frame
+    pick it up from ``contributorStreetAddr1``."""
+    if lookup.height == 0:
+        return rcpt.with_columns(pl.lit(None, dtype=pl.Utf8).alias("contributorStreetAddr1"))
+    base = rcpt.with_row_index("_ridx")
+    addr = base.select(
+        "_ridx",
+        pl.lit(None, dtype=pl.Utf8).alias("street_1"),
+        pl.lit(None, dtype=pl.Utf8).alias("street_2"),
+        _cs("contributorStreetCity").alias("city"),
+        common.upper_str("contributorStreetStateCd").alias("state"),
+        _cs("contributorStreetPostalCode").alias("zip_code"),
+        pl.lit(None, dtype=pl.Utf8).alias("country"),
+        pl.lit(None, dtype=pl.Utf8).alias("county"),
+    )
+    resolved = common.resolve_partial_address(addr, lookup).select(
+        "_ridx", pl.col("street_1").alias("contributorStreetAddr1")
+    )
+    return base.join(resolved, on="_ridx", how="left").drop("_ridx")
+
+
 def _address_frame_rcpt(df: pl.DataFrame) -> pl.DataFrame:
     """Extract address rows from RCPT contributor columns.
 
-    RCPT has no contributorStreetAddr1/2 — only city/state/zip/country.
+    RCPT carries no street in the source, but ``_with_resolved_rcpt_street`` may have set
+    ``contributorStreetAddr1`` from the omit-null match against an existing fuller address
+    (so the contributor inherits that street, matching the ORM). Null when no match.
     """
     return df.select([
-        pl.lit(None, dtype=pl.Utf8).alias("street_1"),
+        _cs("contributorStreetAddr1").alias("street_1"),
         pl.lit(None, dtype=pl.Utf8).alias("street_2"),
         _cs("contributorStreetCity").alias("city"),
         common.upper_str("contributorStreetStateCd").alias("state"),
@@ -225,9 +255,12 @@ def _build_persons_frame_rcpt(df: pl.DataFrame) -> pl.DataFrame:
             .str.to_lowercase().alias("_pk_org"),
         _cs("contributorNameFirst").str.to_lowercase().alias("_pk_fn"),
         _cs("contributorNameLast").str.to_lowercase().alias("_pk_ln"),
-        # RCPT has no street_1 — address key is (city, state, zip) only.
+        # Address key uses the omit-null-resolved street (contributorStreetAddr1, set by
+        # _with_resolved_rcpt_street) so a contributor that inherits an existing fuller
+        # address keys on the full street — matching the ORM's dedup_addr_key. Null street
+        # falls back to (city, state, zip), today's behavior.
         common.person_addr_key_expr(
-            pl.lit(None, dtype=pl.Utf8),
+            "contributorStreetAddr1",
             "contributorStreetCity",
             common.upper_str("contributorStreetStateCd"),
             "contributorStreetPostalCode",
@@ -589,7 +622,7 @@ def _build_addresses(
                 _cs("contributorNameFirst").str.to_lowercase().alias("_pk_fn"),
                 _cs("contributorNameLast").str.to_lowercase().alias("_pk_ln"),
                 common.person_addr_key_expr(
-                    pl.lit(None, dtype=pl.Utf8),
+                    "contributorStreetAddr1",
                     "contributorStreetCity",
                     common.upper_str("contributorStreetStateCd"),
                     "contributorStreetPostalCode",
@@ -688,6 +721,12 @@ class FlatTxnsDimsWorker:
 
         if rcpt is not None:
             rcpt = _ensure_cols(rcpt, _RCPT_COLS)
+            # Omit-null address match: build the lookup from addresses already in the DB
+            # (the FILER family, priority 0, has written committee addresses), then let each
+            # no-street contributor inherit a fuller existing address's street — exactly as
+            # the ORM's _find_address_by_fields does. Done before any dim is built here so the
+            # resolved street feeds both the person dedup key and the address frame.
+            rcpt = _with_resolved_rcpt_street(rcpt, common.full_address_lookup(ctx.engine))
         if expn is not None:
             expn = _ensure_cols(expn, _EXPN_COLS)
 
