@@ -56,6 +56,22 @@ def _drop(name: str) -> None:
         admin.dispose()
 
 
+def _ensure_state_schemas(url: str) -> None:
+    """Create the state schemas so create_all succeeds even when an earlier test has imported
+    the schema-qualified state-validator models (schema='texas'/'oklahoma') into the shared
+    SQLModel.metadata — a documented cross-test pollution. No-op in isolation (those tables
+    aren't in metadata then). Mirrors what a real multi-state DB would have."""
+    from sqlalchemy import text
+
+    eng = create_engine(url)
+    try:
+        with eng.begin() as conn:
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS texas"))
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS oklahoma"))
+    finally:
+        eng.dispose()
+
+
 def _fingerprint(url: str) -> dict[str, tuple[frozenset, frozenset]]:
     """{table: (column-names, index-names)} — excludes Alembic's own version table."""
     insp = inspect(create_engine(url))
@@ -80,6 +96,8 @@ def test_alembic_baseline_matches_bootstrap():
     try:
         url_a = f"{_PG_BASE}/cf_alembic_test_a"
         url_b = f"{_PG_BASE}/cf_alembic_test_b"
+        _ensure_state_schemas(url_a)
+        _ensure_state_schemas(url_b)
         upgrade_head(url_a)
         _get_session(url_b).close()
         assert _fingerprint(url_a) == _fingerprint(url_b)
@@ -95,6 +113,7 @@ def test_migrate_is_idempotent():
     _drop_create("cf_alembic_test_idem")
     try:
         url = f"{_PG_BASE}/cf_alembic_test_idem"
+        _ensure_state_schemas(url)
         assert current_revision(url) is None
         upgrade_head(url)
         rev = current_revision(url)

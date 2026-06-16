@@ -78,6 +78,15 @@ def pg_engine():
 
     _drop_create(_TEST_DB)
     engine = create_engine(f"{_PG_BASE}/{_TEST_DB}")
+    # Create the state schemas so create_all succeeds even when an earlier test in the same
+    # session has imported the schema-qualified state-validator models (schema='texas'/
+    # 'oklahoma') into the shared SQLModel.metadata (documented cross-test pollution; no-op in
+    # isolation).
+    from sqlalchemy import text
+
+    with engine.begin() as _conn:
+        _conn.execute(text("CREATE SCHEMA IF NOT EXISTS texas"))
+        _conn.execute(text("CREATE SCHEMA IF NOT EXISTS oklahoma"))
     SQLModel.metadata.create_all(engine)
     try:
         yield engine
