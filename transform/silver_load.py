@@ -111,13 +111,8 @@ def _append_batch(rows: list[dict], table: str, engine) -> None:
         return
     # chunksize keeps params-per-INSERT under Postgres' 65535 limit (method='multi').
     _to_text_frame(rows).to_sql(
-        table,
-        engine,
-        schema=SILVER_SCHEMA,
-        if_exists="append",
-        index=False,
-        chunksize=1000,
-        method="multi",
+        table, engine, schema=SILVER_SCHEMA,
+        if_exists="append", index=False, chunksize=1000, method="multi",
     )
 
 
@@ -181,21 +176,15 @@ def _validate_file_worker(
 
 def _files_for(record_type: str, max_files: int | None) -> list[Path]:
     files = [
-        f.path
-        for f in discover_state_files("texas")
+        f.path for f in discover_state_files("texas")
         if f.record_type == record_type and f.path.suffix == ".parquet"
     ]
     return files if max_files is None else files[:max_files]
 
 
 def load_raw_type(
-    record_type: str,
-    table: str,
-    *,
-    max_files: int | None,
-    limit: int | None,
-    fraction: float | None,
-    engine,
+    record_type: str, table: str, *, max_files: int | None, limit: int | None,
+    fraction: float | None, engine,
 ) -> tuple[int, int]:
     """Land a record type's parquet RAW (all-TEXT) into silver — no validation.
     Returns (files, rows). Single-process (these types are few files)."""
@@ -206,25 +195,18 @@ def load_raw_type(
         frame = _frac_head(pl.read_parquet(path), fraction)
         if limit is not None:
             frame = frame.head(limit)
-        frame = frame.with_columns(
-            [
-                pl.lit(path.name).alias("file_origin"),
-                pl.lit(today).alias("download_date"),
-            ]
-        )
+        frame = frame.with_columns([
+            pl.lit(path.name).alias("file_origin"),
+            pl.lit(today).alias("download_date"),
+        ])
         frames.append(frame)
     if not frames:
         return 0, 0
     merged = pl.concat(frames, how="diagonal")
     frame_out = _to_text_frame(merged.to_dicts())
     frame_out.to_sql(
-        table,
-        engine,
-        schema=SILVER_SCHEMA,
-        if_exists="replace",
-        index=False,
-        chunksize=1000,
-        method="multi",
+        table, engine, schema=SILVER_SCHEMA,
+        if_exists="replace", index=False, chunksize=1000, method="multi",
     )
     return len(files), len(frame_out)
 
@@ -234,19 +216,9 @@ def load_raw_type(
 # reference data does not need row validation). filerIdent stays the raw 8-char id.
 # treas* columns drive officer (TREASURER_OF) extraction in the association layer.
 _FILER_COLS = [
-    "filerIdent",
-    "filerName",
-    "filerTypeCd",
-    "committeeStatusCd",
-    "filerNameOrganization",
-    "treasPersentTypeCd",
-    "treasNameOrganization",
-    "treasNameLast",
-    "treasNameFirst",
-    "treasNameSuffixCd",
-    "treasStreetAddr1",
-    "treasStreetCity",
-    "treasStreetStateCd",
+    "filerIdent", "filerName", "filerTypeCd", "committeeStatusCd", "filerNameOrganization",
+    "treasPersentTypeCd", "treasNameOrganization", "treasNameLast", "treasNameFirst",
+    "treasNameSuffixCd", "treasStreetAddr1", "treasStreetCity", "treasStreetStateCd",
     "treasStreetPostalCode",
 ]
 
@@ -258,8 +230,7 @@ def load_filers(engine, *, max_files: int | None = None) -> int:
     committee_id matches the canonical zero-padded TEC filer id. Returns row count.
     """
     files = [
-        f.path
-        for f in discover_state_files("texas")
+        f.path for f in discover_state_files("texas")
         if f.record_type == "FILER" and f.path.suffix == ".parquet"
     ]
     if max_files is not None:
@@ -276,25 +247,14 @@ def load_filers(engine, *, max_files: int | None = None) -> int:
     pdf = pd.DataFrame(merged.to_dicts())
     pdf.columns = [c.lower() for c in pdf.columns]
     pdf = pdf.astype(object).where(pd.notnull(pdf), None)
-    pdf.to_sql(
-        "tx_filers",
-        engine,
-        schema=SILVER_SCHEMA,
-        if_exists="replace",
-        index=False,
-        chunksize=2000,
-        method="multi",
-    )
+    pdf.to_sql("tx_filers", engine, schema=SILVER_SCHEMA, if_exists="replace",
+               index=False, chunksize=2000, method="multi")
     return len(pdf)
 
 
 def run(
-    *,
-    max_files: int | None,
-    limit: int | None,
-    bootstrap: bool = True,
-    workers: int = 1,
-    fraction: float | None = None,
+    *, max_files: int | None, limit: int | None, bootstrap: bool = True,
+    workers: int = 1, fraction: float | None = None,
 ) -> dict:
     """Validate + land TX RCPT/EXPN into silver. ``workers > 1`` fans file
     validation out across processes (the EL bottleneck at full volume)."""
@@ -304,7 +264,6 @@ def run(
     # Pre-create the empty silver tables once (workers only append). Drop the gold
     # views first so replacing silver isn't blocked by a prior build's dependents.
     from sqlalchemy import text
-
     engine = create_engine(url)
     with engine.begin() as conn:
         conn.execute(text("DROP SCHEMA IF EXISTS gold CASCADE"))
@@ -329,11 +288,8 @@ def run(
                 r.valid += valid
                 r.rejected += rejected
                 r.reject_samples = (r.reject_samples + samples)[:5]
-                print(
-                    f"  done {rt} {name}: valid={valid:,} rejected={rejected:,} "
-                    f"total={r.valid:,} elapsed={time.time() - t0:.0f}s",
-                    flush=True,
-                )
+                print(f"  done {rt} {name}: valid={valid:,} rejected={rejected:,} "
+                      f"total={r.valid:,} elapsed={time.time() - t0:.0f}s", flush=True)
     else:
         for path_str, rt, _url, lim, frac in tasks:
             valid, rejected, samples = _validate_file(
@@ -343,11 +299,8 @@ def run(
             r.valid += valid
             r.rejected += rejected
             r.reject_samples = (r.reject_samples + samples)[:5]
-            print(
-                f"  done {rt} {Path(path_str).name}: valid={valid:,} rejected={rejected:,} "
-                f"total={r.valid:,} elapsed={time.time() - t0:.0f}s",
-                flush=True,
-            )
+            print(f"  done {rt} {Path(path_str).name}: valid={valid:,} rejected={rejected:,} "
+                  f"total={r.valid:,} elapsed={time.time() - t0:.0f}s", flush=True)
 
     # Raw-typed landing for the remaining transaction record types (no validator).
     raw_rows: dict[str, int] = {}
@@ -356,20 +309,12 @@ def run(
             rt, table, max_files=max_files, limit=limit, fraction=fraction, engine=engine
         )
         raw_rows[rt] = nrows
-        print(
-            f"  raw  {rt} {table}: files={nfiles} rows={nrows:,} elapsed={time.time() - t0:.0f}s",
-            flush=True,
-        )
+        print(f"  raw  {rt} {table}: files={nfiles} rows={nrows:,} "
+              f"elapsed={time.time() - t0:.0f}s", flush=True)
     engine.dispose()
 
-    return {
-        "state_id": state_id,
-        "url": url,
-        "results": list(results.values()),
-        "filer_rows": filer_rows,
-        "raw_rows": raw_rows,
-        "seconds": time.time() - t0,
-    }
+    return {"state_id": state_id, "url": url, "results": list(results.values()),
+            "filer_rows": filer_rows, "raw_rows": raw_rows, "seconds": time.time() - t0}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -377,43 +322,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-files", type=int, default=2, help="parquet files per record type")
     parser.add_argument("--all-files", action="store_true", help="load every file (full volume)")
     parser.add_argument("--limit", type=int, default=None, help="cap rows per file")
-    parser.add_argument(
-        "--fraction",
-        type=float,
-        default=None,
-        help="load this fraction (0-1) of each file's rows, e.g. 0.25 for a 25%% load",
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=max(1, (os.cpu_count() or 4) - 1),
-        help="parallel validation processes (default: cores-1)",
-    )
+    parser.add_argument("--fraction", type=float, default=None,
+                        help="load this fraction (0-1) of each file's rows, e.g. 0.25 for a 25%% load")
+    parser.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 4) - 1),
+                        help="parallel validation processes (default: cores-1)")
     parser.add_argument("--no-bootstrap", action="store_true", help="skip DB/schema creation")
     args = parser.parse_args(argv)
 
     max_files = None if args.all_files else args.max_files
     summary = run(
-        max_files=max_files,
-        limit=args.limit,
-        fraction=args.fraction,
-        bootstrap=not args.no_bootstrap,
-        workers=args.workers,
+        max_files=max_files, limit=args.limit, fraction=args.fraction,
+        bootstrap=not args.no_bootstrap, workers=args.workers,
     )
-    print(
-        f"\nSilver load → {summary['url']}  (state_id={summary['state_id']}, "
-        f"{summary['seconds']:.0f}s, workers={args.workers})"
-    )
+    print(f"\nSilver load → {summary['url']}  (state_id={summary['state_id']}, "
+          f"{summary['seconds']:.0f}s, workers={args.workers})")
     for r in summary["results"]:
-        print(
-            f"  {r.record_type:5s} {r.table:16s} files={r.files} valid={r.valid:,} rejected={r.rejected:,}"
-        )
+        print(f"  {r.record_type:5s} {r.table:16s} files={r.files} valid={r.valid:,} rejected={r.rejected:,}")
         for s in r.reject_samples:
             print(f"        reject: {s}")
-    print(
-        f"\nNext: uv run dbt build --project-dir transform/dbt --profiles-dir transform/dbt "
-        f"--vars '{{state_id: {summary['state_id']}}}'"
-    )
+    print(f"\nNext: uv run dbt build --project-dir transform/dbt --profiles-dir transform/dbt "
+          f"--vars '{{state_id: {summary['state_id']}}}'")
     return 0
 
 

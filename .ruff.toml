@@ -6,7 +6,9 @@ line-length = 100
 
 extend-exclude = [
     ".venv",
+    ".claude",  # agent tooling (hooks/skills), not project source
     "tmp",
+    "transform",  # standalone medallion spike; not imported by the app
     "campaignfinance.egg-info",
     "maintenance",
 ]

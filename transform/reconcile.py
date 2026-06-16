@@ -30,14 +30,9 @@ _DBT = ["uv", "run", "dbt"]
 _DBT_DIR = ["--project-dir", "transform/dbt", "--profiles-dir", "transform/dbt"]
 
 UNIFIED_TABLES = [
-    "unified_addresses",
-    "unified_persons",
-    "unified_committees",
-    "unified_entities",
-    "unified_transactions",
-    "unified_transaction_persons",
-    "unified_contributions",
-    "unified_expenditures",
+    "unified_addresses", "unified_persons", "unified_committees", "unified_entities",
+    "unified_transactions", "unified_transaction_persons",
+    "unified_contributions", "unified_expenditures",
 ]
 # Static DELETE statements, child-first, for clearing public between the two paths.
 # Kept as full literals (no string interpolation) so identifiers are never concatenated.
@@ -75,12 +70,8 @@ def metrics(engine) -> dict:
         person_nks = {tuple(r) for r in conn.execute(_PERSON_NK_SQL)}
         committees = {r[0] for r in conn.execute(_COMMITTEE_SQL)}
         tp_max = conn.execute(_TP_MAX_PER_TXN_SQL).scalar() or 0
-    return {
-        "counts": counts,
-        "person_nks": person_nks,
-        "committees": committees,
-        "tp_max_per_txn": tp_max,
-    }
+    return {"counts": counts, "person_nks": person_nks, "committees": committees,
+            "tp_max_per_txn": tp_max}
 
 
 def clear_public(engine) -> None:
@@ -110,17 +101,11 @@ def run_dbt_path(*, max_files: int, limit: int | None) -> tuple[float, int]:
     var = f"{{state_id: {state_id}}}"
     subprocess.run(
         [*_DBT, "build", "--full-refresh", *_DBT_DIR, "--vars", var],
-        cwd=_REPO,
-        check=True,
-        capture_output=True,
-        text=True,
+        cwd=_REPO, check=True, capture_output=True, text=True,
     )
     subprocess.run(
         [*_DBT, "run-operation", "publish_to_unified", *_DBT_DIR, "--vars", var],
-        cwd=_REPO,
-        check=True,
-        capture_output=True,
-        text=True,
+        cwd=_REPO, check=True, capture_output=True, text=True,
     )
     return time.time() - t0, state_id
 
@@ -155,26 +140,13 @@ def run_loader_path(url: str, *, limit: int | None) -> tuple[float, dict]:
         # FILER first so transactions can link to a committee (loader rejects orphans).
         for f in filer_files:
             _n, _r, cache = _load_file(
-                f.path,
-                "FILER",
-                config,
-                state="texas",
-                state_id=state_row.id,
-                state_code=state_row.code,
-                session=session,
-                cache=cache,
+                f.path, "FILER", config, state="texas", state_id=state_row.id,
+                state_code=state_row.code, session=session, cache=cache,
             )
         for discovered, rtype in ((rcpt, "RCPT"), (expn, "EXPN")):
             n, r, cache = _load_file(
-                discovered.path,
-                rtype,
-                config,
-                state="texas",
-                state_id=state_row.id,
-                state_code=state_row.code,
-                session=session,
-                cache=cache,
-                max_remaining=limit,
+                discovered.path, rtype, config, state="texas", state_id=state_row.id,
+                state_code=state_row.code, session=session, cache=cache, max_remaining=limit,
             )
             loaded += n
             rejected += r
@@ -208,15 +180,8 @@ def verify_resolve_consumes(url: str, state_id: int) -> int:
 # --------------------------------------------------------------------------- #
 # Report
 # --------------------------------------------------------------------------- #
-def _print_report(
-    dbt_m: dict,
-    loader_m: dict,
-    dbt_secs: float,
-    loader_secs: float,
-    loader_load: dict,
-    resolution_rows: int,
-    limit: int | None,
-) -> None:
+def _print_report(dbt_m: dict, loader_m: dict, dbt_secs: float, loader_secs: float,
+                  loader_load: dict, resolution_rows: int, limit: int | None) -> None:
     print("\n" + "=" * 72)
     print(f"ELT reconciliation — TX contributions + expenditures (cap={limit} rows/file)")
     print("=" * 72)
@@ -230,19 +195,13 @@ def _print_report(
     dc, lc = dbt_m["committees"], loader_m["committees"]
     print("\nNatural-key set comparison")
     print("-" * 64)
-    print(
-        f"persons    dbt-only={len(dp - lp):<7} loader-only={len(lp - dp):<7} shared={len(dp & lp)}"
-    )
-    print(
-        f"committees dbt-only={len(dc - lc):<7} loader-only={len(lc - dc):<7} shared={len(dc & lc)}"
-    )
+    print(f"persons    dbt-only={len(dp - lp):<7} loader-only={len(lp - dp):<7} shared={len(dp & lp)}")
+    print(f"committees dbt-only={len(dc - lc):<7} loader-only={len(lc - dc):<7} shared={len(dc & lc)}")
 
     print("\nPhantom-row invariant (transaction_persons per transaction)")
     print("-" * 64)
-    print(
-        f"dbt    max rows/transaction = {dbt_m['tp_max_per_txn']}   "
-        f"(exactly one person per transaction — no phantoms)"
-    )
+    print(f"dbt    max rows/transaction = {dbt_m['tp_max_per_txn']}   "
+          f"(exactly one person per transaction — no phantoms)")
     print(f"loader max rows/transaction = {loader_m['tp_max_per_txn']}")
 
     print("\nBenchmark (wall-clock)")
@@ -253,22 +212,14 @@ def _print_report(
 
     print("\nResolve consumability (app/resolve stage-1, unchanged)")
     print("-" * 64)
-    print(
-        f"build_resolution_input() over published unified_* -> {resolution_rows} resolution_input rows"
-    )
+    print(f"build_resolution_input() over published unified_* -> {resolution_rows} resolution_input rows")
     print("=" * 72 + "\n")
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Reconcile + benchmark dbt ELT vs production_loader."
-    )
-    parser.add_argument(
-        "--limit", type=int, default=5000, help="rows per transaction file (both paths)"
-    )
-    parser.add_argument(
-        "--max-files", type=int, default=1, help="silver parquet files per record type"
-    )
+    parser = argparse.ArgumentParser(description="Reconcile + benchmark dbt ELT vs production_loader.")
+    parser.add_argument("--limit", type=int, default=5000, help="rows per transaction file (both paths)")
+    parser.add_argument("--max-files", type=int, default=1, help="silver parquet files per record type")
     args = parser.parse_args(argv)
 
     url = spike_url()

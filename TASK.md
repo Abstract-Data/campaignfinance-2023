@@ -68,6 +68,19 @@ pre-existing reasons, both unrelated to #52–#54. User chose: reformat in this 
       asserted instead of skipping when `tmp/texas` exists empty on CI (tmp/texas is untracked).
       FIX: skip when discovery finds no files.
 
+## Second CI run — CodeQL + Quality (gate.py) follow-ups
+- **Quality** went red on `ruff format --check`: it flagged `.claude/hooks/gate.py` (a protected
+  hook file, always unformatted, can't be committed). FIX: exclude `.claude` in `.ruff.toml`
+  (agent tooling, not project source).
+- **CodeQL** reported "2 new high-severity alerts" — actually PRE-EXISTING
+  `py/clear-text-logging-sensitive-data` in `transform/silver_load.py` + `transform/reconcile.py`
+  (created 2026-06-05). My `ruff format` shifted those lines, so CodeQL's diff re-flagged them as
+  new. `transform/` is a standalone medallion spike, imported nowhere in app/scripts/tests. FIX:
+  revert the `transform/` reformat to base + exclude `transform` from ruff (like `maintenance`).
+  Net: transform/ is byte-identical to main → no CodeQL diff; the real alerts remain a separate,
+  pre-existing follow-up (not in scope for a CI-hygiene PR).
+- Tests (3.12/3.13) + Resolve Tests went GREEN after the LFS + hermetic fixes.
+
 ## Added checks (evidence)
 7. `uvx ruff@latest format --check .` → clean (was 140 to reformat).
 8. `uv run pytest tests/resolve/test_resolve_cli.py::TestMainSmoke tests/resolve/test_file_discovery.py tests/resolve/test_match_quality.py -q` → all pass.
