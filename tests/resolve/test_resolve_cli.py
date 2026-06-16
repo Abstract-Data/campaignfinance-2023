@@ -301,25 +301,25 @@ class TestMainSmoke:
         )
 
     def test_run_texas_no_stages_returns_0(self):
-        code = main(["run", "--state", "texas"])
+        code = main(["run", "--state", "texas", "--sqlite"])
         assert code == 0
 
     def test_run_tx_uppercase_returns_0(self):
-        code = main(["run", "--state", "TX"])
+        code = main(["run", "--state", "TX", "--sqlite"])
         assert code == 0
 
     def test_run_with_config_file_returns_0(self, tmp_path):
         cfg = tmp_path / "cfg.json"
         cfg.write_text('{"threshold": 0.9, "seed": 42}')
-        code = main(["run", "--state", "texas", "--config", str(cfg)])
+        code = main(["run", "--state", "texas", "--config", str(cfg), "--sqlite"])
         assert code == 0
 
     def test_run_with_pass_type_address_returns_0(self):
-        code = main(["run", "--state", "texas", "--pass-type", "address"])
+        code = main(["run", "--state", "texas", "--pass-type", "address", "--sqlite"])
         assert code == 0
 
     def test_run_verbose_returns_0(self):
-        code = main(["run", "--state", "texas", "--verbose"])
+        code = main(["run", "--state", "texas", "--verbose", "--sqlite"])
         assert code == 0
 
     def test_pass_type_defaults_written_to_config(self, monkeypatch):

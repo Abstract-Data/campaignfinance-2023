@@ -45,3 +45,30 @@ Neither was introduced by PRs #52–#54 (those files are ruff-clean; local suite
 
 ## Gates
 - ruff 0 errors; full suite green; op.py import arch-agnostic & verified; task-critic PASS.
+
+## SCOPE EXPANSION (user-approved after first CI run on PR #55)
+The first CI run on #55 was still red. Investigation found the lint+op fix was correct
+(`ruff check .` = 0; op collection-abort gone) but Quality + Tests fail for TWO more
+pre-existing reasons, both unrelated to #52–#54. User chose: reformat in this PR + investigate.
+
+1. **Quality also runs `ruff format --check .`** (separate from `ruff check`): 140 files
+   unformatted repo-wide. FIX: `uvx ruff@latest format .` (140 reformatted) — committed as a
+   dedicated style commit. `ruff format --check` now clean; full suite 982 still green (format
+   is behavior-preserving).
+2. **Tests job (`ci-tests.yml`) had 23 failures — three root causes, all pre-existing on main:**
+   a. **Git LFS (18 failures):** `.gitattributes` has `*.csv filter=lfs`; the golden fixtures
+      `tests/resolve/golden/*.csv` are LFS pointers. `ci-tests.yml` checked out WITHOUT
+      `lfs: true` (unlike ci-resolve-tests.yml), so CI read 3-line pointer files →
+      `KeyError: 'label'` / "got 2 pairs". FIX: add `lfs: true` to the ci-tests checkout.
+   b. **Non-hermetic resolve CLI smoke tests (5):** `test_resolve_cli.py::TestMainSmoke`
+      claims "uses in-memory SQLite" but never passed `--sqlite`, so the CLI targeted Postgres
+      (its documented default: unreachable PG + non-interactive → exit 1, never silent SQLite
+      fallback). Passed locally only because dev Postgres is reachable. FIX: add `--sqlite`.
+   c. **Opportunistic discovery smoke test (1):** `test_discover_real_texas_directory_when_present`
+      asserted instead of skipping when `tmp/texas` exists empty on CI (tmp/texas is untracked).
+      FIX: skip when discovery finds no files.
+
+## Added checks (evidence)
+7. `uvx ruff@latest format --check .` → clean (was 140 to reformat).
+8. `uv run pytest tests/resolve/test_resolve_cli.py::TestMainSmoke tests/resolve/test_file_discovery.py tests/resolve/test_match_quality.py -q` → all pass.
+9. CI on PR #55 green (Quality + Tests). [pending re-run after push]
