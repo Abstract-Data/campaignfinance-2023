@@ -22,6 +22,21 @@ uv run alembic upgrade head
 
 `cf migrate` is the deploy mechanism — run it whenever the schema may have changed.
 
+## Revision notes
+
+- **`0002_dedup_legacy_transactions`** — dedups legacy duplicate
+  `(state_id, transaction_type, transaction_id)` groups in `unified_transactions` (keeping the
+  lowest `id` per group and purging the orphaned children in every FK-referencing detail table),
+  then creates the strict partial unique index `uix_transactions_state_type_sourceid`. Pre-Wave-2
+  loads produced those duplicates; the index could not be created while they remained, so existing
+  databases were stuck. This revision unblocks them: on an existing DB (`alembic stamp
+  0001_baseline` then `cf migrate`) it cleans up and indexes; on a fresh DB it is a no-op (zero
+  duplicates, index already created by the baseline). It is **Postgres-only** (sqlite never had the
+  index) and **not reversible** for the deleted rows (`downgrade` only drops the index). The
+  interactive/dry-run equivalent is `scripts/dedup_unified_transactions.py` (run it first with
+  `--db-url ...` to preview the counts before deploying). Verified by
+  `tests/core/test_dedup_migration.py`.
+
 ## Add a schema change (the forward pattern)
 
 1. Edit the SQLModel models (`app/core/models/`, `app/core/source_models/`, `app/resolve/models/`).

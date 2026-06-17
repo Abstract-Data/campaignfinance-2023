@@ -1,87 +1,62 @@
-# TASK — Green up CI: clear pre-existing ruff debt + fix x86 test-collection crash
+# TASK — Alembic migration: dedup legacy unified_transactions + apply strict unique index
 
-## Problem
-`main` CI is red for two reasons pre-dating the vectorized/Alembic work:
-1. **Ruff (Quality job):** 60 repo-wide errors. Breakdown by rule:
-   - 35× F821 — `app/states/texas/validators/direct_expenditures.py`: a class of bare,
-     un-annotated names. Dead (imported nowhere, no auto-discovery) AND broken (raises
-     `NameError` on import — never worked).
-   - 1× F821 — `app/states/texas/validators/texas_address.py:31`: `list['TECPersonName']`
-     string forward-ref, `TECPersonName` never imported (real latent bug).
-   - 21× I001 — import-block ordering across scripts/tests/app (mechanical).
-   - 1× F401 (unused import), 1× F841 (`original_zip` in tx_validation_funcs.py), 1× E402.
-2. **Tests (collection abort):** `tests/test_op_secrets.py` imports `app.op`, which does
-   `from onepassword.lib.aarch64.op_uniffi_core import Error` — hardcodes `aarch64`, so on
-   the x86_64 CI runner the path is `x86_64` → `ModuleNotFoundError` → pytest collection aborts.
+## Problem ([[legacy-transaction-dedup-deferred]])
+Pre-Wave-2 (insert-only + FileOrigin-guard) loads produced duplicate
+`(state_id, transaction_type, transaction_id)` groups. Wave 2 added the strict partial unique
+index `uix_transactions_state_type_sourceid` (in `_DEDUP_INDEXES`, applied at bootstrap). Existing
+polluted DBs (campaign_finance ≈ 888 groups; campaignfinance_elt_spike ≈ 17,707) can't get the
+index — `_apply_dedup_indexes` crashes on the dup key. Fresh loads are clean (natural-key upsert).
+There's a working one-off cleanup (`scripts/dedup_unified_transactions.py`, dry-run by default) but
+no migration, so `cf migrate` / `alembic upgrade head` can't bring an existing DB current.
 
-Neither was introduced by PRs #52–#54 (those files are ruff-clean; local suite is 982 green).
+## DECISION (user-chosen): turn the dedup into an Alembic revision `0002`, after `0001_baseline`.
+
+## Key ordering insight
+`0001_baseline.upgrade()` creates the unique index via `_DEDUP_INDEXES` (IF NOT EXISTS). But existing
+polluted DBs are `alembic stamp 0001_baseline`'d (baseline never RUNS on them) — so they never got the
+index and still hold dups. So `0002` must: **dedup first, THEN create the index** — a no-op on fresh
+DBs (0 dups; index already exists from 0001 → IF NOT EXISTS), the real fix on stamped-polluted DBs.
+
+## Plan
+1. New revision `migrations/versions/<date>_0002_dedup_legacy_transactions.py`:
+   - `revision="0002_dedup_legacy_transactions"`, `down_revision="0001_baseline"`.
+   - `upgrade()`: PG-only (skip sqlite, like baseline — sqlite never had the index). INLINE the
+     static SQL (migrations are frozen/self-contained — do NOT import from scripts/):
+     a. temp table `_doomed_txn` ← non-surviving dup ids (row_number()>1 per group, keep lowest id);
+     b. purge children deepest-FK-first — loan_guarantors (via unified_loans/unified_debts) → the 10
+        transaction_id children (unified_transaction_persons/_versions, contributions, expenditures,
+        loans, debts, credits, travel, assets, pledges); then purge parents; drop the temp table;
+     c. `CREATE UNIQUE INDEX IF NOT EXISTS uix_transactions_state_type_sourceid ...`.
+   - `downgrade()`: `DROP INDEX IF EXISTS uix_transactions_state_type_sourceid` (note: cannot restore
+     deleted rows; downgrade only removes the constraint).
+2. Child-table list verified current (2026-06-16): the 10 children + loan_guarantors grandchild match
+   the live SQLModel.metadata FK graph exactly (same set the script uses).
 
 ## Files in scope
-- DELETE `app/states/texas/validators/direct_expenditures.py` (user-confirmed: dead+broken).
-- `app/states/texas/validators/texas_address.py` — add `TYPE_CHECKING` import of `TECPersonName`.
-- `app/op.py` — replace the arch-hardcoded `Error` import with arch-agnostic resolution
-  (reuse onepassword's own `platform.machine()`-resolved `onepassword.core.core`).
-- `app/states/texas/funcs/tx_validation_funcs.py` — remove unused `original_zip` (F841) + I001.
-- Remaining I001/F401/E402 sites: `scripts/verify_ingest.py`, `scripts/reset_and_reingest.py`,
-  `scripts/debug/*.py`, `tests/resolve/test_phase0_reconciliation.py`, `app/states/texas/*`,
-  `app/funcs/db_loader.py`, `app/core/load_context.py`, `app/core/enums.py`,
-  `app/abcs/abc_download.py`, `app/abcs/abc_category.py`, `app/states/texas/texas_search.py`.
-  Apply `ruff check --fix` (import sorting is safe-fixable); hand-fix the rest.
+- ADD `migrations/versions/<date>_0002_dedup_legacy_transactions.py`.
+- ADD `tests/core/test_dedup_migration.py` (PG-gated, mirrors `tests/core/test_alembic_migrations.py`).
+- (optional) note the migration in `MIGRATIONS.md`.
+- Do NOT change `0001_baseline`, `_DEDUP_INDEXES`, or `scripts/dedup_unified_transactions.py`.
 
 ## Behavior to preserve
-- No runtime behavior change. `app.op` must still expose the SAME `Error` class on this
-  (aarch64) machine AND import successfully on x86_64. Deleting direct_expenditures.py must
-  not break any import (verified: zero references, no discovery). texas_address change is
-  TYPE_CHECKING-only (no runtime/circular-import effect).
+- Fresh-DB `alembic upgrade head` stays byte-equal to bootstrap (0002 is a no-op there: 0 dups, index
+  already present). The ~982 sqlite test suite is unaffected (0002 skips on sqlite).
+- Survivor = lowest `id` per group (matches the script + the upsert's first-wins).
+- No FK orphans: every purged parent's children removed first (NO ACTION FKs).
 
-## Checks to run (evidence required before "done")
-1. `uv run ruff check .` → **0 errors** (was 60).
-2. `uv run python -c "import app.op; print(app.op.Error)"` → succeeds, prints the Error class.
-3. `uv run python -c "import platform; print(platform.machine())"` + confirm the new op.py
-   import uses arch detection (code reads x86_64/aarch64 via onepassword.core), so x86 CI imports.
-4. `uv run pytest tests/test_op_secrets.py -q` → collects + passes (was collection-abort on x86).
-5. `uv run pytest -q` → full suite still green (no regression from the deletion / edits).
-6. task-critic PASS; record gate verdict.
+## Checks to run (evidence required)
+1. PG-gated test: seed a "legacy polluted" DB (schema via create_all, NO unique index, with planted
+   dup groups + children), `stamp 0001_baseline` → `upgrade head`; assert: dup groups → 0, only
+   lowest-id survivors remain, doomed children purged, index exists, non-dup rows untouched.
+2. PG-gated idempotency/fresh-path: `upgrade head` on a clean DB → index present, row counts unchanged,
+   re-running the dedup SQL purges 0 rows.
+3. `uvx ruff@latest check . && uvx ruff@latest format --check .` clean.
+4. Full suite green (`uv run pytest -q`): 982 passed / 5 skipped unchanged (0002 no-ops on sqlite).
+5. `uv run alembic history` shows 0001 → 0002 linear; `alembic upgrade head` on a fresh PG DB succeeds.
+6. task-critic PASS.
 
-## Gates
-- ruff 0 errors; full suite green; op.py import arch-agnostic & verified; task-critic PASS.
-
-## SCOPE EXPANSION (user-approved after first CI run on PR #55)
-The first CI run on #55 was still red. Investigation found the lint+op fix was correct
-(`ruff check .` = 0; op collection-abort gone) but Quality + Tests fail for TWO more
-pre-existing reasons, both unrelated to #52–#54. User chose: reformat in this PR + investigate.
-
-1. **Quality also runs `ruff format --check .`** (separate from `ruff check`): 140 files
-   unformatted repo-wide. FIX: `uvx ruff@latest format .` (140 reformatted) — committed as a
-   dedicated style commit. `ruff format --check` now clean; full suite 982 still green (format
-   is behavior-preserving).
-2. **Tests job (`ci-tests.yml`) had 23 failures — three root causes, all pre-existing on main:**
-   a. **Git LFS (18 failures):** `.gitattributes` has `*.csv filter=lfs`; the golden fixtures
-      `tests/resolve/golden/*.csv` are LFS pointers. `ci-tests.yml` checked out WITHOUT
-      `lfs: true` (unlike ci-resolve-tests.yml), so CI read 3-line pointer files →
-      `KeyError: 'label'` / "got 2 pairs". FIX: add `lfs: true` to the ci-tests checkout.
-   b. **Non-hermetic resolve CLI smoke tests (5):** `test_resolve_cli.py::TestMainSmoke`
-      claims "uses in-memory SQLite" but never passed `--sqlite`, so the CLI targeted Postgres
-      (its documented default: unreachable PG + non-interactive → exit 1, never silent SQLite
-      fallback). Passed locally only because dev Postgres is reachable. FIX: add `--sqlite`.
-   c. **Opportunistic discovery smoke test (1):** `test_discover_real_texas_directory_when_present`
-      asserted instead of skipping when `tmp/texas` exists empty on CI (tmp/texas is untracked).
-      FIX: skip when discovery finds no files.
-
-## Second CI run — CodeQL + Quality (gate.py) follow-ups
-- **Quality** went red on `ruff format --check`: it flagged `.claude/hooks/gate.py` (a protected
-  hook file, always unformatted, can't be committed). FIX: exclude `.claude` in `.ruff.toml`
-  (agent tooling, not project source).
-- **CodeQL** reported "2 new high-severity alerts" — actually PRE-EXISTING
-  `py/clear-text-logging-sensitive-data` in `transform/silver_load.py` + `transform/reconcile.py`
-  (created 2026-06-05). My `ruff format` shifted those lines, so CodeQL's diff re-flagged them as
-  new. `transform/` is a standalone medallion spike, imported nowhere in app/scripts/tests. FIX:
-  revert the `transform/` reformat to base + exclude `transform` from ruff (like `maintenance`).
-  Net: transform/ is byte-identical to main → no CodeQL diff; the real alerts remain a separate,
-  pre-existing follow-up (not in scope for a CI-hygiene PR).
-- Tests (3.12/3.13) + Resolve Tests went GREEN after the LFS + hermetic fixes.
-
-## Added checks (evidence)
-7. `uvx ruff@latest format --check .` → clean (was 140 to reformat).
-8. `uv run pytest tests/resolve/test_resolve_cli.py::TestMainSmoke tests/resolve/test_file_discovery.py tests/resolve/test_match_quality.py -q` → all pass.
-9. CI on PR #55 green (Quality + Tests). [pending re-run after push]
+## Risks
+- The migrations/alembic-run PreToolUse gate will ASK on commit — expected.
+- Temp table inside Alembic's transaction: use explicit `DROP TABLE _doomed_txn` (don't rely on
+  ON COMMIT DROP / commit timing).
+- All SQL static (no identifier interpolation) — satisfies the SQL-injection hook.
