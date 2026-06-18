@@ -1115,8 +1115,8 @@ class UnifiedTransactionIndexes:
     # Transaction indexes
     idx_transactions_state = Index("idx_transactions_state", UnifiedTransaction.state_id)
     idx_transactions_type = Index("idx_transactions_type", UnifiedTransaction.transaction_type)
-    idx_transactions_date = Index("idx_transactions_date", UnifiedTransaction.transaction_date)
-    idx_transactions_amount = Index("idx_transactions_amount", UnifiedTransaction.amount)
+    # idx_transactions_date — dropped Wave 5a (duplicate of ix_unified_transactions_transaction_date)
+    # idx_transactions_amount — dropped Wave 5a (analytical, no FK)
     idx_transactions_committee = Index(
         "idx_transactions_committee", UnifiedTransaction.committee_id
     )
@@ -1159,36 +1159,34 @@ class UnifiedTransactionIndexes:
     idx_campaigns_year = Index("idx_campaigns_year", UnifiedCampaign.election_year)
     idx_campaigns_office = Index("idx_campaigns_office", UnifiedCampaign.office_sought)
     idx_campaigns_name = Index("idx_campaigns_name", UnifiedCampaign.normalized_name)
-    idx_campaign_entity_role = Index("idx_campaign_entity_role", UnifiedCampaignEntity.role)
+    # idx_campaign_entity_role — dropped Wave 5a (duplicate of ix_unified_campaign_entities_role)
 
     # Contribution indexes
-    idx_contributions_date = Index("idx_contributions_date", UnifiedContribution.receipt_date)
-    idx_contributions_amount = Index("idx_contributions_amount", UnifiedContribution.amount)
+    # idx_contributions_date — dropped Wave 5a (duplicate of ix_unified_contributions_receipt_date)
+    # idx_contributions_amount — dropped Wave 5a (analytical, no FK)
 
     # Loan indexes
-    idx_loans_date = Index("idx_loans_date", UnifiedLoan.loan_date)
-    idx_loans_due_date = Index("idx_loans_due_date", UnifiedLoan.due_date)
+    # idx_loans_date — dropped Wave 5a (duplicate of ix_unified_loans_loan_date)
+    # idx_loans_due_date — dropped Wave 5a (duplicate of ix_unified_loans_due_date)
 
     # Debt indexes
-    idx_debts_date = Index("idx_debts_date", UnifiedDebt.debt_date)
-    idx_debts_due_date = Index("idx_debts_due_date", UnifiedDebt.due_date)
+    # idx_debts_date — dropped Wave 5a (duplicate of ix_unified_debts_debt_date)
+    # idx_debts_due_date — dropped Wave 5a (duplicate of ix_unified_debts_due_date)
     idx_debts_amount = Index("idx_debts_amount", UnifiedDebt.amount)
     idx_debts_is_paid = Index("idx_debts_is_paid", UnifiedDebt.is_paid)
 
     # Credit indexes
-    idx_credits_date = Index("idx_credits_date", UnifiedCredit.credit_date)
+    # idx_credits_date — dropped Wave 5a (duplicate of ix_unified_credits_credit_date)
     idx_credits_amount = Index("idx_credits_amount", UnifiedCredit.amount)
     idx_credits_type = Index("idx_credits_type", UnifiedCredit.credit_type)
 
     # Travel indexes
-    idx_travel_date = Index("idx_travel_date", UnifiedTravel.travel_date)
-    idx_travel_departure = Index("idx_travel_departure", UnifiedTravel.departure_date)
+    # idx_travel_date — dropped Wave 5a (duplicate of ix_unified_travel_travel_date)
+    # idx_travel_departure — dropped Wave 5a (duplicate of ix_unified_travel_departure_date)
     idx_travel_departure_city = Index("idx_travel_departure_city", UnifiedTravel.departure_city)
-    idx_travel_arrival_city = Index("idx_travel_arrival_city", UnifiedTravel.arrival_city)
+    # idx_travel_arrival_city — dropped Wave 5a (analytical, no FK)
 
     # Asset indexes
-    idx_assets_acquisition_date = Index(
-        "idx_assets_acquisition_date", UnifiedAsset.acquisition_date
-    )
-    idx_assets_type = Index("idx_assets_type", UnifiedAsset.asset_type)
-    idx_assets_is_disposed = Index("idx_assets_is_disposed", UnifiedAsset.is_disposed)
+    # idx_assets_acquisition_date — dropped Wave 5a (dup of ix_unified_assets_acquisition_date)
+    # idx_assets_type — dropped Wave 5a (analytical, no FK)
+    # idx_assets_is_disposed — dropped Wave 5a (duplicate of ix_unified_assets_is_disposed)
