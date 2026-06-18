@@ -170,109 +170,20 @@ def backfill_session_fixture():
         yield session
 
 
-def _insert_report_with_null_at_filing(
-    session: Session,
-    *,
-    report_ident: str,
-    raw: dict,
-) -> UnifiedReport:
-    """Insert a UnifiedReport with at-filing columns forced to NULL."""
-    report = build_report(raw, state_id=43)
-    report.report_ident = report_ident
-    # Force NULL to simulate a row that predates the backfill.
-    report.committee_name_at_filing = None
-    report.treasurer_name_at_filing = None
-    session.add(report)
-    session.commit()
-    session.refresh(report)
-    return report
 
 
 class TestBackfillReportAtFiling:
-    """backfill_report_at_filing() populates NULL columns from raw_data JSON."""
+    """backfill_report_at_filing() is a no-op stub since Wave 2b removed raw_data."""
 
-    def test_backfill_populates_committee_name(self, backfill_session: Session) -> None:
-        raw = dict(BASE_CVR1, filerName="Test Committee Name")
-        report = _insert_report_with_null_at_filing(
-            backfill_session, report_ident="91111111111", raw=raw
-        )
-        assert report.committee_name_at_filing is None  # guard
-
+    def test_backfill_returns_zero(self, backfill_session: Session) -> None:
+        """backfill_report_at_filing() is now a no-op; always returns 0."""
         count = backfill_report_at_filing(backfill_session)
-        assert count >= 1
+        assert count == 0
 
-        backfill_session.refresh(report)
-        assert report.committee_name_at_filing == "Test Committee Name"
-
-    def test_backfill_populates_individual_treasurer(self, backfill_session: Session) -> None:
-        raw = dict(
-            INDIVIDUAL_CVR1,
-            reportInfoIdent="92222222222",
-            treasNameFirst="Carlos",
-            treasNameLast="Rivera",
-        )
-        report = _insert_report_with_null_at_filing(
-            backfill_session, report_ident="92222222222", raw=raw
-        )
-        assert report.treasurer_name_at_filing is None  # guard
-
-        backfill_report_at_filing(backfill_session)
-
-        backfill_session.refresh(report)
-        assert report.treasurer_name_at_filing == "Carlos Rivera"
-
-    def test_backfill_populates_entity_treasurer(self, backfill_session: Session) -> None:
-        raw = dict(
-            ENTITY_CVR1,
-            reportInfoIdent="93333333333",
-            treasNameOrganization="River Finance LLC",
-        )
-        report = _insert_report_with_null_at_filing(
-            backfill_session, report_ident="93333333333", raw=raw
-        )
-        backfill_report_at_filing(backfill_session)
-        backfill_session.refresh(report)
-        assert report.treasurer_name_at_filing == "River Finance LLC"
-
-    def test_backfill_skips_already_populated(self, backfill_session: Session) -> None:
-        """A row with committee_name_at_filing already set is not overwritten."""
-        raw = dict(BASE_CVR1, reportInfoIdent="94444444444", filerName="Already Set")
-        report = build_report(raw, state_id=43)
-        report.report_ident = "94444444444"
-        report.committee_name_at_filing = "Pre-existing Value"
-        backfill_session.add(report)
-        backfill_session.commit()
-        backfill_session.refresh(report)
-
-        backfill_report_at_filing(backfill_session)
-        backfill_session.refresh(report)
-        assert report.committee_name_at_filing == "Pre-existing Value"
-
-    def test_backfill_skips_null_raw_data(self, backfill_session: Session) -> None:
-        """Rows with NULL raw_data are not touched by the backfill."""
-        report = UnifiedReport(
-            state_id=43,
-            committee_id="00012345",
-            report_ident="95555555555",
-            raw_data=None,
-            committee_name_at_filing=None,
-            treasurer_name_at_filing=None,
-        )
-        backfill_session.add(report)
-        backfill_session.commit()
-        backfill_session.refresh(report)
-
-        backfill_report_at_filing(backfill_session)
-        backfill_session.refresh(report)
-        assert report.committee_name_at_filing is None
-
-    def test_backfill_returns_rowcount(self, backfill_session: Session) -> None:
-        """Return value is an int (the combined rowcount of both UPDATEs)."""
-        raw = dict(BASE_CVR1, reportInfoIdent="96666666666")
-        _insert_report_with_null_at_filing(backfill_session, report_ident="96666666666", raw=raw)
+    def test_backfill_returns_int(self, backfill_session: Session) -> None:
+        """Return type is int."""
         count = backfill_report_at_filing(backfill_session)
         assert isinstance(count, int)
-        assert count >= 0
 
 
 # ---------------------------------------------------------------------------

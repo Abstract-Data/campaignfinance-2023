@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -106,7 +105,6 @@ def build_report(
         contributions_maintained=_parse_amount(raw.get("contribsMaintainedAmount")),
         cash_on_hand=_parse_amount(raw.get("cashOnHandAmount")),
         file_origin_id=file_origin_id,
-        raw_data=json.dumps(dict(raw)),
         committee_name_at_filing=_optional_str(raw.get("filerName")),
         treasurer_name_at_filing=treasurer_name,
     )
@@ -158,97 +156,17 @@ def link_transactions_to_reports(session: Session) -> int:
 
 
 def backfill_report_at_filing(session: Session) -> int:
-    """Backfill ``committee_name_at_filing`` and ``treasurer_name_at_filing``
-    for existing ``unified_reports`` rows that have ``raw_data`` but whose
-    at-filing columns are NULL.
+    """No-op stub retained for backward compatibility.
 
-    The function is dialect-aware: it uses PostgreSQL JSONB operators when
-    connected to Postgres, and ``json_extract`` for SQLite.  Two UPDATE
-    statements are issued — one for the committee name and one for the
-    treasurer name — and the total rowcount is returned.
+    Wave 2b (DB Bloat Remediation) dropped ``unified_reports.raw_data``.
+    The backfill was executed during the Alembic migration
+    ``01bfbd7b124f_drop_unified_reports_raw_data``. Both report writers now
+    populate ``committee_name_at_filing`` and ``treasurer_name_at_filing``
+    directly at insert time, so no further backfill is required.
 
-    The caller does not need to manage transactions; this function commits
-    internally (mirroring :func:`link_transactions_to_reports`).
-
-    Parameters
-    ----------
-    session:
-        Active SQLModel/SQLAlchemy session bound to either SQLite or PostgreSQL.
-
-    Returns
-    -------
-    int
-        Combined number of rows updated across both UPDATE statements.
+    Returns 0 (no rows updated).
     """
-    dialect = session.get_bind().dialect.name
-
-    if dialect == "postgresql":
-        stmt_committee = text(
-            """
-            UPDATE unified_reports
-            SET committee_name_at_filing = NULLIF(TRIM(raw_data::jsonb ->> 'filerName'), '')
-            WHERE committee_name_at_filing IS NULL
-              AND raw_data IS NOT NULL
-            """
-        )
-        stmt_treasurer = text(
-            """
-            UPDATE unified_reports
-            SET treasurer_name_at_filing = CASE
-                WHEN TRIM(raw_data::jsonb ->> 'treasPersentTypeCd') = 'ENTITY'
-                    THEN NULLIF(TRIM(raw_data::jsonb ->> 'treasNameOrganization'), '')
-                ELSE NULLIF(
-                    TRIM(
-                        CONCAT_WS(' ',
-                            NULLIF(TRIM(raw_data::jsonb ->> 'treasNameFirst'), ''),
-                            NULLIF(TRIM(raw_data::jsonb ->> 'treasNameLast'), '')
-                        )
-                    ),
-                    ''
-                )
-            END
-            WHERE treasurer_name_at_filing IS NULL
-              AND raw_data IS NOT NULL
-            """
-        )
-    else:
-        # SQLite
-        stmt_committee = text(
-            """
-            UPDATE unified_reports
-            SET committee_name_at_filing = NULLIF(TRIM(json_extract(raw_data, '$.filerName')), '')
-            WHERE committee_name_at_filing IS NULL
-              AND raw_data IS NOT NULL
-            """
-        )
-        stmt_treasurer = text(
-            """
-            UPDATE unified_reports
-            SET treasurer_name_at_filing = CASE
-                WHEN TRIM(json_extract(raw_data, '$.treasPersentTypeCd')) = 'ENTITY'
-                    THEN NULLIF(TRIM(json_extract(raw_data, '$.treasNameOrganization')), '')
-                ELSE CASE
-                    WHEN NULLIF(TRIM(json_extract(raw_data, '$.treasNameFirst')), '') IS NOT NULL
-                         AND NULLIF(TRIM(json_extract(raw_data, '$.treasNameLast')), '') IS NOT NULL
-                        THEN TRIM(json_extract(raw_data, '$.treasNameFirst')) || ' '
-                             || TRIM(json_extract(raw_data, '$.treasNameLast'))
-                    WHEN NULLIF(TRIM(json_extract(raw_data, '$.treasNameFirst')), '') IS NOT NULL
-                        THEN TRIM(json_extract(raw_data, '$.treasNameFirst'))
-                    WHEN NULLIF(TRIM(json_extract(raw_data, '$.treasNameLast')), '') IS NOT NULL
-                        THEN TRIM(json_extract(raw_data, '$.treasNameLast'))
-                    ELSE NULL
-                END
-            END
-            WHERE treasurer_name_at_filing IS NULL
-              AND raw_data IS NOT NULL
-            """
-        )
-
-    rowcount = 0
-    rowcount += session.execute(stmt_committee).rowcount
-    rowcount += session.execute(stmt_treasurer).rowcount
-    session.commit()
-    return rowcount
+    return 0
 
 
 def treasurer_for_report(session: Session, report: "UnifiedReport"):
