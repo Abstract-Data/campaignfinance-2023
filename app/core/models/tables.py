@@ -381,8 +381,12 @@ class UnifiedTransaction(SQLModel, table=True):
     # Metadata fields
     download_date: str | None = Field(default=None, sa_column=Column(String(100)))
 
-    # Raw data for debugging (stored as JSON string)
-    raw_data: str | None = Field(default=None, sa_column=Column(Text))
+    # Narrow campaign source columns derived during ingest (Wave 1a of DB Bloat Remediation).
+    # These replace the need to read raw_data in finalize_campaigns().
+    # Always NULL for TEC RCPT/EXPN (office/district cols absent from those record types).
+    campaign_office_src: str | None = Field(default=None, sa_column=Column(String(200)))
+    campaign_district_src: str | None = Field(default=None, sa_column=Column(String(200)))
+    campaign_name_src: str | None = Field(default=None, sa_column=Column(String(200)))
 
     # Change tracking fields
     last_modified_at: datetime = Field(

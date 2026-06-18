@@ -607,7 +607,7 @@ class DetailChildrenWorker:
     def run(self, files_by_type: dict[str, list[Path]], ctx: FamilyContext) -> dict[str, int]:
         # Read & normalize every present type, in load-priority order. The ORIGINAL
         # source columns (before _ensure_cols pads missing ones) are tracked per type
-        # so the transaction's raw_data provenance matches json.dumps(raw) exactly.
+        # for potential future provenance use.
         frames: dict[str, pl.DataFrame] = {}
         self._orig_cols: dict[str, list[str]] = {}
         for rt in sorted(files_by_type, key=lambda r: _SPECS[r].priority):
@@ -946,9 +946,7 @@ class DetailChildrenWorker:
     def _transaction_frame(
         self, df: pl.DataFrame, spec: TypeSpec, ctx: FamilyContext
     ) -> pl.DataFrame:
-        # raw_data provenance must match json.dumps(raw) over the ORIGINAL source
-        # columns only — not the null-padded columns _ensure_cols added.
-        orig_cols = self._orig_cols.get(spec.record_type, list(df.columns))
+        orig_cols = self._orig_cols.get(spec.record_type, list(df.columns))  # noqa: F841 (kept for future use)
 
         txn_id = (
             pl.col(spec.id_col).cast(pl.Utf8)
@@ -993,7 +991,11 @@ class DetailChildrenWorker:
             common.builder_date("receivedDt").alias("filed_date"),
             pl.lit(False).alias("amended"),
             pl.lit(None, dtype=pl.Utf8).alias("file_origin_id"),
-            common.raw_json_expr(orig_cols, alias="raw_data"),
+            # Campaign source columns — always NULL for LOAN/DEBT/CRED/TRVL/ASSET/PLDG
+            # record types (none carry candidateHold*/candidateSeek* fields).
+            pl.lit(None, dtype=pl.Utf8).alias("campaign_office_src"),
+            pl.lit(None, dtype=pl.Utf8).alias("campaign_district_src"),
+            pl.lit(None, dtype=pl.Utf8).alias("campaign_name_src"),
         ).select(
             "state_id",
             "transaction_id",
@@ -1006,7 +1008,9 @@ class DetailChildrenWorker:
             "filed_date",
             "amended",
             "file_origin_id",
-            "raw_data",
+            "campaign_office_src",
+            "campaign_district_src",
+            "campaign_name_src",
         )
 
     def _write_transactions(
