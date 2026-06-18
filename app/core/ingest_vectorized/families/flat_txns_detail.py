@@ -676,7 +676,7 @@ class FlatTxnsDetailWorker:
         # resolve to the SAME enriched person the dim layer created. The lookup is built from
         # the DB, where FILER addresses keep the lowest ids, so this picks the same street the
         # dim layer did. RCPT adds contributorStreetAddr1; EXPN overwrites payeeStreetAddr1.
-        addr_lookup = common.full_address_lookup(ctx.engine)
+        addr_lookup = ctx.get_address_lookup()
         if rcpt is not None:
             rcpt = _ensure_cols(rcpt, _RCPT_COLS)
             rcpt = common.add_resolved_street(
