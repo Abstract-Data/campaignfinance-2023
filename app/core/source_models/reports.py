@@ -6,7 +6,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import Column, Numeric, Text
+from sqlalchemy import Column, Numeric
 from sqlmodel import Field, SQLModel
 
 
@@ -99,8 +99,6 @@ class UnifiedReport(SQLModel, table=True):
         foreign_key="file_origins.id",
         max_length=64,
     )
-
-    raw_data: str | None = Field(default=None, sa_column=Column(Text))
 
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
