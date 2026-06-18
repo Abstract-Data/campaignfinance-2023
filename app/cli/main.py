@@ -5,7 +5,7 @@ from typing import Annotated
 
 import typer
 
-from app.cli import convert, download, prepare, verify
+from app.cli import convert, db, download, prepare, resolve_prune, verify
 
 __version__ = "0.1.0"
 
@@ -47,6 +47,15 @@ app.command(name="convert")(convert.convert)
 app.command(name="verify")(verify.verify)
 app.command(name="prepare")(prepare.prepare)
 app.command(name="field-coverage")(verify.field_coverage)
+app.add_typer(db.app, name="db")
+
+_resolve_app = typer.Typer(
+    name="resolve",
+    help="Resolve pipeline commands.",
+    no_args_is_help=True,
+)
+_resolve_app.command(name="prune")(resolve_prune.prune)
+app.add_typer(_resolve_app, name="resolve")
 
 
 if __name__ == "__main__":
