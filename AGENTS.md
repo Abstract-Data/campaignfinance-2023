@@ -809,7 +809,7 @@ Intentional departures from the Abstract Data project-alignment template. Do NOT
 1. **`CLAUDE.md` is not a symlink to `AGENTS.md`.** GitNexus auto-regenerates `CLAUDE.md` as a standalone file containing only the GitNexus block (between `<!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **campaignfinance** (7904 symbols, 17952 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **campaignfinance** (7934 symbols, 17983 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
