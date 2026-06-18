@@ -857,7 +857,7 @@ class FlatTxnsDimsWorker:
         # feeds both the person dedup key and the address frame. RCPT contributors carry no
         # source street (out_col is a new column); EXPN payees keep their own street and only
         # the street-less ones inherit (out_col overwrites payeeStreetAddr1 in place).
-        addr_lookup = common.full_address_lookup(ctx.engine)
+        addr_lookup = ctx.get_address_lookup()
         if rcpt is not None:
             rcpt = _ensure_cols(rcpt, _RCPT_COLS)
             rcpt = common.add_resolved_street(

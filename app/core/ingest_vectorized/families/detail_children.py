@@ -630,7 +630,7 @@ class DetailChildrenWorker:
         # any address this family writes, and reused by BOTH the dim layer (_write_dims) and
         # the detail->person link (_party_keys) so the two compute the SAME person key.
         # Per-run instance state, like self._orig_cols above.
-        self._addr_lookup = common.full_address_lookup(ctx.engine)
+        self._addr_lookup = ctx.get_address_lookup()
 
         counts: dict[str, int] = {}
 
