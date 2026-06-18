@@ -84,7 +84,17 @@ def emit_allow() -> None:
 
 
 def emit_pretool(decision: str, reason: str) -> None:
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": decision, "permissionDecisionReason": reason}}))
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": decision,
+                    "permissionDecisionReason": reason,
+                }
+            }
+        )
+    )
     sys.exit(0)
 
 
@@ -93,11 +103,19 @@ def open_items(ledger: dict, require_task_critic: bool) -> list[str]:
     if require_task_critic:
         tc = ledger.get("task_critic")
         if not tc or tc.get("verdict") != "PASS":
-            items.append("task-critic has not recorded a PASS for this session. Run task-critic against TASK.md, then: python .claude/hooks/gate.py task-critic --verdict PASS|BLOCK")
+            items.append(
+                "task-critic has not recorded a PASS for this session. Run task-critic against TASK.md, then: python .claude/hooks/gate.py task-critic --verdict PASS|BLOCK"
+            )
     for name, rec in ledger.get("checks", {}).items():
         if rec.get("status") in ("failed", "skipped") and not rec.get("disposition"):
             detail = rec.get("detail") or ""
-            items.append(f"check '{name}' is {rec['status']} with no disposition" + (f" ({detail})" if detail else "") + ". Fix and re-run, or: python .claude/hooks/gate.py dispose --check '" + name + "' --status fixed|deferred|ticket|ignore --note '...'")
+            items.append(
+                f"check '{name}' is {rec['status']} with no disposition"
+                + (f" ({detail})" if detail else "")
+                + ". Fix and re-run, or: python .claude/hooks/gate.py dispose --check '"
+                + name
+                + "' --status fixed|deferred|ticket|ignore --note '...'"
+            )
     return items
 
 
@@ -118,9 +136,21 @@ def cmd_stop_check() -> None:
         ledger["stop_blocks"] = int(ledger.get("stop_blocks", 0)) + 1
         save_ledger(lpath, ledger)
         if ledger["stop_blocks"] > MAX_STOP_BLOCKS:
-            sys.stderr.write("[gate] WARNING: released after " + str(ledger['stop_blocks']) + " blocks with unresolved items:\n  - " + "\n  - ".join(items) + "\n")
+            sys.stderr.write(
+                "[gate] WARNING: released after "
+                + str(ledger["stop_blocks"])
+                + " blocks with unresolved items:\n  - "
+                + "\n  - ".join(items)
+                + "\n"
+            )
             emit_allow()
-        reason = "Do not end the turn yet. Unresolved items (" + str(len(items)) + "):\n\n  - " + "\n  - ".join(items) + "\n\nResolve each, then stop. No session ends on a failed or skipped check without a written disposition."
+        reason = (
+            "Do not end the turn yet. Unresolved items ("
+            + str(len(items))
+            + "):\n\n  - "
+            + "\n  - ".join(items)
+            + "\n\nResolve each, then stop. No session ends on a failed or skipped check without a written disposition."
+        )
         emit_stop_block(reason)
     except SystemExit:
         raise
@@ -131,31 +161,69 @@ def cmd_stop_check() -> None:
 
 # Hard DENY: never appropriate for an agent to do autonomously.
 BASH_DENY = [
-    (re.compile(r"\bgit\s+config\s+--global\b"), "Global git config changes are blocked. Make this change yourself."),
+    (
+        re.compile(r"\bgit\s+config\s+--global\b"),
+        "Global git config changes are blocked. Make this change yourself.",
+    ),
     (re.compile(r"\bchmod\b.*\.claude/hooks/"), "Modifying enforcement hook files is blocked."),
 ]
 # ASK (escalate to human): meaning-changing operations from the review.
 BASH_ASK = [
     (re.compile(r"\bgit\s+push\b.*(--force|-f)\b"), "Force push — confirm target branch."),
-    (re.compile(r"\bgit\s+push\b.*\b(main|master|preview|prod|production|release)\b"), "Push to a protected branch — confirm."),
+    (
+        re.compile(r"\bgit\s+push\b.*\b(main|master|preview|prod|production|release)\b"),
+        "Push to a protected branch — confirm.",
+    ),
     (re.compile(r"\bgit\s+reset\s+--hard\b"), "Hard reset discards work — confirm."),
     (re.compile(r"\bgit\s+clean\s+-[a-z]*f"), "git clean -f deletes untracked files — confirm."),
-    (re.compile(r"\balembic\s+(upgrade|downgrade)\b"), "Alembic run — confirm target DB is NOT cloud/production (house rule: no cloud alembic upgrades)."),
-    (re.compile(r"\bsupabase\s+db\s+(push|reset)\b"), "Supabase schema push/reset against remote — confirm."),
-    (re.compile(r"\bpsql\b.*-c\b.*\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER)\b", re.I), "Direct SQL write/DDL — confirm (prefer migrations / queued discovery over direct backfill)."),
-    (re.compile(r"\bbut\b.*\b(config|reset|undo)\b"), "GitButler state-changing operation — confirm."),
+    (
+        re.compile(r"\balembic\s+(upgrade|downgrade)\b"),
+        "Alembic run — confirm target DB is NOT cloud/production (house rule: no cloud alembic upgrades).",
+    ),
+    (
+        re.compile(r"\bsupabase\s+db\s+(push|reset)\b"),
+        "Supabase schema push/reset against remote — confirm.",
+    ),
+    (
+        re.compile(r"\bpsql\b.*-c\b.*\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER)\b", re.I),
+        "Direct SQL write/DDL — confirm (prefer migrations / queued discovery over direct backfill).",
+    ),
+    (
+        re.compile(r"\bbut\b.*\b(config|reset|undo)\b"),
+        "GitButler state-changing operation — confirm.",
+    ),
     (re.compile(r"\brm\s+-rf\b"), "Recursive force delete — confirm path."),
 ]
 PATH_DENY = [
-    (re.compile(r"\.claude/hooks/"), "Editing enforcement hook files is blocked. Change them via a reviewed PR."),
-    (re.compile(r"\.claude/settings(\.local)?\.json$"), "Editing hook settings is blocked. Change them via a reviewed PR."),
+    (
+        re.compile(r"\.claude/hooks/"),
+        "Editing enforcement hook files is blocked. Change them via a reviewed PR.",
+    ),
+    (
+        re.compile(r"\.claude/settings(\.local)?\.json$"),
+        "Editing hook settings is blocked. Change them via a reviewed PR.",
+    ),
 ]
 PATH_ASK = [
-    (re.compile(r"\.github/workflows/"), "CI workflow edit — confirm. CI changes alter what 'passing' means."),
-    (re.compile(r"production.*loader|loader.*production", re.I), "Production loader edit — confirm."),
-    (re.compile(r"(^|/)(pyproject\.toml|requirements[^/]*\.txt|uv\.lock|package\.json|package-lock\.json|bun\.lock(b)?|pnpm-lock\.yaml)$"), "Dependency / lockfile change — confirm."),
+    (
+        re.compile(r"\.github/workflows/"),
+        "CI workflow edit — confirm. CI changes alter what 'passing' means.",
+    ),
+    (
+        re.compile(r"production.*loader|loader.*production", re.I),
+        "Production loader edit — confirm.",
+    ),
+    (
+        re.compile(
+            r"(^|/)(pyproject\.toml|requirements[^/]*\.txt|uv\.lock|package\.json|package-lock\.json|bun\.lock(b)?|pnpm-lock\.yaml)$"
+        ),
+        "Dependency / lockfile change — confirm.",
+    ),
     (re.compile(r"(alembic|migrations)/versions/"), "Database migration file — confirm."),
-    (re.compile(r"(^|/)(Dockerfile|railway\.(json|toml)|vercel\.json|.*\.tf)$"), "Infrastructure / deploy config edit — confirm."),
+    (
+        re.compile(r"(^|/)(Dockerfile|railway\.(json|toml)|vercel\.json|.*\.tf)$"),
+        "Infrastructure / deploy config edit — confirm.",
+    ),
 ]
 
 
@@ -207,7 +275,12 @@ def cmd_record_failure() -> None:
     if not name:
         sys.exit("record-failure: --check NAME is required")
     lpath, ledger = _session_ledger()
-    ledger.setdefault("checks", {})[name] = {"status": _arg("--status", "failed"), "detail": _arg("--detail", ""), "disposition": None, "at": int(time.time())}
+    ledger.setdefault("checks", {})[name] = {
+        "status": _arg("--status", "failed"),
+        "detail": _arg("--detail", ""),
+        "disposition": None,
+        "at": int(time.time()),
+    }
     save_ledger(lpath, ledger)
     print(f"recorded {ledger['checks'][name]['status']} check: {name}")
 
@@ -262,7 +335,9 @@ def main() -> None:
     }
     fn = dispatch.get(cmd)
     if not fn:
-        sys.exit(f"gate.py v{VERSION}\nusage: gate.py {{stop-check|pretool|record-failure|dispose|task-critic|status|version}}")
+        sys.exit(
+            f"gate.py v{VERSION}\nusage: gate.py {{stop-check|pretool|record-failure|dispose|task-critic|status|version}}"
+        )
     fn()
 
 
