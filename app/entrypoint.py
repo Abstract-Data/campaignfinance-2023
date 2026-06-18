@@ -10,7 +10,8 @@ from typing import Annotated, Any
 import typer
 from rich.console import Console
 
-from app.cli import convert, download, prepare, verify
+from app.cli import convert, download, prepare, resolve_prune, verify
+from app.cli import db as db_cli
 from app.cli.state import State
 from app.scheduler import CadenceScheduler, GracefulShutdown
 
@@ -303,3 +304,15 @@ app.command(name="convert")(convert.convert)
 app.command(name="verify")(verify.verify)
 app.command(name="prepare")(prepare.prepare)
 app.command(name="field-coverage")(verify.field_coverage)
+
+# DB utility commands (Wave 0 of DB Bloat Remediation).
+app.add_typer(db_cli.app, name="db")
+
+# Resolve pipeline commands (Wave 3a of DB Bloat Remediation).
+_resolve_app = typer.Typer(
+    name="resolve",
+    help="Resolve pipeline commands.",
+    no_args_is_help=True,
+)
+_resolve_app.command(name="prune")(resolve_prune.prune)
+app.add_typer(_resolve_app, name="resolve")
