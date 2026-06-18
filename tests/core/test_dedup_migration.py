@@ -200,8 +200,8 @@ def test_0002_is_noop_on_fresh_db():
     url = f"{_PG_BASE}/{_TEST_DB}"
     try:
         _ensure_state_schemas(url)
-        upgrade_head(url)  # baseline creates the index; 0002 finds 0 dups
-        assert current_revision(url) == "0002_dedup_legacy_transactions"
+        upgrade_head(url)  # baseline → 0002 dedup → 1e99 txn → 01bf reports → dc13 index diet
+        assert current_revision(url) == "dc131e864993"
         assert _index_exists(url)
         eng = create_engine(url)
         with eng.connect() as c:

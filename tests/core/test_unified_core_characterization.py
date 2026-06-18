@@ -10,7 +10,6 @@ Covers:
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from datetime import date
 from decimal import Decimal
@@ -183,12 +182,14 @@ class TestProcessRecordByType:
         assert txn.amount is not None
         assert float(txn.amount) == pytest.approx(1234.56)
 
-    def test_raw_data_stored_on_transaction(self, processor: UnifiedSQLDataProcessor) -> None:
+    def test_campaign_source_cols_present_on_transaction(self, processor: UnifiedSQLDataProcessor) -> None:
+        """Campaign source columns exist on UnifiedTransaction (Wave 1a/1b: raw_data removed)."""
         raw = _base_raw("RCPT")
         txn = processor.process_record(raw, "texas", state_id=1, state_code="TX")
-        assert txn.raw_data is not None
-        parsed = json.loads(txn.raw_data)
-        assert "filerIdent" in parsed
+        # Columns must exist (nullable — RCPT/EXPN don't carry office/district data)
+        assert hasattr(txn, "campaign_office_src")
+        assert hasattr(txn, "campaign_district_src")
+        assert hasattr(txn, "campaign_name_src")
 
 
 # ---------------------------------------------------------------------------

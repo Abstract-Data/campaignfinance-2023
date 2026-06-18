@@ -117,7 +117,7 @@ def test_migrate_is_idempotent():
         assert current_revision(url) is None
         upgrade_head(url)
         rev = current_revision(url)
-        assert rev == "0002_dedup_legacy_transactions"  # latest head (baseline -> dedup)
+        assert rev == "dc131e864993"  # latest head (Wave 5a: drop zero-scan indexes)
         upgrade_head(url)  # no-op
         assert current_revision(url) == rev
     finally:

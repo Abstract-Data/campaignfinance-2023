@@ -69,12 +69,10 @@ from sqlalchemy import select
 
 from app.core.ingest_vectorized import common
 
-# Texas field-library mappings for office_sought / district_info, in the ORM's
-# resolution order (build_campaign -> _get_field_value iterates the state mappings in
-# definition order and returns the FIRST source column present in raw_data; "Hold"
-# is defined before "Seek", so Hold wins when both are present).
-_OFFICE_SOUGHT_SRC = ("candidateHoldOfficeCd", "candidateSeekOfficeCd")
-_DISTRICT_SRC = ("candidateHoldOfficeDistrict", "candidateSeekOfficeDistrict")
+# Hold-before-Seek resolution for office/district is now done at ingest time in
+# flat_txns._campaign_office_expr / _campaign_district_expr (Wave 1a). The resolved
+# values are stored as campaign_office_src / campaign_district_src on unified_transactions
+# and read directly by _transaction_frame() — no json_path_match needed here.
 
 
 def _committee_frame(session: Any, state_id: int) -> pl.DataFrame:
@@ -123,11 +121,11 @@ def _committee_entity_frame(session: Any, state_id: int) -> pl.DataFrame:
 
 
 def _transaction_frame(session: Any, state_id: int) -> pl.DataFrame:
-    """Transactions for the state: committee_id + transaction_date(year) + raw_data.
+    """Transactions for the state: committee_id + transaction_date(year) + campaign src cols.
 
-    ``raw_data`` is parsed (struct json decode is not available as a pure expr, so the
-    office/district source columns are extracted with ``str.json_path_match`` — a native
-    Polars string expression, NOT a per-row UDF).
+    Reads the narrow campaign_office_src and campaign_district_src columns (added in
+    Wave 1a of DB Bloat Remediation) instead of the full raw_data JSON blob.
+    For TEC RCPT/EXPN these are always NULL; retained for future record types.
     """
     from app.core.models import UnifiedTransaction
 
@@ -135,35 +133,39 @@ def _transaction_frame(session: Any, state_id: int) -> pl.DataFrame:
         select(
             UnifiedTransaction.committee_id,
             UnifiedTransaction.transaction_date,
-            UnifiedTransaction.raw_data,
+            UnifiedTransaction.campaign_office_src,
+            UnifiedTransaction.campaign_district_src,
         ).where(UnifiedTransaction.state_id == state_id)
     ).all()
     return pl.DataFrame(
         {
             "_committee_id": [r[0] for r in rows],
             "_txn_year": [(r[1].year if r[1] is not None else None) for r in rows],
-            "_raw": [r[2] for r in rows],
+            "_campaign_office_src": [r[2] for r in rows],
+            "_campaign_district_src": [r[3] for r in rows],
         },
-        schema={"_committee_id": pl.Utf8, "_txn_year": pl.Int64, "_raw": pl.Utf8},
+        schema={
+            "_committee_id": pl.Utf8,
+            "_txn_year": pl.Int64,
+            "_campaign_office_src": pl.Utf8,
+            "_campaign_district_src": pl.Utf8,
+        },
     )
 
 
-def _office_expr(sources: tuple[str, ...]) -> pl.Expr:
-    """First non-null/non-empty value among *sources* extracted from the raw_data JSON
-    string, mirroring ``_get_field_value`` returning the first mapped source column
-    present. ``json_path_match`` is a native string expression (no UDF)."""
-    expr: pl.Expr | None = None
-    for col in sources:
-        # json_path_match returns null when the key is absent; clean blank -> null.
-        got = pl.col("_raw").str.json_path_match("$." + col)
-        got = (
-            pl.when(got.cast(pl.Utf8).str.strip_chars().str.len_chars() > 0)
-            .then(got)
-            .otherwise(None)
-        )
-        expr = got if expr is None else expr.fill_null(got)
-    assert expr is not None
-    return expr
+def _office_expr(col: str) -> pl.Expr:
+    """Return a null-safe expression for a pre-resolved campaign source column.
+
+    Replaces the former json_path_match-over-raw_data approach (Wave 1a of DB Bloat
+    Remediation). The Hold-before-Seek resolution now happens at ingest time in
+    flat_txns._campaign_office_expr / _campaign_district_expr; this function simply
+    strips blanks and returns null for empty strings.
+    """
+    return (
+        pl.when(pl.col(col).cast(pl.Utf8).str.strip_chars().str.len_chars() > 0)
+        .then(pl.col(col).cast(pl.Utf8).str.strip_chars())
+        .otherwise(pl.lit(None, dtype=pl.Utf8))
+    )
 
 
 def finalize_campaigns(session: Any, state_id: int) -> dict[str, int]:
@@ -182,8 +184,8 @@ def finalize_campaigns(session: Any, state_id: int) -> dict[str, int]:
     # Join each transaction to its committee's stored name (the campaign_name source).
     joined = txns.join(committees, on="_committee_id", how="inner").with_columns(
         common.normalize_entity_name("_committee_name").alias("_norm"),
-        _office_expr(_OFFICE_SOUGHT_SRC).alias("_office"),
-        _office_expr(_DISTRICT_SRC).alias("_district"),
+        _office_expr("_campaign_office_src").alias("_office"),
+        _office_expr("_campaign_district_src").alias("_district"),
     )
     # Skip rows whose normalized campaign name is empty (build_campaign returns None).
     joined = joined.filter(pl.col("_norm") != "")

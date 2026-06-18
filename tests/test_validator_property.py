@@ -160,7 +160,8 @@ class TestBuilderFieldResolutionProperties:
         builder = UnifiedSQLModelBuilder("texas", state_id=1, state_code="TX")
         txn = builder.build_transaction(raw_data)
         assert txn.state_id == 1
-        assert txn.raw_data is not None
+        # raw_data was removed in Wave 1b; verify campaign source cols exist instead
+        assert hasattr(txn, "campaign_office_src")
 
 
 class TestUnifiedStateLoaderIndexProperties:

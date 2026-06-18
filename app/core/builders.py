@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -80,9 +79,7 @@ class UnifiedSQLModelBuilder:
             UnifiedTransaction object with normalized data
         """
         # Initialize the transaction
-        transaction = UnifiedTransaction(
-            state_id=self.state_id, raw_data=json.dumps(raw_data.copy(), default=self._json_default)
-        )
+        transaction = UnifiedTransaction(state_id=self.state_id)
 
         # Map core transaction fields
         transaction.transaction_id = self._get_field_value(raw_data, "transaction_id")
@@ -1002,7 +999,3 @@ class UnifiedSQLModelBuilder:
 
         return TransactionType.OTHER
 
-    def _json_default(self, obj: Any) -> Any:
-        if isinstance(obj, (datetime, date)):
-            return obj.isoformat()
-        return str(obj)

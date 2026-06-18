@@ -27,7 +27,6 @@ Field mappings (per the Texas unified_field_library + ORM build_transaction):
                                          to unified 'filed_date', ORM prefers receivedDt
                                          via the field_library mapping for RCPT/EXPN)
     amended        = False              (no amended field in RCPT/EXPN source)
-    raw_data       = JSON of orig cols  (json.dumps(raw.copy()) in the ORM)
     state_id       = ctx.state_id
     file_origin_id = None               (no file_origin seeded in vectorized path)
 """
@@ -48,8 +47,7 @@ _logger = Logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Source column whitelists — every column that appears in TEC RCPT / EXPN
-# parquet files (union of both; missing ones are added as null so that
-# raw_json_expr covers the correct provenance columns).
+# parquet files (union of both; missing ones are added as null by _ensure_cols).
 # ---------------------------------------------------------------------------
 
 _RCPT_COLS = (
@@ -90,6 +88,11 @@ _RCPT_COLS = (
     "contributorSpouseLawFirmName",
     "contributorParent1LawFirmName",
     "contributorParent2LawFirmName",
+    # Campaign source cols — absent from RCPT files, added as null by _ensure_cols.
+    "candidateHoldOfficeCd",
+    "candidateSeekOfficeCd",
+    "candidateHoldOfficeDistrict",
+    "candidateSeekOfficeDistrict",
 )
 
 _EXPN_COLS = (
@@ -131,6 +134,11 @@ _EXPN_COLS = (
     "payeeStreetRegion",
     "creditCardIssuer",
     "repaymentDt",
+    # Campaign source cols — absent from EXPN files, added as null by _ensure_cols.
+    "candidateHoldOfficeCd",
+    "candidateSeekOfficeCd",
+    "candidateHoldOfficeDistrict",
+    "candidateSeekOfficeDistrict",
 )
 
 
@@ -177,6 +185,38 @@ def _filed_date_expr() -> pl.Expr:
     return common.builder_date("receivedDt")
 
 
+def _coalesce_str(*cols: str) -> pl.Expr:
+    """First non-null, non-empty string among *cols*, or null."""
+    exprs = [
+        pl.when(pl.col(c).cast(pl.Utf8).str.strip_chars().str.len_chars() > 0)
+        .then(pl.col(c).cast(pl.Utf8).str.strip_chars())
+        .otherwise(pl.lit(None, dtype=pl.Utf8))
+        for c in cols
+    ]
+    result = exprs[0]
+    for e in exprs[1:]:
+        result = result.fill_null(e)
+    return result
+
+
+def _campaign_office_expr() -> pl.Expr:
+    """Resolve campaign office_sought using Hold-before-Seek priority.
+
+    candidateHoldOfficeCd / candidateSeekOfficeCd are absent from RCPT/EXPN
+    source files — _ensure_cols adds them as null. Always returns null for TEC
+    RCPT/EXPN; retained for future record types that carry these columns.
+    """
+    return _coalesce_str("candidateHoldOfficeCd", "candidateSeekOfficeCd")
+
+
+def _campaign_district_expr() -> pl.Expr:
+    """Resolve campaign district using Hold-before-Seek priority.
+
+    See _campaign_office_expr for the null-for-RCPT/EXPN rationale.
+    """
+    return _coalesce_str("candidateHoldOfficeDistrict", "candidateSeekOfficeDistrict")
+
+
 def _build_transactions(
     df: pl.DataFrame,
     *,
@@ -207,7 +247,12 @@ def _build_transactions(
             _filed_date_expr().alias("filed_date"),
             pl.lit(False).alias("amended"),
             pl.lit(None, dtype=pl.Utf8).alias("file_origin_id"),
-            common.raw_json_expr(orig_cols, alias="raw_data"),
+            # Campaign source columns (Wave 1a). candidateHold*/candidateSeek* cols
+            # are absent from RCPT/EXPN records so these are always NULL for TEC data.
+            # Populated by future record types that carry office/district fields.
+            _campaign_office_expr().alias("campaign_office_src"),
+            _campaign_district_expr().alias("campaign_district_src"),
+            pl.lit(None, dtype=pl.Utf8).alias("campaign_name_src"),
         ]
     ).select(
         "state_id",
@@ -221,7 +266,9 @@ def _build_transactions(
         "filed_date",
         "amended",
         "file_origin_id",
-        "raw_data",
+        "campaign_office_src",
+        "campaign_district_src",
+        "campaign_name_src",
     )
 
 
