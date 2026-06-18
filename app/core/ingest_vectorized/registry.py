@@ -24,6 +24,22 @@ class FamilyContext:
     # Shared dim id-maps (committees/persons/entities/addresses) populated by the
     # foundation so families resolve FKs without re-deduping. Filled in later phases.
     dims: dict[str, Any] = field(default_factory=dict)
+    # Lazily-populated address lookup cache (Wave 4a: avoid per-family re-query).
+    # Populated on first call to get_address_lookup(); None means not yet loaded.
+    _address_lookup_cache: Any = field(default=None, repr=False, compare=False)
+
+    def get_address_lookup(self) -> Any:
+        """Return the address lookup DataFrame, building it once per context.
+
+        Caches the result of ``common.full_address_lookup(engine)`` so that
+        multiple families (dims, detail, detail-children) share a single DB round
+        trip instead of each issuing an independent full-table read.
+        """
+        if self._address_lookup_cache is None:
+            from app.core.ingest_vectorized import common
+
+            self._address_lookup_cache = common.full_address_lookup(self.engine)
+        return self._address_lookup_cache
 
 
 @runtime_checkable

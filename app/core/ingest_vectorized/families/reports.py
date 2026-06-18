@@ -85,7 +85,6 @@ class ReportsWorker:
         return {"loaded": loaded}
 
     def _load_reports(self, df: pl.DataFrame, ctx: FamilyContext) -> int:
-        orig_cols = df.columns  # raw_data provenance = the ORIGINAL parquet columns
         df = _ensure_cols(df, _SOURCE_COLS)
         out = df.with_columns(
             [
@@ -107,7 +106,7 @@ class ReportsWorker:
                 common.tec_amount("contribsMaintainedAmount").alias("contributions_maintained"),
                 common.tec_amount("cashOnHandAmount").alias("cash_on_hand"),
                 pl.lit(None).alias("file_origin_id"),
-                common.raw_json_expr(orig_cols, alias="raw_data"),
+                # at-filing cols set directly from source columns (Wave 2a: raw_data removed)
                 common.clean_str("filerName").alias("committee_name_at_filing"),
                 _treasurer_expr().alias("treasurer_name_at_filing"),
             ]
@@ -128,7 +127,6 @@ class ReportsWorker:
             "contributions_maintained",
             "cash_on_hand",
             "file_origin_id",
-            "raw_data",
             "committee_name_at_filing",
             "treasurer_name_at_filing",
         )
