@@ -35,8 +35,6 @@ covers RCPT/EXPN) before its transactions + details so id-joins resolve.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import polars as pl
@@ -60,7 +58,7 @@ from app.core.ingest_vectorized.id_maps import (
 from app.core.ingest_vectorized.id_maps import (
     txn_id_map as _txn_id_map,
 )
-from app.core.ingest_vectorized.registry import FamilyContext, register
+from app.core.ingest_vectorized.registry import FamilyContext
 from app.core.models import (
     LoanGuarantor,
     UnifiedAddress,
@@ -77,398 +75,30 @@ from app.core.models import (
 from app.core.source_models.pledges import UnifiedPledge
 from app.logger import Logger
 
+from .exprs import (
+    _addr_key_cols,
+    _address_has_anchor,
+    _cs,
+    _ensure_cols,
+    _full_name,
+    _get_unstripped,
+    _guar,
+    _norm_name,
+    _opt_col,
+    _pledge_date_expr,
+    _read,
+    _spec_cols,
+    _spec_party_frame,
+)
+from .specs import (
+    _BASE_COLS,  # noqa: F401 — re-exported for external callers
+    _PLACEHOLDER_NAMES_UPPER,  # noqa: F401 — re-exported for external callers
+    _SPECS,
+    TypeSpec,
+    _guarantor_source_cols,  # noqa: F401 — re-exported for external callers
+)
+
 _logger = Logger(__name__)
-
-_PLACEHOLDER_NAMES_UPPER = frozenset(
-    {"NON-ITEMIZED CONTRIBUTOR", "NON-ITEMIZED", "UNKNOWN", "ANONYMOUS"}
-)
-
-
-# ---------------------------------------------------------------------------
-# Per-type configuration
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class TypeSpec:
-    """Static description of how one TEC record type maps onto unified rows."""
-
-    record_type: str
-    transaction_type: str
-    id_col: str  # source column resolved to transaction_id
-    amount_col: str | None  # source column resolved to amount (None => null)
-    date_col: str | None  # source column resolved to transaction_date
-    date_fallback_received: bool  # fall back to receivedDt when date_col null/absent
-    descr_col: str | None
-    # Role-prefixed person columns ({prefix}NameFirst/Last/Organization/SuffixCd).
-    name_first: str | None = None
-    name_last: str | None = None
-    name_org: str | None = None
-    name_suffix: str | None = None
-    # Role-prefixed address columns (None when the role has no mapped address).
-    addr_city: str | None = None
-    addr_state: str | None = None
-    addr_zip: str | None = None
-    addr_country: str | None = None
-    addr_county: str | None = None
-    # Priority for load order (mirrors production_loader._FILE_PRIORITY).
-    priority: int = 50
-    #: Extra source columns referenced (so they are nulled-in when absent).
-    extra_cols: tuple[str, ...] = field(default_factory=tuple)
-
-
-_GUARANTOR_COLS = (
-    "guarantorPersentTypeCd",
-    "guarantorNameOrganization",
-    "guarantorNameLast",
-    "guarantorNameSuffixCd",
-    "guarantorNameFirst",
-    "guarantorNamePrefixCd",
-    "guarantorStreetCity",
-    "guarantorStreetStateCd",
-    "guarantorStreetCountyCd",
-    "guarantorStreetCountryCd",
-    "guarantorStreetPostalCode",
-    "guarantorStreetRegion",
-)
-
-
-def _guarantor_source_cols() -> tuple[str, ...]:
-    return tuple(f"{base}{i}" for i in range(1, 6) for base in _GUARANTOR_COLS)
-
-
-_LOAN = TypeSpec(
-    record_type="LOAN",
-    transaction_type="LOAN",
-    id_col="loanInfoId",
-    amount_col="loanAmount",
-    date_col="loanDt",
-    date_fallback_received=True,
-    descr_col="loanDescr",
-    name_first="lenderNameFirst",
-    name_last="lenderNameLast",
-    name_org="lenderNameOrganization",
-    name_suffix="lenderNameSuffixCd",
-    addr_city="lenderStreetCity",
-    addr_state="lenderStreetStateCd",
-    addr_zip="lenderStreetPostalCode",
-    addr_country="lenderStreetCountryCd",
-    addr_county="lenderStreetCountyCd",
-    priority=12,
-    extra_cols=("interestRate", "maturityDt", "collateralDescr") + _guarantor_source_cols(),
-)
-
-_DEBT = TypeSpec(
-    record_type="DEBT",
-    transaction_type="DEBT",
-    id_col="loanInfoId",
-    amount_col=None,  # debts fixture has no loanAmount/debtAmount column
-    date_col=None,
-    date_fallback_received=True,
-    descr_col=None,
-    name_first="lenderNameFirst",
-    name_last="lenderNameLast",
-    name_org="lenderNameOrganization",
-    name_suffix="lenderNameSuffixCd",
-    addr_city="lenderStreetCity",
-    addr_state="lenderStreetStateCd",
-    addr_zip="lenderStreetPostalCode",
-    addr_country="lenderStreetCountryCd",
-    addr_county="lenderStreetCountyCd",
-    priority=13,
-    extra_cols=("loanGuaranteedFlag", "loanGuaranteeAmount") + _guarantor_source_cols(),
-)
-
-_PLDG = TypeSpec(
-    record_type="PLDG",
-    transaction_type="PLEDGE",
-    id_col="pledgeInfoId",
-    amount_col="pledgeAmount",
-    date_col="pledgeDt",
-    date_fallback_received=False,
-    descr_col="pledgeDescr",
-    name_first="pledgerNameFirst",
-    name_last="pledgerNameLast",
-    name_org="pledgerNameOrganization",
-    name_suffix="pledgerNameSuffixCd",
-    addr_city="pledgerStreetCity",
-    addr_state="pledgerStreetStateCd",
-    addr_zip="pledgerStreetPostalCode",
-    addr_country="pledgerStreetCountryCd",
-    addr_county="pledgerStreetCountyCd",
-    priority=14,
-)
-
-_CRED = TypeSpec(
-    record_type="CRED",
-    transaction_type="CREDIT",
-    id_col="creditInfoId",
-    amount_col="creditAmount",
-    date_col="creditDt",
-    date_fallback_received=False,
-    descr_col="creditDescr",
-    name_first="payorNameFirst",
-    name_last="payorNameLast",
-    name_org="payorNameOrganization",
-    name_suffix="payorNameSuffixCd",
-    # payor has NO mapped address columns in the field library -> no address.
-    priority=15,
-)
-
-_TRVL = TypeSpec(
-    record_type="TRVL",
-    transaction_type="TRAVEL",
-    id_col="travelInfoId",
-    amount_col=None,  # travel rows carry the value on parentAmount (amount fallback)
-    date_col="parentDt",
-    date_fallback_received=False,
-    descr_col=None,
-    name_first="travellerNameFirst",
-    name_last="travellerNameLast",
-    name_org="travellerNameOrganization",
-    name_suffix="travellerNameSuffixCd",
-    priority=16,
-    extra_cols=(
-        "parentType",
-        "parentId",
-        "parentAmount",
-        "parentFullName",
-        "transportationTypeCd",
-        "transportationTypeDescr",
-        "departureCity",
-        "arrivalCity",
-        "departureDt",
-        "arrivalDt",
-        "travelPurpose",
-    ),
-)
-
-_ASSET = TypeSpec(
-    record_type="ASSET",
-    transaction_type="ASSET",
-    id_col="assetInfoId",
-    amount_col=None,
-    date_col=None,
-    date_fallback_received=True,
-    descr_col="assetDescr",  # assetDescr -> description (0.9) and asset_descr (1.0)
-    priority=17,
-    extra_cols=("assetDescr",),
-)
-
-_SPECS: dict[str, TypeSpec] = {
-    s.record_type: s for s in (_LOAN, _DEBT, _PLDG, _CRED, _TRVL, _ASSET)
-}
-
-# Common columns every TEC transaction file carries.
-_BASE_COLS = (
-    "recordType",
-    "formTypeCd",
-    "schedFormTypeCd",
-    "reportInfoIdent",
-    "receivedDt",
-    "infoOnlyFlag",
-    "filerIdent",
-    "filerTypeCd",
-    "filerName",
-)
-
-
-# ---------------------------------------------------------------------------
-# Frame helpers
-# ---------------------------------------------------------------------------
-
-
-def _read(files: list[Path]) -> pl.DataFrame | None:
-    frames = [pl.read_parquet(p) for p in files]
-    if not frames:
-        return None
-    return frames[0] if len(frames) == 1 else pl.concat(frames, how="diagonal_relaxed")
-
-
-def _ensure_cols(df: pl.DataFrame, names: Iterable[str]) -> pl.DataFrame:
-    missing = [pl.lit(None, dtype=pl.Utf8).alias(n) for n in names if n not in df.columns]
-    return df.with_columns(missing) if missing else df
-
-
-def _spec_cols(spec: TypeSpec) -> tuple[str, ...]:
-    cols: list[str] = list(_BASE_COLS)
-    for c in (
-        spec.id_col,
-        spec.amount_col,
-        spec.date_col,
-        spec.descr_col,
-        spec.name_first,
-        spec.name_last,
-        spec.name_org,
-        spec.name_suffix,
-        spec.addr_city,
-        spec.addr_state,
-        spec.addr_zip,
-        spec.addr_country,
-        spec.addr_county,
-    ):
-        if c is not None:
-            cols.append(c)
-    cols.extend(spec.extra_cols)
-    # De-dup, preserve order.
-    seen: set[str] = set()
-    out: list[str] = []
-    for c in cols:
-        if c not in seen:
-            seen.add(c)
-            out.append(c)
-    return tuple(out)
-
-
-def _cs(col: str) -> pl.Expr:
-    return common.clean_str(col)
-
-
-def _nullify(e: pl.Expr) -> pl.Expr:
-    s = e.cast(pl.Utf8).str.strip_chars()
-    return pl.when(s.str.len_chars() > 0).then(s).otherwise(None)
-
-
-def _opt_col(df: pl.DataFrame, col: str | None) -> pl.Expr:
-    """clean_str of a possibly-absent column (null Utf8 when col is None)."""
-    if col is None or col not in df.columns:
-        return pl.lit(None, dtype=pl.Utf8)
-    return _cs(col)
-
-
-# ---------------------------------------------------------------------------
-# Person / entity / address per-spec extraction
-# ---------------------------------------------------------------------------
-
-
-def _person_type_expr(last: pl.Expr, first: pl.Expr, org: pl.Expr) -> pl.Expr:
-    """Mirror ORM build_person person_type priority order."""
-    last_upper = last.cast(pl.Utf8).str.strip_chars().str.to_uppercase()
-    return (
-        pl.when(last_upper.is_in(list(_PLACEHOLDER_NAMES_UPPER)))
-        .then(pl.lit("UNKNOWN"))
-        .when(org.is_not_null())
-        .then(pl.lit("ORGANIZATION"))
-        .when(first.is_not_null() & last.is_not_null())
-        .then(pl.lit("INDIVIDUAL"))
-        .otherwise(pl.lit("UNKNOWN"))
-    )
-
-
-def _full_name(first: pl.Expr, last: pl.Expr, suffix: pl.Expr, org: pl.Expr) -> pl.Expr:
-    """Mirror PersonName.full_name (no middle column for these types)."""
-    joined = pl.concat_str([first, last, suffix], separator=" ", ignore_nulls=True)
-    joined = pl.when(joined.str.len_chars() > 0).then(joined).otherwise(pl.lit(""))
-    return pl.when(org.is_not_null()).then(org).otherwise(joined)
-
-
-def _spec_party_frame(df: pl.DataFrame, spec: TypeSpec, sort_offset: int) -> pl.DataFrame:
-    """Per-row party (person + address) frame for *spec*, before global dedup.
-
-    Columns:
-        first_name, last_name, suffix, organization, person_type,
-        a_street_1, a_street_2, a_city, a_state, a_zip, a_country, a_county,
-        has_address, _pk_org, _pk_fn, _pk_ln, _pk_addr, _sort_key
-    """
-    first = _opt_col(df, spec.name_first)
-    last = _opt_col(df, spec.name_last)
-    org = _opt_col(df, spec.name_org)
-    suffix = _opt_col(df, spec.name_suffix)
-    city = _opt_col(df, spec.addr_city)
-    state = (
-        _opt_col(df, spec.addr_state).str.to_uppercase()
-        if spec.addr_state
-        else pl.lit(None, dtype=pl.Utf8)
-    )
-    zip_code = _opt_col(df, spec.addr_zip)
-    country = _opt_col(df, spec.addr_country)
-    county = _opt_col(df, spec.addr_county)
-
-    row_id = (pl.int_range(0, pl.len(), dtype=pl.Int64) + sort_offset).alias("_sort_key")
-
-    out = df.with_columns(
-        [
-            first.alias("first_name"),
-            last.alias("last_name"),
-            suffix.alias("suffix"),
-            org.alias("organization"),
-            _person_type_expr(last, first, org).alias("person_type"),
-            pl.lit(None, dtype=pl.Utf8).alias("a_street_1"),
-            pl.lit(None, dtype=pl.Utf8).alias("a_street_2"),
-            city.alias("a_city"),
-            state.alias("a_state"),
-            zip_code.alias("a_zip"),
-            country.alias("a_country"),
-            county.alias("a_county"),
-            org.str.to_lowercase().alias("_pk_org"),
-            first.str.to_lowercase().alias("_pk_fn"),
-            last.str.to_lowercase().alias("_pk_ln"),
-            # Address dimension of the individual dedup key (these record types carry no
-            # street_1). collapse_org_person_key nulls it for org-persons below.
-            common.person_addr_key_expr(pl.lit(None, dtype=pl.Utf8), city, state, zip_code).alias(
-                "_pk_addr"
-            ),
-            row_id,
-        ]
-    )
-    # Org-persons dedup on lower(org) ALONE (null fn/ln/addr) — matches uix_persons_org_state.
-    out = common.collapse_org_person_key(out)
-    # Keep only rows that produce a person (full_name non-empty).
-    fn = _full_name(
-        pl.col("first_name"), pl.col("last_name"), pl.col("suffix"), pl.col("organization")
-    )
-    out = out.filter(fn.str.len_chars() > 0)
-    return out.select(
-        "first_name",
-        "last_name",
-        "suffix",
-        "organization",
-        "person_type",
-        "a_street_1",
-        "a_street_2",
-        "a_city",
-        "a_state",
-        "a_zip",
-        "a_country",
-        "a_county",
-        "_pk_org",
-        "_pk_fn",
-        "_pk_ln",
-        "_pk_addr",
-        "_sort_key",
-    )
-
-
-def _address_has_anchor(df: pl.DataFrame) -> pl.Expr:
-    return (
-        pl.col("a_street_1").is_not_null()
-        | pl.col("a_city").is_not_null()
-        | pl.col("a_state").is_not_null()
-        | pl.col("a_zip").is_not_null()
-    )
-
-
-def _addr_key_cols() -> list[pl.Expr]:
-    return [
-        pl.col("a_street_1").cast(pl.Utf8).str.to_lowercase().alias("_k_s1"),
-        pl.col("a_city").cast(pl.Utf8).str.to_lowercase().alias("_k_city"),
-        pl.col("a_state").cast(pl.Utf8).str.to_lowercase().alias("_k_state"),
-        pl.col("a_zip").alias("_k_zip"),
-    ]
-
-
-# ---------------------------------------------------------------------------
-# Id-map reads (natural key -> surrogate id)
-# ---------------------------------------------------------------------------
-# All id-map helpers live in app.core.ingest_vectorized.id_maps.
-# Private aliases imported at the top of this module keep callers unchanged.
-
-
-def _norm_name(value: pl.Expr) -> pl.Expr:
-    """value_objects.normalize_entity_name as a column expression."""
-    s = value.cast(pl.Utf8).str.strip_chars().str.to_lowercase()
-    s = s.str.replace_all(r"[^a-z0-9]+", " ").str.replace_all(r"\s+", " ").str.strip_chars()
-    return s.fill_null("")
 
 
 # ---------------------------------------------------------------------------
@@ -1413,42 +1043,3 @@ class DetailChildrenWorker:
             "region",
         )
         return out
-
-
-# ---------------------------------------------------------------------------
-# Module-level expression helpers
-# ---------------------------------------------------------------------------
-
-
-def _get_unstripped(df: pl.DataFrame, col: str | None) -> pl.Expr:
-    """Mirror _get_field_value: return the raw column value unstripped, or null.
-
-    The ORM detail builders assign ``_get_field_value`` results without
-    stripping; only the empty-string -> None normalization differs (Polars keeps
-    ""), so for parity with the snapshot (which str()s values) we treat empty as
-    the raw value.  TEC golden columns carry no such empties on these fields.
-    """
-    if col is None or col not in df.columns:
-        return pl.lit(None, dtype=pl.Utf8)
-    return pl.col(col).cast(pl.Utf8)
-
-
-def _guar(df: pl.DataFrame, col: str, max_len: int) -> pl.Expr:
-    """Mirror processor._guarantor_str: strip; empty -> None; clip to max_len."""
-    if col not in df.columns:
-        return pl.lit(None, dtype=pl.Utf8)
-    s = pl.col(col).cast(pl.Utf8).str.strip_chars()
-    s = pl.when(s.str.len_chars() > 0).then(s).otherwise(None)
-    return s.str.slice(0, max_len)
-
-
-def _pledge_date_expr(col: str) -> pl.Expr:
-    """Mirror pledges_ingest._parse_date: %Y%m%d, %Y-%m-%d, %m/%d/%Y only."""
-    s = pl.col(col).cast(pl.Utf8).str.strip_chars()
-    parsed = s.str.to_date("%Y%m%d", strict=False)
-    parsed = parsed.fill_null(s.str.to_date("%Y-%m-%d", strict=False))
-    parsed = parsed.fill_null(s.str.to_date("%m/%d/%Y", strict=False))
-    return parsed
-
-
-register(DetailChildrenWorker())
