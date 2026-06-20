@@ -9,8 +9,6 @@ Task: score-decomposition Task 1 | Plan: 2026-06-20-score-decomposition.md
 
 from __future__ import annotations
 
-import pytest
-
 
 def test_scored_pair_importable_from_legacy_path():
     from app.resolve.stages.score import ScoredPair, run_score_stage
@@ -31,7 +29,6 @@ def test_score_bulk_exports_insert_helper():
     assert callable(bulk_insert_scored)
 
 
-@pytest.mark.skip(reason="score_splink extraction + orchestrator trim (Tasks 3–4)")
 def test_score_orchestrator_under_200_loc():
     from pathlib import Path
 
@@ -39,9 +36,13 @@ def test_score_orchestrator_under_200_loc():
     assert loc <= 200, f"score.py still {loc} lines; target ~150 orchestrator"
 
 
-@pytest.mark.skip(reason="score_splink module not extracted until Task 3")
 def test_score_splink_module_exports_public_api():
-    from app.resolve.stages.score_splink import load_entity_config, score_entity_type_streaming
+    from app.resolve.stages.score_splink import (
+        load_entity_config,
+        score_entity_type,
+        score_entity_type_streaming,
+    )
 
     assert callable(load_entity_config)
+    assert callable(score_entity_type)
     assert callable(score_entity_type_streaming)
