@@ -16,6 +16,7 @@ upgrade():
 
 downgrade() is LOSSY: re-adds raw_data as NULL-filled nullable Text.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -78,10 +79,12 @@ _CREATE_RESOLVED_REPORTS_WITH_RAW = _CREATE_RESOLVED_REPORTS.replace(
 
 
 def _column_exists(conn: sa.engine.Connection, table: str, column: str) -> bool:
-    result = conn.execute(sa.text(
-        "SELECT 1 FROM information_schema.columns "
-        "WHERE table_name = :t AND column_name = :c"
-    ), {"t": table, "c": column})
+    result = conn.execute(
+        sa.text(
+            "SELECT 1 FROM information_schema.columns WHERE table_name = :t AND column_name = :c"
+        ),
+        {"t": table, "c": column},
+    )
     return result.fetchone() is not None
 
 
@@ -94,16 +97,19 @@ def upgrade() -> None:
     # Backfill at-filing columns from raw_data for any legacy rows with NULLs.
     # Only executed when the column still exists (idempotent on fresh DBs).
     if conn.dialect.name == "postgresql" and _column_exists(conn, "unified_reports", "raw_data"):
-        conn.execute(sa.text(
-            """
+        conn.execute(
+            sa.text(
+                """
             UPDATE unified_reports
             SET committee_name_at_filing = (raw_data::jsonb ->> 'filerName')
             WHERE raw_data IS NOT NULL
               AND committee_name_at_filing IS NULL
             """
-        ))
-        conn.execute(sa.text(
-            """
+            )
+        )
+        conn.execute(
+            sa.text(
+                """
             UPDATE unified_reports
             SET treasurer_name_at_filing = TRIM(
                 COALESCE(raw_data::jsonb ->> 'treasNameFirst', '') || ' ' ||
@@ -112,12 +118,11 @@ def upgrade() -> None:
             WHERE raw_data IS NOT NULL
               AND treasurer_name_at_filing IS NULL
             """
-        ))
+            )
+        )
 
     # Drop the column (idempotent — fresh DBs may not have raw_data)
-    conn.execute(sa.text(
-        "ALTER TABLE unified_reports DROP COLUMN IF EXISTS raw_data"
-    ))
+    conn.execute(sa.text("ALTER TABLE unified_reports DROP COLUMN IF EXISTS raw_data"))
 
     # Recreate view without raw_data
     conn.execute(sa.text(_CREATE_RESOLVED_REPORTS))
@@ -129,8 +134,6 @@ def downgrade() -> None:
     conn.execute(sa.text("DROP VIEW IF EXISTS resolved_reports"))
 
     # WARNING: LOSSY — re-adds raw_data as NULL-filled nullable Text.
-    conn.execute(sa.text(
-        "ALTER TABLE unified_reports ADD COLUMN IF NOT EXISTS raw_data TEXT"
-    ))
+    conn.execute(sa.text("ALTER TABLE unified_reports ADD COLUMN IF NOT EXISTS raw_data TEXT"))
 
     conn.execute(sa.text(_CREATE_RESOLVED_REPORTS_WITH_RAW))
