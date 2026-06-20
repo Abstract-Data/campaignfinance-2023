@@ -25,6 +25,15 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.core.constants import RECORD_TYPE_CODES
+from app.core.loader_bootstrap import (
+    ensure_committee_types as _ensure_committee_types,
+)
+from app.core.loader_bootstrap import (
+    ensure_state as _ensure_state,
+)
+from app.core.loader_bootstrap import (
+    get_session as _get_session,
+)
 from app.logger import Logger
 from scripts.loaders.file_discovery import discover_state_files
 from scripts.loaders.loader_config import (
@@ -32,6 +41,7 @@ from scripts.loaders.loader_config import (
     LoaderConfig,
     get_config,
 )
+from scripts.loaders.loader_stages import FileStage, run_file_stages
 
 # Transaction types handled by unified_sql_processor as their own UnifiedTransaction.
 # CAND is intentionally NOT here: a cand_* row is a candidate↔expenditure *linkage*
@@ -69,110 +79,6 @@ _FILE_PRIORITY: dict[str, int] = {
 }
 
 logger = Logger(__name__)
-
-_STATE_CODES: dict[str, tuple[str, str]] = {
-    "texas": ("TX", "Texas"),
-    "oklahoma": ("OK", "Oklahoma"),
-}
-
-
-def _get_session(db_url: str | None = None):
-    """Create a SQLModel session with all source + unified tables registered.
-
-    Defaults to the project PostgreSQL database (``POSTGRES_*`` env / ``.env``
-    via :class:`PostgresConfig`).  Pass an explicit ``sqlite://`` URL (or use the
-    CLI ``--sqlite`` flag) for local smoke tests.  Tables and the Fix-7 dedup
-    unique indexes are created idempotently before returning the session.
-    """
-    from sqlmodel import Session, SQLModel, create_engine
-
-    from app.core import models  # noqa: F401 — registers unified_* tables
-    from app.core.source_models import (  # noqa: F401 — registers Phase-0 tables
-        CommitteePurpose,
-        ExpenditureCategory,
-        SpacLink,
-        UnifiedNotice,
-        UnifiedPledge,
-        UnifiedReport,
-    )
-
-    if db_url is None:
-        from app.states.postgres_config import PostgresConfig
-
-        db_url = PostgresConfig().database_url
-
-    from sqlalchemy import event, text
-
-    engine = create_engine(db_url)
-
-    if db_url.startswith("sqlite"):
-        # Enable FK enforcement for SQLite so missing committee / report rows
-        # surface as errors rather than silently stored null FKs.
-        @event.listens_for(engine, "connect")
-        def _set_sqlite_pragma(dbapi_conn, _conn_record):
-            cursor = dbapi_conn.cursor()
-            cursor.execute("PRAGMA foreign_keys=ON")
-            cursor.close()
-
-    SQLModel.metadata.create_all(engine)
-
-    # Add any unified-model columns missing from a pre-existing table (create_all
-    # never alters existing tables).  Dialect-safe + idempotent; runs on sqlite too.
-    from app.core.unified_database import ensure_unified_additive_columns
-
-    ensure_unified_additive_columns(engine)
-
-    if not db_url.startswith("sqlite"):
-        # Apply the Fix-7 partial unique indexes (raw DDL, idempotent) so dedup is
-        # enforced on Postgres.  Mirrors UnifiedDatabaseManager.bootstrap().
-        from app.core.unified_database import UnifiedDatabaseManager
-
-        with engine.connect() as conn:
-            for ddl in UnifiedDatabaseManager._DEDUP_INDEXES:
-                conn.execute(text(ddl))
-            conn.commit()
-
-    # expire_on_commit=False keeps the BuilderCache's ORM references usable across
-    # batch commits without triggering a reload SELECT on each cached attribute.
-    return Session(engine, expire_on_commit=False)
-
-
-def _ensure_committee_types(session: Any) -> int:
-    """Upsert the committee_types seed rows.  Safe to call on every run.
-
-    Returns the number of rows inserted (0 if all already exist).
-    """
-    from app.core.models.tables import CommitteeType
-    from app.core.seeds.committee_types import COMMITTEE_TYPE_SEEDS
-
-    inserted = 0
-    for seed in COMMITTEE_TYPE_SEEDS:
-        existing = session.get(CommitteeType, seed["code"])
-        if not existing:
-            session.add(CommitteeType(**seed))
-            inserted += 1
-    if inserted:
-        session.commit()
-        logger.info(f"[loader] seeded {inserted} committee_type(s)")
-    return inserted
-
-
-def _ensure_state(session: Any, state_name: str) -> Any:
-    """Return the ``states`` row for *state_name*, creating it if needed."""
-    from sqlmodel import select
-
-    from app.core.models import State
-
-    code, name = _STATE_CODES.get(state_name.lower(), (state_name[:2].upper(), state_name.title()))
-    existing = session.exec(select(State).where(State.code == code)).first()
-    if existing:
-        return existing
-
-    row = State(code=code, name=name)
-    session.add(row)
-    session.commit()
-    session.refresh(row)
-    return row
 
 
 def _file_origin_id(state_id: int, path: Path) -> str:
@@ -387,6 +293,8 @@ def discover_and_load(
     state_id: int | None = None,
     db_url: str | None = None,
     should_stop: Callable[[], bool] | None = None,
+    show_progress: bool | None = None,
+    progress_console: Any | None = None,
 ) -> dict[str, int]:
     """Discover all files for *state* and load them into the database."""
     glob_cfg = STATE_GLOB_CONFIGS.get(state)
@@ -412,6 +320,7 @@ def discover_and_load(
     loaded = 0
     skipped = 0
     rejected = 0
+    stopped = False
 
     from app.core.load_cache import BuilderCache
 
@@ -427,45 +336,44 @@ def discover_and_load(
         state_row = _ensure_state(session, state)
         resolved_state_id = state_id if state_id is not None else state_row.id
         state_code = state_row.code
-        # 3. FILER/CVR1 files are discovered alongside transaction files.
-        #    The file_discovery module should order filer files before transaction
-        #    files (FILER → CVR1 → RCPT/EXPN/ASSET/…).  If discover_state_files
-        #    does not guarantee this, sort explicitly here:
-        #       discovered = sorted(discovered, key=lambda p_rt: _FILE_PRIORITY.get(p_rt[1], 99))
-        #    See INGEST_ORDER.md for the rationale.
 
-        for path, record_type in discovered:
-            if should_stop is not None and should_stop():
-                logger.info("[loader] shutdown requested; stopping after last file")
-                break
+        file_stages = [
+            FileStage(path=path, record_type=record_type) for path, record_type in discovered
+        ]
+
+        def _run_file_stage(stage: FileStage) -> None:
+            nonlocal cache, loaded, skipped, rejected
             try:
                 n, rej, cache = _load_file(
-                    path,
-                    record_type,
+                    stage.path,
+                    stage.record_type,
                     config,
                     state=state,
                     state_id=resolved_state_id,
                     state_code=state_code,
                     session=session,
                     cache=cache,
-                    # Preset max_records caps rows per file so subset loads still
-                    # touch every record type (assets_* no longer exhausts the budget).
                     max_remaining=config.max_records,
                 )
                 loaded += n
                 rejected += rej
             except Exception as exc:  # noqa: BLE001
-                # Backstop: _load_file already isolates bad rows into
-                # ingest_errors, so reaching here means a whole-file failure.
-                logger.error(f"[loader] ERROR loading {path}: {exc}")
+                logger.error(f"[loader] ERROR loading {stage.path}: {exc}")
                 session.rollback()
-                # Rollback expires/detaches every pending ORM object the cache
-                # holds; drop it so we never hand out stale references.
                 cache = BuilderCache()
                 skipped += 1
                 if not config.retry_failed:
                     raise
 
+        stopped = run_file_stages(
+            file_stages,
+            run_file=_run_file_stage,
+            show_progress=show_progress,
+            progress_console=progress_console,
+            should_stop=should_stop,
+        )
+        if stopped:
+            logger.info("[loader] shutdown requested; stopping after last file")
         _link_after_load(session)
     finally:
         session.close()
@@ -475,6 +383,7 @@ def discover_and_load(
         "loaded": loaded,
         "skipped": skipped,
         "rejected": rejected,
+        **({"stopped": 1} if stopped else {}),
     }
 
 

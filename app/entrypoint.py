@@ -119,12 +119,13 @@ def _run_vectorized_load(
     *,
     dry_run: bool,
     should_stop: Callable[[], bool],
+    show_progress: bool | None = None,
 ) -> dict[str, int]:
     """Bootstrap the schema (reusing the ORM loader's `_get_session`: create_all + dedup
     indexes + additive columns) then run the vectorized engine against the state's source dir."""
     from app.core.ingest_vectorized import run_vectorized
+    from app.core.loader_bootstrap import get_session
     from scripts.loaders.loader_config import STATE_GLOB_CONFIGS
-    from scripts.loaders.production_loader import _get_session
 
     if config.max_records is not None:
         console.print(
@@ -132,12 +133,18 @@ def _run_vectorized_load(
             f"(max_records={config.max_records}); it loads every discovered row. "
             "Use --engine orm for a capped subset."
         )
-    session = _get_session(db_url)
+    session = get_session(db_url)
     engine = session.get_bind()
     session.close()
     fixtures_dir = STATE_GLOB_CONFIGS[state].base_dir
     return run_vectorized(
-        engine, fixtures_dir, state=state, dry_run=dry_run, should_stop=should_stop
+        engine,
+        fixtures_dir,
+        state=state,
+        dry_run=dry_run,
+        should_stop=should_stop,
+        show_progress=show_progress,
+        progress_console=console,
     )
 
 
@@ -174,6 +181,7 @@ def run_load(
     dry_run: bool = False,
     should_stop: Callable[[], bool] | None = None,
     engine: str | None = None,
+    show_progress: bool | None = None,
 ) -> int:
     import os
 
@@ -197,19 +205,29 @@ def run_load(
                 dry_run=dry_run,
                 db_url=manager.database_url,
                 should_stop=stop_fn,
+                show_progress=show_progress,
+                progress_console=console,
             )
         else:
             results = _run_vectorized_load(
-                state, config, manager.database_url, dry_run=dry_run, should_stop=stop_fn
+                state,
+                config,
+                manager.database_url,
+                dry_run=dry_run,
+                should_stop=stop_fn,
+                show_progress=show_progress,
             )
     except ValueError as exc:
         console.print(f"[red]Load failed:[/red] {exc}")
         return 1
 
+    if results.get("stopped"):
+        unit = "family" if engine_name == "vectorized" else "file"
+        console.print(f"[yellow]Shutdown requested; finished current {unit}.[/yellow] {results}")
+        return 0
+
     if _shutdown.requested:
-        console.print(
-            f"[yellow]Shutdown requested; finished current file batch.[/yellow] {results}"
-        )
+        console.print(f"[yellow]Shutdown requested during load.[/yellow] {results}")
         return 0
 
     console.print(f"[green]Load complete.[/green] {results}")
@@ -237,11 +255,27 @@ def load(
             help="Ingest engine: vectorized (default, fast COPY path) | orm (row-by-row).",
         ),
     ] = None,
+    no_progress: Annotated[
+        bool,
+        typer.Option(
+            "--no-progress",
+            help="Disable Rich progress bars during load.",
+        ),
+    ] = False,
 ) -> None:
     """Discover parquet/CSV under tmp/<state> and load into the database."""
     _shutdown.install()
     try:
-        raise typer.Exit(run_load(state, preset=preset, dry_run=dry_run, engine=engine))
+        show_progress = False if no_progress else None
+        raise typer.Exit(
+            run_load(
+                state,
+                preset=preset,
+                dry_run=dry_run,
+                engine=engine,
+                show_progress=show_progress,
+            )
+        )
     finally:
         _shutdown.restore()
 

@@ -57,7 +57,9 @@ def test_address_lookup_cached_on_second_call(tmp_path) -> None:
     )
 
     sentinel = object()
-    with patch("app.core.ingest_vectorized.common.full_address_lookup", return_value=sentinel) as mock_fn:
+    with patch(
+        "app.core.ingest_vectorized.common.full_address_lookup", return_value=sentinel
+    ) as mock_fn:
         result1 = ctx.get_address_lookup()
         result2 = ctx.get_address_lookup()
 

@@ -6,11 +6,11 @@ first-token phonetic and state is TX-dominated), so per the pack's >5x guardrail
 the rule was corrected to EXACT (normalized_org, state) (~1.2x). Fuzzy name
 variants are still caught by the org JaroWinkler comparison at scoring time.
 
-Verifies the rule is registered consistently across all three lock-step
-locations:
-  1. organization.PREDICTION_BLOCKING_RULES (Splink bulk-predict)
-  2. blocking.default_blocking_rules()       (Python + SQL stage-2 blocking)
-  3. blocking_sql._RULE_BLOCK_KEY_SQL        (static SQL key expressions)
+Verifies the rule is registered consistently across all lock-step locations:
+  1. organization.PREDICTION_BLOCKING_RULES (Splink bulk-predict — org)
+  2. committee.PREDICTION_BLOCKING_RULES   (Splink bulk-predict — committee)
+  3. blocking.default_blocking_rules()     (Python + SQL stage-2 blocking)
+  4. blocking_sql._RULE_BLOCK_KEY_SQL      (static SQL key expressions)
 Also checks the functional key-derivation behaviour of the BlockingRule itself.
 """
 
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from app.resolve.blocking import BlockingRule, default_blocking_rules
 from app.resolve.blocking_sql import _RULE_BLOCK_KEY_SQL
+from app.resolve.splink_config import committee as committee_config
 from app.resolve.splink_config import organization as org_config
 from app.resolve.standardize.staging import ResolutionInput
 
@@ -53,6 +54,38 @@ def test_prediction_blocking_rules_includes_normalized_org_state():
     # The coarse first-token phonetic rule must NOT be present (it exploded pairs).
     for rule in org_config.PREDICTION_BLOCKING_RULES:
         assert "org_name_phonetic" not in _splink_rule_column_names(rule)
+
+
+def test_committee_prediction_blocking_rules_count():
+    """committee.PREDICTION_BLOCKING_RULES must contain exactly 2 rules."""
+    assert len(committee_config.PREDICTION_BLOCKING_RULES) == 2
+
+
+def test_committee_prediction_blocking_rules_includes_normalized_org_state():
+    """Committee Splink bulk-predict must mirror org_normalized_state SQL rule."""
+    found = any(
+        "normalized_org" in _splink_rule_column_names(rule)
+        and "state" in _splink_rule_column_names(rule)
+        for rule in committee_config.PREDICTION_BLOCKING_RULES
+    )
+    assert found, (
+        "No committee rule references both normalized_org and state. Rules present: "
+        + repr(committee_config.PREDICTION_BLOCKING_RULES)
+    )
+    for rule in committee_config.PREDICTION_BLOCKING_RULES:
+        assert "org_name_phonetic" not in _splink_rule_column_names(rule)
+
+
+def test_committee_prediction_blocking_rules_lock_step_with_sql():
+    """Committee Splink rules must match organization rules (shared SQL blocking)."""
+    org_cols = [_splink_rule_column_names(rule) for rule in org_config.PREDICTION_BLOCKING_RULES]
+    committee_cols = [
+        _splink_rule_column_names(rule) for rule in committee_config.PREDICTION_BLOCKING_RULES
+    ]
+    assert committee_cols == org_cols
+    assert _RULE_NAME in _RULE_BLOCK_KEY_SQL
+    sql = _RULE_BLOCK_KEY_SQL[_RULE_NAME]
+    assert "committee" in sql
 
 
 # ---------------------------------------------------------------------------

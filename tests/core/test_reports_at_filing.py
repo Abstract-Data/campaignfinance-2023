@@ -170,8 +170,6 @@ def backfill_session_fixture():
         yield session
 
 
-
-
 class TestBackfillReportAtFiling:
     """backfill_report_at_filing() is a no-op stub since Wave 2b removed raw_data."""
 

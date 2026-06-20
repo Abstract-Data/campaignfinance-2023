@@ -50,9 +50,7 @@ DEFAULT_TABLES = [
     "ingest_errors",
 ]
 
-_SAFE_IDENT = frozenset(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
-)
+_SAFE_IDENT = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
 
 
 def _safe_table_name(name: str) -> str | None:

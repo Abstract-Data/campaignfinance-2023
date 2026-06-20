@@ -182,7 +182,9 @@ class TestProcessRecordByType:
         assert txn.amount is not None
         assert float(txn.amount) == pytest.approx(1234.56)
 
-    def test_campaign_source_cols_present_on_transaction(self, processor: UnifiedSQLDataProcessor) -> None:
+    def test_campaign_source_cols_present_on_transaction(
+        self, processor: UnifiedSQLDataProcessor
+    ) -> None:
         """Campaign source columns exist on UnifiedTransaction (Wave 1a/1b: raw_data removed)."""
         raw = _base_raw("RCPT")
         txn = processor.process_record(raw, "texas", state_id=1, state_code="TX")

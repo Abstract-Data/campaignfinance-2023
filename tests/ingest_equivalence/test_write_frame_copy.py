@@ -12,6 +12,7 @@ creates and drops a throwaway database; it does not touch project data.
 from __future__ import annotations
 
 import os
+import uuid
 
 import polars as pl
 import pytest
@@ -23,7 +24,6 @@ from app.core.ingest_vectorized import common
 from app.core.models import UnifiedCommittee, UnifiedPerson
 
 _PG_BASE = os.environ.get("BENCH_PG_BASE", "postgresql+psycopg2://localhost:5432")
-_TEST_DB = "cf_writeframe_copytest"
 
 
 def _pg_available() -> bool:
@@ -80,8 +80,9 @@ def pg_engine():
     """A freshly created+bootstrapped Postgres DB with the unified schema; dropped after."""
     from sqlmodel import SQLModel
 
-    _drop_create(_TEST_DB)
-    engine = create_engine(f"{_PG_BASE}/{_TEST_DB}")
+    db_name = f"cf_wfcopy_{uuid.uuid4().hex[:12]}"
+    _drop_create(db_name)
+    engine = create_engine(f"{_PG_BASE}/{db_name}")
     # Create the state schemas so create_all succeeds even when an earlier test in the same
     # session has imported the schema-qualified state-validator models (schema='texas'/
     # 'oklahoma') into the shared SQLModel.metadata (documented cross-test pollution; no-op in
@@ -96,7 +97,7 @@ def pg_engine():
         yield engine
     finally:
         engine.dispose()
-        _drop(_TEST_DB)
+        _drop(db_name)
 
 
 def _session(engine):

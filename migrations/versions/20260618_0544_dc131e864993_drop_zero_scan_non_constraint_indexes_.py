@@ -83,7 +83,9 @@ def upgrade() -> None:
     op.drop_index("idx_assets_type", table_name="unified_assets", if_exists=True)
 
     # unified_campaign_entities
-    op.drop_index("idx_campaign_entity_role", table_name="unified_campaign_entities", if_exists=True)
+    op.drop_index(
+        "idx_campaign_entity_role", table_name="unified_campaign_entities", if_exists=True
+    )
 
     # unified_contributions
     op.drop_index("idx_contributions_date", table_name="unified_contributions", if_exists=True)

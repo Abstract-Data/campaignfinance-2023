@@ -5,7 +5,7 @@ DB untouched. PG-gated: the dedup + partial unique index are Postgres-specific (
 Simulates the real upgrade path for a pre-Wave-2 database: schema present (``create_all``) but
 WITHOUT the unique index and WITH duplicate ``(state_id, transaction_type, transaction_id)``
 groups, marked ``alembic stamp 0001_baseline`` (the baseline never runs on existing DBs). Then
-``upgrade head`` runs 0002 and must:
+``upgrade`` to ``0002_dedup_legacy_transactions`` runs the dedup and must:
 
   * drop the non-surviving duplicates (keep the lowest ``id`` per group) and their children,
   * leave non-duplicate rows and NULL-``transaction_id`` rows untouched,
@@ -18,13 +18,18 @@ Rows are inserted via the ORM so all Python-side defaults (uuid, timestamps, ...
 from __future__ import annotations
 
 import os
+import uuid
 
 import pytest
 from sqlalchemy import create_engine, inspect, text
 
 _PG_BASE = os.environ.get("BENCH_PG_BASE", "postgresql+psycopg2://localhost:5432")
-_TEST_DB = "cf_dedup_migration_test"
 _INDEX = "uix_transactions_state_type_sourceid"
+_REV_0002 = "0002_dedup_legacy_transactions"
+
+
+def _fresh_db_name(prefix: str = "cf_dedup_migration") -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
 def _pg_available() -> bool:
@@ -119,10 +124,11 @@ def test_0002_dedups_polluted_db_then_indexes():
 
     from app.core.enums import TransactionType
     from app.core.models.tables import State, UnifiedTransaction, UnifiedTransactionVersion
-    from app.db_migrate import alembic_config, upgrade_head
+    from app.db_migrate import alembic_config
 
-    _drop_create(_TEST_DB)
-    url = f"{_PG_BASE}/{_TEST_DB}"
+    db_name = _fresh_db_name()
+    _drop_create(db_name)
+    url = f"{_PG_BASE}/{db_name}"
     try:
         _ensure_state_schemas(url)
         _bootstrap_unmanaged_schema(url)
@@ -164,9 +170,11 @@ def test_0002_dedups_polluted_db_then_indexes():
             assert _dup_group_count(c) == 1
         assert not _index_exists(url)  # legacy DB has no unique index yet
 
-        # Mark the DB at baseline (existing schema present), then upgrade -> runs 0002.
-        command.stamp(alembic_config(url), "0001_baseline")
-        upgrade_head(url)
+        # Mark the DB at baseline (existing schema present), then upgrade -> runs 0002 only.
+        # (Later revisions recreate resolve views that need entity_crosswalk; out of 0002 scope.)
+        cfg = alembic_config(url)
+        command.stamp(cfg, "0001_baseline")
+        command.upgrade(cfg, "0002_dedup_legacy_transactions")
 
         with eng.connect() as c:
             assert _dup_group_count(c) == 0
@@ -177,8 +185,8 @@ def test_0002_dedups_polluted_db_then_indexes():
             assert _version_count(c, survivor_id) == 1  # survivor child kept
         assert _index_exists(url)
 
-        # Idempotent: re-running upgrade is a no-op (already at head); dedup stays clean.
-        upgrade_head(url)
+        # Idempotent: re-running 0002 is a no-op (already applied); dedup stays clean.
+        command.upgrade(cfg, "0002_dedup_legacy_transactions")
         with eng.connect() as c:
             assert _dup_group_count(c) == 0
 
@@ -189,19 +197,23 @@ def test_0002_dedups_polluted_db_then_indexes():
                 s.commit()
         eng.dispose()
     finally:
-        _drop(_TEST_DB)
+        _drop(db_name)
 
 
 def test_0002_is_noop_on_fresh_db():
-    """A fresh ``upgrade head`` (baseline THEN 0002) lands clean: index present, nothing to dedup."""
-    from app.db_migrate import current_revision, upgrade_head
+    """A fresh ``upgrade`` through 0002 lands clean: index present, nothing to dedup."""
+    from alembic import command
 
-    _drop_create(_TEST_DB)
-    url = f"{_PG_BASE}/{_TEST_DB}"
+    from app.db_migrate import alembic_config, current_revision
+
+    db_name = _fresh_db_name()
+    _drop_create(db_name)
+    url = f"{_PG_BASE}/{db_name}"
     try:
         _ensure_state_schemas(url)
-        upgrade_head(url)  # baseline → 0002 dedup → 1e99 txn → 01bf reports → dc13 index diet
-        assert current_revision(url) == "dc131e864993"
+        cfg = alembic_config(url)
+        command.upgrade(cfg, "0002_dedup_legacy_transactions")
+        assert current_revision(url) == "0002_dedup_legacy_transactions"
         assert _index_exists(url)
         eng = create_engine(url)
         with eng.connect() as c:
@@ -209,4 +221,4 @@ def test_0002_is_noop_on_fresh_db():
             assert c.execute(text("SELECT count(*) FROM unified_transactions")).scalar_one() == 0
         eng.dispose()
     finally:
-        _drop(_TEST_DB)
+        _drop(db_name)

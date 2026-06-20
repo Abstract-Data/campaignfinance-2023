@@ -5,8 +5,9 @@
   running → failed
 
 It calls each stage in order, merges their count dicts, and guarantees
-that a failed run drops its staging tables so no partial canonical write
-survives.
+that a failed run rolls back any partial canonical writes (delete-and-replace
+contract: existing canonical rows for the run are removed before new ones are
+committed, so no partial state survives a failure).
 
 ``Stage`` is the protocol every pipeline stage callable must satisfy.
 task-1z injects the concrete stage list; this module defines the contract.
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 _ENGINE_VERSION = "1.0.0"
 
-# Resolve-layer tables created by the CLI (canonical + resolution + staging).
+# Resolve-layer tables created by the CLI (canonical + resolution).
 _RESOLUTION_SCHEMA_MODELS: tuple[type[SQLModel], ...] = ()
 
 
@@ -259,9 +260,11 @@ class ResolutionRun:
         logger.info("Completed match_run id=%d", run.id)
 
     def fail(self, session: Session, error: str) -> None:
-        """Mark the run ``failed``, set ``finished_at``, and drop staging tables.
+        """Mark the run ``failed`` and set ``finished_at``.
 
-        Ensures no partial canonical write survives a failed run.
+        Canonical publish uses delete-and-replace on the live tables inside
+        Stage 7; a failed run before publish completes leaves prior canonical
+        data intact (transaction rolled back before survivorship commit).
 
         Raises
         ------
@@ -283,13 +286,6 @@ class ResolutionRun:
         session.commit()
         session.refresh(run)
         self._run = run
-
-        try:
-            from app.resolve.staging import drop_run_staging
-
-            drop_run_staging(session, run.id)
-        except Exception:
-            logger.exception("Failed to drop staging tables for run id=%d", run.id)
 
         logger.error("Failed match_run id=%d: %s", run.id, error)
 

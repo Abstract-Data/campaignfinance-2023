@@ -9,21 +9,52 @@ package registers them.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.core.ingest_vectorized.registry import FAMILY_WORKERS, FamilyContext
+from rich.console import Console
+
+from app.core.ingest_vectorized.progress import family_worker_label, run_with_progress
+from app.core.ingest_vectorized.registry import FAMILY_WORKERS, FamilyContext, FamilyWorker
+from app.core.loader_bootstrap import ensure_committee_types, ensure_state
 from app.logger import Logger
 
 _logger = Logger(__name__)
 
 
-def _seed(session: Any, state: str):
-    """Seed committee_types + the State row (reuse the ORM loader helpers)."""
-    from scripts.loaders.production_loader import _ensure_committee_types, _ensure_state
+@dataclass(frozen=True)
+class _FamilyStage:
+    worker: FamilyWorker
+    files_by_type: dict[str, list[Path]]
 
-    _ensure_committee_types(session)
-    return _ensure_state(session, state)
+
+@dataclass(frozen=True)
+class _FinalizeStage:
+    label: str
+    run: Callable[[], dict[str, int]]
+
+
+def _seed(session: Any, state: str):
+    """Seed committee_types + the State row."""
+    ensure_committee_types(session)
+    return ensure_state(session, state)
+
+
+def _apply_stage_result(
+    counts: dict[str, int],
+    stage: _FamilyStage | _FinalizeStage,
+    result: dict[str, int],
+) -> None:
+    if isinstance(stage, _FamilyStage):
+        counts["loaded"] += int(result.get("loaded", 0))
+        counts["families_run"] += 1
+        return
+    if "entity_reps_linked" in result:
+        counts["entity_reps_linked"] = int(result["entity_reps_linked"])
+    if "campaigns" in result:
+        counts["campaigns"] = int(result["campaigns"])
+        counts["campaign_entities"] = int(result.get("campaign_entities", 0))
 
 
 def run_vectorized(
@@ -33,22 +64,12 @@ def run_vectorized(
     state: str = "texas",
     dry_run: bool = False,
     should_stop: Callable[[], bool] | None = None,
+    show_progress: bool | None = None,
+    progress_console: Console | None = None,
 ) -> dict[str, int]:
-    """Vectorized ingest of *state* source files under *fixtures_dir* into *engine*.
-
-    Returns counters: ``{discovered, loaded, families_run}``. Families register
-    themselves on import; each is run in ascending ``priority`` (FK order).
-
-    ``dry_run`` discovers files and returns the counts without writing anything (parity
-    with the ORM loader's ``--dry-run``). ``should_stop`` is polled before each family so a
-    graceful shutdown request stops cleanly between families (the unit of work) — committed
-    families persist, like the ORM loader's per-file ``should_stop`` checkpointing. The
-    *engine* must already be bootstrapped (tables + dedup indexes); the ``cf load`` wiring
-    bootstraps via ``production_loader._get_session`` before calling this.
-    """
+    """Vectorized ingest of *state* source files under *fixtures_dir* into *engine*."""
     from sqlmodel import Session
 
-    # Import families for their registration side effect (deferred to avoid cycles).
     from app.core.ingest_vectorized import families  # noqa: F401
     from scripts.loaders.file_discovery import discover_state_files
 
@@ -58,12 +79,11 @@ def run_vectorized(
     for item in discovered:
         by_type.setdefault(item.record_type, []).append(item.path)
 
-    counts = {"discovered": len(discovered), "loaded": 0, "families_run": 0}
+    counts: dict[str, int] = {"discovered": len(discovered), "loaded": 0, "families_run": 0}
     if dry_run:
         _logger.info(f"[vectorized] dry-run: discovered {len(discovered)} file(s); skipping writes")
         return counts
 
-    _stopped = False
     session = Session(engine, expire_on_commit=False)
     try:
         state_row = _seed(session, state)
@@ -74,41 +94,60 @@ def run_vectorized(
             state_code=state_row.code,
             state=state,
         )
+
+        family_stages: list[_FamilyStage] = []
         for worker in sorted(FAMILY_WORKERS, key=lambda w: w.priority):
-            if should_stop is not None and should_stop():
-                _logger.info("[vectorized] stop requested; halting before next family")
-                _stopped = True
-                break
             files_by_type = {rt: by_type[rt] for rt in worker.record_types if rt in by_type}
-            if not files_by_type:
-                continue
-            result = worker.run(files_by_type, ctx)
-            counts["loaded"] += int(result.get("loaded", 0))
-            counts["families_run"] += 1
-            _logger.info(f"[vectorized] family {sorted(worker.record_types)} -> {result}")
+            if files_by_type:
+                family_stages.append(_FamilyStage(worker=worker, files_by_type=files_by_type))
 
-        if _stopped:
+        def _run_entity_reps() -> dict[str, int]:
+            from app.core.ingest_vectorized.finalize import finalize_entity_representatives
+
+            linked = finalize_entity_representatives(session, ctx.state_id)
+            _logger.info(f"[vectorized] finalize_entity_representatives -> {linked}")
+            return {"entity_reps_linked": linked}
+
+        def _run_campaigns() -> dict[str, int]:
+            from app.core.ingest_vectorized.campaigns import finalize_campaigns
+
+            camp_counts = finalize_campaigns(session, ctx.state_id)
+            _logger.info(f"[vectorized] finalize_campaigns -> {camp_counts}")
+            return camp_counts
+
+        finalize_stages = [
+            _FinalizeStage(label="Link entity representatives", run=_run_entity_reps),
+            _FinalizeStage(label="Finalize campaigns", run=_run_campaigns),
+        ]
+        stage_plan: list[_FamilyStage | _FinalizeStage] = [*family_stages, *finalize_stages]
+
+        def _stage_label(stage: _FamilyStage | _FinalizeStage) -> str:
+            if isinstance(stage, _FamilyStage):
+                return family_worker_label(stage.worker)
+            return stage.label
+
+        def _run_stage(stage: _FamilyStage | _FinalizeStage) -> dict[str, int]:
+            if isinstance(stage, _FamilyStage):
+                result = stage.worker.run(stage.files_by_type, ctx)
+                _logger.info(f"[vectorized] family {sorted(stage.worker.record_types)} -> {result}")
+            else:
+                result = stage.run()
+            _apply_stage_result(counts, stage, result)
+            return result
+
+        stage_results = run_with_progress(
+            stage_plan,
+            label_fn=_stage_label,
+            run_fn=_run_stage,
+            title="Ingest",
+            show_progress=show_progress,
+            console=progress_console,
+            should_stop=should_stop,
+        )
+
+        if len(stage_results) < len(stage_plan):
+            _logger.info("[vectorized] stop requested; halting after current stage")
             counts["stopped"] = 1
-            return counts
-
-        # Post-load reconciliation (analogous to the ORM's _link_after_load): assign each
-        # PERSON/ORGANIZATION entity ONE representative person deterministically, so the
-        # one-to-one unified_entities.person_id constraint holds (the families themselves
-        # no longer set it — see finalize.py).
-        from app.core.ingest_vectorized.finalize import finalize_entity_representatives
-
-        linked = finalize_entity_representatives(session, ctx.state_id)
-        counts["entity_reps_linked"] = linked
-        _logger.info(f"[vectorized] finalize_entity_representatives -> {linked}")
-
-        # Build campaigns + campaign_entities last: they need committees, COMMITTEE
-        # entities, and transactions all in place (see campaigns.finalize_campaigns).
-        from app.core.ingest_vectorized.campaigns import finalize_campaigns
-
-        camp_counts = finalize_campaigns(session, ctx.state_id)
-        counts["campaigns"] = camp_counts["campaigns"]
-        counts["campaign_entities"] = camp_counts["campaign_entities"]
-        _logger.info(f"[vectorized] finalize_campaigns -> {camp_counts}")
     finally:
         session.close()
     return counts

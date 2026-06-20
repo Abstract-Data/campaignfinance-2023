@@ -18,6 +18,7 @@ downgrade() is LOSSY: re-adds raw_data as a NULL-filled nullable Text column.
 The original JSON blob data cannot be reconstructed from the source columns.
 This is documented and accepted — source parquet files preserve provenance.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -182,24 +183,28 @@ def upgrade() -> None:
 
     # Add the three narrow campaign source columns (idempotent — 0001_baseline
     # creates_all from current SQLModel which may already include these cols).
-    conn.execute(sa.text(
-        "ALTER TABLE unified_transactions ADD COLUMN IF NOT EXISTS "
-        "campaign_office_src VARCHAR(200)"
-    ))
-    conn.execute(sa.text(
-        "ALTER TABLE unified_transactions ADD COLUMN IF NOT EXISTS "
-        "campaign_district_src VARCHAR(200)"
-    ))
-    conn.execute(sa.text(
-        "ALTER TABLE unified_transactions ADD COLUMN IF NOT EXISTS "
-        "campaign_name_src VARCHAR(200)"
-    ))
+    conn.execute(
+        sa.text(
+            "ALTER TABLE unified_transactions ADD COLUMN IF NOT EXISTS "
+            "campaign_office_src VARCHAR(200)"
+        )
+    )
+    conn.execute(
+        sa.text(
+            "ALTER TABLE unified_transactions ADD COLUMN IF NOT EXISTS "
+            "campaign_district_src VARCHAR(200)"
+        )
+    )
+    conn.execute(
+        sa.text(
+            "ALTER TABLE unified_transactions ADD COLUMN IF NOT EXISTS "
+            "campaign_name_src VARCHAR(200)"
+        )
+    )
 
     # Drop the raw_data column (idempotent — may already be absent on fresh DBs
     # where 0001_baseline used the current SQLModel schema without raw_data).
-    conn.execute(sa.text(
-        "ALTER TABLE unified_transactions DROP COLUMN IF EXISTS raw_data"
-    ))
+    conn.execute(sa.text("ALTER TABLE unified_transactions DROP COLUMN IF EXISTS raw_data"))
 
     # Recreate views without raw_data (idempotent DROP IF EXISTS above handles both cases)
     conn.execute(sa.text(_CREATE_RESOLVED_TRANSACTIONS))

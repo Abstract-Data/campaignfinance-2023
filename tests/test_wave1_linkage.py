@@ -140,9 +140,7 @@ def test_row_counts_recorded(engine) -> None:
 def test_resolved_transactions_view_works(engine) -> None:
     """Verify the resolved_transactions view was recreated correctly."""
     with engine.connect() as conn:
-        result = conn.execute(
-            text("SELECT COUNT(*) FROM resolved_transactions")
-        )
+        result = conn.execute(text("SELECT COUNT(*) FROM resolved_transactions"))
         count = result.scalar_one()
     assert count >= 0  # view is queryable
 
@@ -150,8 +148,6 @@ def test_resolved_transactions_view_works(engine) -> None:
 def test_resolved_expenditures_view_works(engine) -> None:
     """Verify the resolved_expenditures view was recreated correctly."""
     with engine.connect() as conn:
-        result = conn.execute(
-            text("SELECT COUNT(*) FROM resolved_expenditures")
-        )
+        result = conn.execute(text("SELECT COUNT(*) FROM resolved_expenditures"))
         count = result.scalar_one()
     assert count >= 0  # view is queryable

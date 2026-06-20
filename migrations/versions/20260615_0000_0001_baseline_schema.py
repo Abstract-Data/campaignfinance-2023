@@ -21,6 +21,7 @@ from alembic import op
 # Import model modules so SQLModel.metadata is fully populated before create_all.
 import app.core.models  # noqa: F401
 import app.core.source_models  # noqa: F401
+import app.resolve.models  # noqa: F401 — entity_crosswalk, canonical_entity, etc.
 
 revision: str = "0001_baseline"
 down_revision: str | None = None

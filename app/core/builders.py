@@ -998,4 +998,3 @@ class UnifiedSQLModelBuilder:
                 return transaction_type
 
         return TransactionType.OTHER
-
