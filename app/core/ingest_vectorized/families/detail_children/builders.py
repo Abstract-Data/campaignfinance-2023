@@ -635,9 +635,13 @@ def write_details(
         spec = _SPECS[rt]
         df = frames[rt]
         if rt == "LOAN":
-            counts["loans"] = _build_loan(worker, df, spec, ctx, entity_map, txn_map, committee_entity)
+            counts["loans"] = _build_loan(
+                worker, df, spec, ctx, entity_map, txn_map, committee_entity
+            )
         elif rt == "DEBT":
-            counts["debts"] = _build_debt(worker, df, spec, ctx, entity_map, txn_map, committee_entity)
+            counts["debts"] = _build_debt(
+                worker, df, spec, ctx, entity_map, txn_map, committee_entity
+            )
         elif rt == "CRED":
             counts["credits"] = _build_credit(
                 worker, df, spec, ctx, entity_map, txn_map, committee_entity
