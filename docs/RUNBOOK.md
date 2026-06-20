@@ -17,6 +17,26 @@ uv run python -m app.resolve run --state texas
 uv run python -m app.resolve publish --state texas
 ```
 
+## Database reset / full reload
+
+```bash
+# Full reset: truncate unified tables → bootstrap → vectorized re-ingest
+uv run python scripts/reset_and_reingest.py
+
+# Preview only — no DB writes
+uv run python scripts/reset_and_reingest.py --dry-run
+
+# Truncate + bootstrap without re-ingest
+uv run python scripts/reset_and_reingest.py --skip-ingest
+
+# Legacy ORM ingest path (debugging only)
+uv run python scripts/reset_and_reingest.py --engine orm
+```
+
+`scripts/reset_and_reingest.py` truncates unified tables, runs `bootstrap()`, then
+calls `run_vectorized()` (same engine as `cf load` default). Use `--engine orm` only
+for debugging ORM parity; production reloads should use the vectorized default.
+
 ## Phase 0 / resolution manual gate
 
 Run this sequence on a developer machine (or via `ci-resolve-integration.yml`

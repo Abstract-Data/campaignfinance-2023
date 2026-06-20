@@ -86,6 +86,18 @@ for probabilistic matching via Splink, `cluster` for connected components,
 `resolution` schemas; `splink_config/` holds the Splink model settings.
 `cli.py` / `run.py` / `__main__.py` are its entry points.
 
+## Resolve canonical publish (Stage 7)
+
+Survivorship publishes golden records by **delete-and-replace** on live canonical
+tables (`_clear_live_canonical_snapshot` in `app/resolve/stages/survivorship.py`):
+
+1. Delete `canonical_name_history`, `canonical_campaign`, `canonical_entity`.
+2. Insert fresh rows for the completed run.
+3. Preserve per-run provenance in `entity_crosswalk` keyed by `run_id`.
+
+Failed runs roll back before Stage 7 commits; prior canonical data remains
+serving. There is no per-run `staging_run_*` table swap.
+
 ## Cross-cutting patterns
 
 - **ABC + configuration** — new states are onboarded through `StateConfig` and
