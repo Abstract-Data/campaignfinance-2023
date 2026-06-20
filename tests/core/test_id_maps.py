@@ -38,3 +38,14 @@ def test_address_id_map_lowercases_keys():
     assert row["_k_s1"] == "123 main st"
     assert row["_k_city"] == "austin"
     assert isinstance(row["address_id"], int)
+
+
+def test_flat_txns_dims_does_not_import_detail_children():
+    import ast
+    from pathlib import Path
+
+    src = Path("app/core/ingest_vectorized/families/flat_txns_dims.py").read_text()
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module and "detail_children" in node.module:
+            raise AssertionError("flat_txns_dims must not import detail_children")

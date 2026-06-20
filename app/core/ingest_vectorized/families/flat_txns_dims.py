@@ -22,10 +22,14 @@ from pathlib import Path
 import polars as pl
 
 from app.core.ingest_vectorized import common
-from app.core.ingest_vectorized.families.detail_children import (
-    _address_id_map,
-    _entity_id_map,
-    _person_id_map,
+from app.core.ingest_vectorized.id_maps import (
+    address_id_map as _address_id_map,
+)
+from app.core.ingest_vectorized.id_maps import (
+    entity_id_map as _entity_id_map,
+)
+from app.core.ingest_vectorized.id_maps import (
+    person_id_map as _person_id_map,
 )
 from app.core.ingest_vectorized.registry import FamilyContext, register
 from app.core.models import (
