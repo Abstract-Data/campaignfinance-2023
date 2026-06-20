@@ -1,4 +1,4 @@
-"""Task 1d — ResolutionRun orchestrator + staging helpers tests.
+"""Task 1d — ResolutionRun orchestrator tests.
 
 TDD Steps
 ---------
@@ -7,11 +7,7 @@ Step 2: .finish() flips to completed with merged counts.
 Step 3: .fail() flips to failed.
 Step 4: .run() with a raising stage leaves the run failed and re-raises;
         .run() with two trivial stages merges their count dicts.
-Step 5: staging helpers — create, swap, drop; ResolutionRun.fail() cleans up.
-
-Note: SQLite ALTER TABLE RENAME is not transactional, so swap tests
-verify final state (correct table exists with correct content) rather
-than testing transactional isolation, which is a PostgreSQL concern.
+Step 5: staging swap module deleted; fail() works without staging tables.
 """
 
 from __future__ import annotations
@@ -19,40 +15,11 @@ from __future__ import annotations
 import json
 
 import pytest
-from sqlalchemy import Column, Integer, MetaData, String, Table, insert, select
 from sqlalchemy import inspect as sa_inspect
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.resolve.models.resolution import MatchRun, RunStatus
 from app.resolve.run import ResolutionRun, Stage
-
-# ---------------------------------------------------------------------------
-# Helpers — table creation via SQLAlchemy API (no raw SQL strings)
-# ---------------------------------------------------------------------------
-
-
-def _col_id() -> Column:
-    return Column("id", Integer, primary_key=True)
-
-
-def _col_val() -> Column:
-    return Column("val", String(100))
-
-
-def _make_table(name: str, *extra_cols: Column) -> tuple[Table, MetaData]:
-    """Return a (Table, MetaData) pair registered under a fresh MetaData."""
-    meta = MetaData()
-    cols: list[Column] = [_col_id(), *extra_cols]
-    tbl = Table(name, meta, *cols)
-    return tbl, meta
-
-
-def _create_table(engine, name: str, *extra_cols: Column) -> Table:
-    """Create *name* in *engine* and return the Table object."""
-    tbl, meta = _make_table(name, *extra_cols)
-    meta.create_all(engine, tables=[tbl])
-    return tbl
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -306,164 +273,32 @@ class TestRun:
 
 
 # ---------------------------------------------------------------------------
-# Step 5 — staging.py helpers
+# Step 5 replacement — staging module removal + fail() without staging
 # ---------------------------------------------------------------------------
 
 
-class TestStagingCreate:
-    def test_create_run_staging_makes_table(self):
-        """create_run_staging should create a table with the staging name."""
-        from app.resolve.staging import create_run_staging
+def test_staging_swap_module_removed():
+    import importlib
 
-        engine = create_engine("sqlite:///:memory:", echo=False)
-        _create_table(engine, "src_table")
-
-        with Session(engine) as session:
-            staging_name = create_run_staging(session, run_id=99, source_table="src_table")
-            session.commit()
-
-        inspector = sa_inspect(engine)
-        assert staging_name in inspector.get_table_names()
-
-    def test_create_run_staging_name_follows_convention(self):
-        """The returned staging name must equal _staging_name(table, run_id)."""
-        from app.resolve.staging import _staging_name, create_run_staging
-
-        engine = create_engine("sqlite:///:memory:", echo=False)
-        _create_table(engine, "any_table")
-
-        with Session(engine) as session:
-            staging_name = create_run_staging(session, run_id=42, source_table="any_table")
-            session.commit()
-
-        assert staging_name == _staging_name("any_table", 42)
-
-    def test_create_run_staging_is_idempotent(self):
-        """Calling create_run_staging twice must not raise."""
-        from app.resolve.staging import create_run_staging
-
-        engine = create_engine("sqlite:///:memory:", echo=False)
-        _create_table(engine, "src_table")
-
-        with Session(engine) as session:
-            n1 = create_run_staging(session, run_id=10, source_table="src_table")
-            n2 = create_run_staging(session, run_id=10, source_table="src_table")
-            session.commit()
-
-        assert n1 == n2
+    try:
+        importlib.import_module("app.resolve.staging")
+    except ModuleNotFoundError:
+        return
+    raise AssertionError("app.resolve.staging should be deleted (Option 1)")
 
 
-class TestStagingSwap:
-    """Tests for swap_staging_to_live."""
-
-    def _setup_swap_engine(self, run_id: int):
-        """Return (engine, live_tbl, stg_tbl) ready for a swap test."""
-        from app.resolve.staging import _staging_name
-
-        engine = create_engine("sqlite:///:memory:", echo=False)
-        stg_name = _staging_name("live_table", run_id)
-
-        live_tbl = _create_table(engine, "live_table", _col_val())
-        stg_tbl = _create_table(engine, stg_name, _col_val())
-
-        # Seed live with "original", staging with "staging_row".
-        with engine.connect() as conn:
-            conn.execute(insert(live_tbl).values(id=1, val="original"))
-            conn.execute(insert(stg_tbl).values(id=2, val="staging_row"))
-            conn.commit()
-
-        return engine, live_tbl, stg_tbl
-
-    def test_live_table_exists_after_swap(self):
-        from app.resolve.staging import swap_staging_to_live
-
-        engine, _, _ = self._setup_swap_engine(run_id=5)
-
-        with Session(engine) as session:
-            swap_staging_to_live(session, run_id=5, table_name="live_table")
-            session.commit()
-
-        assert "live_table" in sa_inspect(engine).get_table_names()
-
-    def test_staging_table_gone_after_swap(self):
-        from app.resolve.staging import _staging_name, swap_staging_to_live
-
-        run_id = 6
-        engine, _, _ = self._setup_swap_engine(run_id=run_id)
-        stg_name = _staging_name("live_table", run_id)
-
-        with Session(engine) as session:
-            swap_staging_to_live(session, run_id=run_id, table_name="live_table")
-            session.commit()
-
-        assert stg_name not in sa_inspect(engine).get_table_names()
-
-    def test_live_table_has_staging_content_after_swap(self):
-        """After swap, queries against live_table return the staging data."""
-        from app.resolve.staging import swap_staging_to_live
-
-        run_id = 7
-        engine, live_tbl, _ = self._setup_swap_engine(run_id=run_id)
-
-        with Session(engine) as session:
-            swap_staging_to_live(session, run_id=run_id, table_name="live_table")
-            session.commit()
-
-        # Reflect the renamed table.
-        post_meta = MetaData()
-        post_meta.reflect(bind=engine)
-        post_tbl = post_meta.tables["live_table"]
-
-        with engine.connect() as conn:
-            vals = [r[0] for r in conn.execute(select(post_tbl.c.val)).fetchall()]
-
-        assert "staging_row" in vals, "live_table should serve staging data"
-        assert "original" not in vals, "original live data should be gone"
-
-
-class TestDropRunStaging:
-    def test_drop_removes_tables_for_run(self):
-        from app.resolve.staging import _staging_name, drop_run_staging
-
-        engine = create_engine("sqlite:///:memory:", echo=False)
-        run_id = 77
-
-        tbl_a_name = _staging_name("canonical_entity", run_id)
-        tbl_b_name = _staging_name("canonical_address", run_id)
-        tbl_other_name = _staging_name("canonical_entity", 999)
-
-        _create_table(engine, tbl_a_name)
-        _create_table(engine, tbl_b_name)
-        _create_table(engine, tbl_other_name)
-
-        with Session(engine) as session:
-            drop_run_staging(session, run_id=run_id)
-            session.commit()
-
-        names = sa_inspect(engine).get_table_names()
-        assert tbl_a_name not in names
-        assert tbl_b_name not in names
-        assert tbl_other_name in names, "Unrelated run staging table must survive"
-
-    def test_resolution_run_fail_drops_staging(self):
-        """ResolutionRun.fail() must invoke drop_run_staging."""
-        from app.resolve.staging import _staging_name
-
-        engine = _make_engine()
-        run = ResolutionRun(state_code="TX", config={})
-
-        with Session(engine) as session:
-            run.start(session)
-
-        run_id = run.run_id
-        stg_name = _staging_name("canonical_entity", run_id)
-        _create_table(engine, stg_name)
-
-        with Session(engine) as session:
-            run.fail(session, "test failure")
-            session.commit()
-
-        assert stg_name not in sa_inspect(engine).get_table_names()
+def test_resolution_run_fail_without_staging_tables():
+    """fail() must succeed even when no staging_run_* tables exist."""
+    engine = _make_engine()
+    run = ResolutionRun(state_code="TX", config={})
+    with Session(engine) as session:
+        run.start(session)
+        run.fail(session, "simulated stage error")
+    refreshed: MatchRun | None
+    with Session(engine) as s:
+        refreshed = s.get(MatchRun, run.run_id)
+    assert refreshed is not None
+    assert refreshed.status == RunStatus.failed
 
 
 # ---------------------------------------------------------------------------

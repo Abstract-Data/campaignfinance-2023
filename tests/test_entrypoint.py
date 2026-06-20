@@ -98,7 +98,7 @@ def test_load_defaults_to_vectorized(
     monkeypatch.setattr(udb, "get_db_manager", lambda **kwargs: fake_manager)
     called: dict[str, bool] = {}
 
-    def _fake_vec(state, config, db_url, *, dry_run, should_stop):
+    def _fake_vec(state, config, db_url, *, dry_run, should_stop, show_progress=None, **kwargs):
         called["vectorized"] = True
         return {"discovered": 2, "loaded": 10, "families_run": 5}
 
@@ -187,9 +187,17 @@ def test_discover_and_load_stops_when_should_stop(
 
     monkeypatch.setattr(pl, "_get_session", lambda db_url=None: MagicMock())
     monkeypatch.setattr(pl, "_ensure_state", lambda s, name: MagicMock(id=1, code="TX"))
-    monkeypatch.setattr(pl, "_load_file", lambda *a, **k: 0)
-    monkeypatch.setattr(pl, "_link_after_load", lambda s: 0)
+    monkeypatch.setattr(pl, "_load_file", lambda *a, **k: (0, 0, None))
+    link_calls: list[bool] = []
+
+    def _link(session):  # noqa: ARG001
+        link_calls.append(True)
+        return 0
+
+    monkeypatch.setattr(pl, "_link_after_load", _link)
 
     results = pl.discover_and_load("texas", cfg, db_url="sqlite://", should_stop=should_stop)
     assert results["discovered"] == 2
     assert results["loaded"] == 0
+    assert results.get("stopped") == 1
+    assert link_calls == [True]

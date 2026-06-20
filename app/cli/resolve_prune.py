@@ -27,9 +27,7 @@ def _stale_run_ids(session: Session, keep: int) -> list[int]:
     """Return run_ids to prune (all except the latest *keep*)."""
     from app.resolve.models.resolution import MatchRun
 
-    rows = session.execute(
-        select(MatchRun.id).order_by(MatchRun.id.desc())
-    ).scalars().all()
+    rows = session.execute(select(MatchRun.id).order_by(MatchRun.id.desc())).scalars().all()
 
     if len(rows) <= keep:
         return []
@@ -41,9 +39,7 @@ def _count_rows(session: Session, model_cls: type, run_id_attr: str, stale_ids: 
     if not stale_ids:
         return 0
     col = getattr(model_cls, run_id_attr)
-    return session.execute(
-        select(func.count()).where(col.in_(stale_ids))
-    ).scalar_one()
+    return session.execute(select(func.count()).where(col.in_(stale_ids))).scalar_one()
 
 
 def _remove_rows(session: Session, model_cls: type, run_id_attr: str, stale_ids: list[int]) -> int:
@@ -54,13 +50,9 @@ def _remove_rows(session: Session, model_cls: type, run_id_attr: str, stale_ids:
     if not stale_ids:
         return 0
     col = getattr(model_cls, run_id_attr)
-    count = session.execute(
-        select(func.count()).where(col.in_(stale_ids))
-    ).scalar_one()
+    count = session.execute(select(func.count()).where(col.in_(stale_ids))).scalar_one()
     if count > 0:
-        session.execute(
-            delete(model_cls).where(col.in_(stale_ids))
-        )
+        session.execute(delete(model_cls).where(col.in_(stale_ids)))
     return count
 
 

@@ -127,9 +127,7 @@ def test_no_orphaned_report_transactions(engine) -> None:
 def test_report_row_counts_stable(engine) -> None:
     """Row counts are non-negative (informational)."""
     with engine.connect() as conn:
-        result = conn.execute(
-            text("SELECT COUNT(*) FROM unified_reports")
-        )
+        result = conn.execute(text("SELECT COUNT(*) FROM unified_reports"))
         count = result.scalar_one()
     print(f"\nunified_reports rows: {count}")
     assert count >= 0
