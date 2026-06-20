@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from app.core.ingest_vectorized.registry import register
 
-from ._legacy_worker import DetailChildrenWorker
+from .worker import DetailChildrenWorker
 
 register(DetailChildrenWorker())
 
