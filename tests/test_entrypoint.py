@@ -163,6 +163,7 @@ def test_discover_and_load_stops_when_should_stop(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    from app.core import loader_pipeline as lp
     from scripts.loaders import production_loader as pl
     from scripts.loaders.loader_config import GlobPattern, LoaderConfig, StateGlobConfig
 
@@ -185,16 +186,16 @@ def test_discover_and_load_stops_when_should_stop(
         calls["n"] += 1
         return calls["n"] > 1
 
-    monkeypatch.setattr(pl, "_get_session", lambda db_url=None: MagicMock())
-    monkeypatch.setattr(pl, "_ensure_state", lambda s, name: MagicMock(id=1, code="TX"))
-    monkeypatch.setattr(pl, "_load_file", lambda *a, **k: (0, 0, None))
+    monkeypatch.setattr(lp, "_get_session", lambda db_url=None: MagicMock())
+    monkeypatch.setattr(lp, "_ensure_state", lambda s, name: MagicMock(id=1, code="TX"))
+    monkeypatch.setattr(lp, "_load_file", lambda *a, **k: (0, 0, None))
     link_calls: list[bool] = []
 
     def _link(session):  # noqa: ARG001
         link_calls.append(True)
         return 0
 
-    monkeypatch.setattr(pl, "_link_after_load", _link)
+    monkeypatch.setattr(lp, "_link_after_load", _link)
 
     results = pl.discover_and_load("texas", cfg, db_url="sqlite://", should_stop=should_stop)
     assert results["discovered"] == 2
