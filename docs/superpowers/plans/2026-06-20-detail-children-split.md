@@ -118,6 +118,20 @@ def address_id_map(engine: Any) -> pl.DataFrame:
 def person_id_map(engine: Any, state_id: int) -> pl.DataFrame:
     """Person dedup key -> person id; org rows collapsed via common.collapse_org_person_key."""
     ...
+
+
+def txn_id_map(
+    engine: Any,
+    state_id: int,
+    transaction_types: frozenset[str],
+) -> pl.DataFrame:
+    """{transaction_id, transaction_type} -> txn surrogate id for this state.
+
+    *transaction_types* are unified enum names (e.g. ``CREDIT``), NOT TEC record
+    codes. Callers derive them from ``TypeSpec.transaction_type`` — do NOT import
+    ``_SPECS`` here (avoids circular deps with detail_children).
+    """
+    ...
 ```
 
 Keep `_enum_name` and `_lower_or_none` as private module functions.
@@ -144,6 +158,13 @@ from app.core.ingest_vectorized.id_maps import (
 ```
 
 Delete the moved function bodies from `detail_children.py`.
+
+Update both `_txn_id_map` call sites to pass transaction types explicitly:
+
+```python
+want_types = frozenset(_SPECS[rt].transaction_type for rt in ordered if rt in _SPECS)
+txn_map = _txn_id_map(engine, ctx.state_id, want_types)
+```
 
 - [ ] **Step 6: Run equivalence gate**
 
