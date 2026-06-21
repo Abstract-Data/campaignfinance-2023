@@ -303,7 +303,14 @@ class FlatTxnsWorker:
             orig_cols=orig_cols,
             ctx=ctx,
         )
-        return common.write_frame(ctx.session, UnifiedTransaction, out, conflict_cols=None)
+        return common.write_frame(
+            ctx.session,
+            UnifiedTransaction,
+            out,
+            conflict_cols=["state_id", "transaction_type", "transaction_id"],
+            update_cols=[],
+            conflict_where="transaction_id IS NOT NULL",
+        )
 
     def _load_expn(self, df: pl.DataFrame, ctx: FamilyContext) -> int:
         orig_cols = df.columns
@@ -318,7 +325,14 @@ class FlatTxnsWorker:
             orig_cols=orig_cols,
             ctx=ctx,
         )
-        return common.write_frame(ctx.session, UnifiedTransaction, out, conflict_cols=None)
+        return common.write_frame(
+            ctx.session,
+            UnifiedTransaction,
+            out,
+            conflict_cols=["state_id", "transaction_type", "transaction_id"],
+            update_cols=[],
+            conflict_where="transaction_id IS NOT NULL",
+        )
 
 
 register(FlatTxnsWorker())

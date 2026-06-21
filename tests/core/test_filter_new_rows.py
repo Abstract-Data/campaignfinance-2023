@@ -11,9 +11,9 @@ def test_filter_new_rows_drops_existing_and_inbatch_dups():
 
     frame = pl.DataFrame(
         [
-            {"first_name": "Jane", "last_name": "Doe", "state_id": 1},   # existing (case-diff)
-            {"first_name": "JANE", "last_name": "DOE", "state_id": 1},   # in-batch dup of above
-            {"first_name": "Ann", "last_name": "Lee", "state_id": 1},    # new
+            {"first_name": "Jane", "last_name": "Doe", "state_id": 1},  # existing (case-diff)
+            {"first_name": "JANE", "last_name": "DOE", "state_id": 1},  # in-batch dup of above
+            {"first_name": "Ann", "last_name": "Lee", "state_id": 1},  # new
         ]
     )
     existing = pl.DataFrame([{"first_name": "jane", "last_name": "doe", "state_id": 1}])
@@ -88,7 +88,9 @@ def test_filter_new_rows_drops_key_cols_from_result():
     from app.core.ingest_vectorized import common
 
     frame = pl.DataFrame([{"first_name": "Ann", "last_name": "Lee", "state_id": 1}])
-    existing = pl.DataFrame(schema={"first_name": pl.Utf8, "last_name": pl.Utf8, "state_id": pl.Int64})
+    existing = pl.DataFrame(
+        schema={"first_name": pl.Utf8, "last_name": pl.Utf8, "state_id": pl.Int64}
+    )
     out = common.filter_new_rows(
         frame,
         existing,

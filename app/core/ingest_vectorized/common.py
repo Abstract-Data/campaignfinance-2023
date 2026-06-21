@@ -537,9 +537,7 @@ def _write_frame_postgres(
             # It is always a code-defined constant (never user-supplied data), so direct
             # sql.SQL() interpolation is injection-safe here.
             where_sql = (
-                sql.SQL(" WHERE ") + sql.SQL(conflict_where)
-                if conflict_where
-                else sql.SQL("")
+                sql.SQL(" WHERE ") + sql.SQL(conflict_where) if conflict_where else sql.SQL("")
             )
             cur.execute(
                 sql.SQL(

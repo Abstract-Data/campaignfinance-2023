@@ -91,5 +91,12 @@ def write_transactions(
     total = 0
     for rt in ordered:
         out = transaction_frame(frames[rt], _SPECS[rt], ctx)
-        total += common.write_frame(ctx.session, UnifiedTransaction, out, conflict_cols=None)
+        total += common.write_frame(
+            ctx.session,
+            UnifiedTransaction,
+            out,
+            conflict_cols=["state_id", "transaction_type", "transaction_id"],
+            update_cols=[],
+            conflict_where="transaction_id IS NOT NULL",
+        )
     return total

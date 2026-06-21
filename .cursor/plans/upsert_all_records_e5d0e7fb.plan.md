@@ -4,13 +4,13 @@ overview: "Implement first-write-wins idempotency across all vectorized ingest w
 todos:
   - id: setup-branch-gitnexus
     content: "Orchestrator: create GitButler branch upsert-all-records; run gitnexus_impact on write_frame/_write_frame_postgres; report blast radius"
-    status: in_progress
+    status: completed
   - id: wave-0-writer-infra
     content: "TASK-W0 (serial): conflict_where + filter_new_rows + unit tests + equivalence regression"
-    status: in_progress
+    status: completed
   - id: wave-1-parallel-ab
     content: "TASK-W1-A/B/C/D (parallel): Bucket A/B call sites in 4 file-owned agents; shared test file append only"
-    status: pending
+    status: in_progress
   - id: wave-1-integrator
     content: "TASK-W1-z (serial): merge W1 commits, resolve test_ingest_idempotent.py conflicts, run targeted pytest"
     status: pending
@@ -19,7 +19,7 @@ todos:
     status: pending
   - id: wave-3-migration
     content: "TASK-W3 (parallel after W0): dedup_dimensions.py + Alembic revision + _DEDUP_INDEXES + PG migration test"
-    status: pending
+    status: in_progress
   - id: wave-4-bucket-d-writers
     content: "TASK-W4 (serial after W3): campaigns/committee_persons/campaign_entities ON CONFLICT + guarantor anti-join"
     status: pending

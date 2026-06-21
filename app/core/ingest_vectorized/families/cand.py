@@ -542,7 +542,14 @@ class CandWorker:
             pl.lit(None, dtype=pl.Utf8).alias("notes"),
             pl.lit(ctx.state_id).alias("state_id"),
         )
-        return common.write_frame(ctx.session, UnifiedEntity, rows, conflict_cols=None)
+        return common.write_frame(
+            ctx.session,
+            UnifiedEntity,
+            rows,
+            conflict_cols=["entity_type", "normalized_name", "state_id"],
+            update_cols=[],
+            conflict_where="state_id IS NOT NULL",
+        )
 
     # -- junction -----------------------------------------------------------
 
@@ -582,7 +589,13 @@ class CandWorker:
                 pl.lit(None, dtype=pl.Utf8).alias("notes"),
             )
         )
-        return common.write_frame(ctx.session, UnifiedTransactionPerson, rows, conflict_cols=None)
+        return common.write_frame(
+            ctx.session,
+            UnifiedTransactionPerson,
+            rows,
+            conflict_cols=["transaction_id", "person_id", "role"],
+            update_cols=[],
+        )
 
 
 register(CandWorker())
