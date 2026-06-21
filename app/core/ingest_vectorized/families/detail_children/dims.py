@@ -210,17 +210,14 @@ def write_dims(
     # prior load may already hold the row) so plain inserts never hit the unique
     # index. The ORM does this via find-or-create.
     existing_addr = _address_key_frame(ctx.engine)
-    addr_candidates = (
-        persons.filter(_address_has_anchor(persons))
-        .select(
-            pl.col("a_street_1").alias("street_1"),
-            pl.col("a_street_2").alias("street_2"),
-            pl.col("a_city").alias("city"),
-            pl.col("a_state").alias("state"),
-            pl.col("a_zip").alias("zip_code"),
-            pl.col("a_country").alias("country"),
-            pl.col("a_county").alias("county"),
-        )
+    addr_candidates = persons.filter(_address_has_anchor(persons)).select(
+        pl.col("a_street_1").alias("street_1"),
+        pl.col("a_street_2").alias("street_2"),
+        pl.col("a_city").alias("city"),
+        pl.col("a_state").alias("state"),
+        pl.col("a_zip").alias("zip_code"),
+        pl.col("a_country").alias("country"),
+        pl.col("a_county").alias("county"),
     )
     addr_out = common.filter_new_rows(
         addr_candidates,

@@ -22,10 +22,10 @@ todos:
     status: completed
   - id: wave-4-bucket-d-writers
     content: "TASK-W4 (serial after W3): campaigns/committee_persons/campaign_entities ON CONFLICT + guarantor anti-join"
-    status: in_progress
+    status: completed
   - id: wave-5-e2e-dod
     content: "TASK-W5-z (serial): full pipeline idempotency test + full pytest/ruff + gitnexus_detect_changes + analyze"
-    status: pending
+    status: in_progress
 isProject: false
 ---
 

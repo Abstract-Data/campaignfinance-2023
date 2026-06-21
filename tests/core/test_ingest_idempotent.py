@@ -621,9 +621,9 @@ def test_guarantors_idempotent(dedup_engine_session: tuple) -> None:
         existing_norm = _norm_keys(existing).select(_KEY_COLS).unique()
         rows_normed = _norm_keys(guarantor_rows).unique(subset=_KEY_COLS, keep="first")
         # join_nulls=True required: loan_id or debt_id is always NULL per row
-        new_rows = rows_normed.join(
-            existing_norm, on=_KEY_COLS, how="anti", join_nulls=True
-        ).drop(_KEY_COLS)
+        new_rows = rows_normed.join(existing_norm, on=_KEY_COLS, how="anti", join_nulls=True).drop(
+            _KEY_COLS
+        )
         if new_rows.height:
             common.write_frame(s, LoanGuarantor, new_rows, conflict_cols=None)
 
@@ -634,3 +634,316 @@ def test_guarantors_idempotent(dedup_engine_session: tuple) -> None:
     _write_with_anti_join()  # identical second write — anti-join should filter all rows
     after = _count(s, LoanGuarantor)
     assert after == before, f"Guarantor row count changed on re-write: {before} → {after}"
+
+
+def test_full_pipeline_idempotent(dedup_engine_session: tuple) -> None:
+    """End-to-end first-write-wins contract across all four idempotency buckets.
+
+    Writes a multi-record fixture that covers every mechanism introduced by the
+    upsert-all-records plan, then takes a snapshot of all unified_* tables and the
+    ingest_errors count.  A second identical write must leave the snapshot and error
+    count unchanged.
+
+    Buckets exercised:
+    - Bucket A (ON CONFLICT DO NOTHING, full key):
+        unified_contributions, unified_expenditures,
+        unified_transaction_persons, unified_committee_persons
+    - Bucket B (ON CONFLICT ... WHERE pred DO NOTHING, partial index):
+        unified_transactions (WHERE transaction_id IS NOT NULL),
+        unified_entities (WHERE state_id IS NOT NULL),
+        unified_campaigns (WHERE primary_committee_id IS NOT NULL)
+    - Bucket C (filter_new_rows / anti-join, functional dedup key):
+        unified_persons (person_key_frame anti-join),
+        unified_addresses (address_key_frame + filter_new_rows)
+    """
+    from app.core.ingest_equivalence import diff_snapshots, snapshot_unified
+    from app.core.ingest_vectorized import common
+    from app.core.ingest_vectorized.id_maps import address_key_frame, person_key_frame
+    from app.core.models.tables import (
+        IngestError,
+        UnifiedAddress,
+        UnifiedCampaign,
+        UnifiedCommitteePerson,
+        UnifiedContribution,
+        UnifiedEntity,
+        UnifiedExpenditure,
+        UnifiedPerson,
+        UnifiedTransaction,
+        UnifiedTransactionPerson,
+    )
+
+    engine, s = dedup_engine_session
+    state_id = 1
+
+    # ── Bucket B: transactions ────────────────────────────────────────────────
+    txn_rows = pl.DataFrame(
+        [
+            {
+                "state_id": state_id,
+                "transaction_type": "CONTRIBUTION",
+                "transaction_id": "E2E-TXN-001",
+                "amount": 1000,
+            },
+            {
+                "state_id": state_id,
+                "transaction_type": "EXPENDITURE",
+                "transaction_id": "E2E-TXN-002",
+                "amount": 500,
+            },
+        ]
+    )
+    txn_kw = dict(
+        conflict_cols=["state_id", "transaction_type", "transaction_id"],
+        update_cols=[],
+        conflict_where="transaction_id IS NOT NULL",
+    )
+
+    # ── Bucket B: entities ────────────────────────────────────────────────────
+    entity_rows = pl.DataFrame(
+        [
+            {
+                "entity_type": "PERSON",
+                "normalized_name": "e2e alice smith",
+                "state_id": state_id,
+            },
+            {
+                "entity_type": "ORGANIZATION",
+                "normalized_name": "e2e donors pac",
+                "state_id": state_id,
+            },
+        ]
+    )
+    entity_kw = dict(
+        conflict_cols=["entity_type", "normalized_name", "state_id"],
+        update_cols=[],
+        conflict_where="state_id IS NOT NULL",
+    )
+
+    # ── Bucket C: persons (anti-join via person_key_frame) ────────────────────
+    _PERSON_KEY_COLS = ["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"]
+    _PERSON_WRITE_COLS = [
+        "first_name",
+        "last_name",
+        "middle_name",
+        "suffix",
+        "organization",
+        "employer",
+        "occupation",
+        "job_title",
+        "person_type",
+        "dedup_addr_key",
+        "state_id",
+    ]
+    person_rows = pl.DataFrame(
+        {
+            "first_name": ["Alice", None],
+            "last_name": ["Smith", None],
+            "middle_name": [None, None],
+            "suffix": [None, None],
+            "organization": [None, "E2E Donors PAC"],
+            "employer": [None, None],
+            "occupation": [None, None],
+            "job_title": [None, None],
+            "person_type": ["INDIVIDUAL", "ORGANIZATION"],
+            "dedup_addr_key": [None, None],
+            "state_id": [state_id, state_id],
+            "_pk_org": [None, "e2e donors pac"],
+            "_pk_fn": ["alice", None],
+            "_pk_ln": ["smith", None],
+            "_pk_addr": [None, None],
+        },
+        schema={
+            "first_name": pl.Utf8,
+            "last_name": pl.Utf8,
+            "middle_name": pl.Utf8,
+            "suffix": pl.Utf8,
+            "organization": pl.Utf8,
+            "employer": pl.Utf8,
+            "occupation": pl.Utf8,
+            "job_title": pl.Utf8,
+            "person_type": pl.Utf8,
+            "dedup_addr_key": pl.Utf8,
+            "state_id": pl.Int64,
+            "_pk_org": pl.Utf8,
+            "_pk_fn": pl.Utf8,
+            "_pk_ln": pl.Utf8,
+            "_pk_addr": pl.Utf8,
+        },
+    )
+
+    # ── Bucket C: addresses (filter_new_rows via address_key_frame) ───────────
+    addr_rows = pl.DataFrame(
+        [
+            {
+                "street_1": "100 Congress Ave",
+                "street_2": None,
+                "city": "Austin",
+                "state": "TX",
+                "zip_code": "78701",
+                "country": None,
+                "county": None,
+            },
+            {
+                "street_1": "200 Commerce St",
+                "street_2": None,
+                "city": "Dallas",
+                "state": "TX",
+                "zip_code": "75201",
+                "country": None,
+                "county": None,
+            },
+        ]
+    )
+
+    # ── Bucket A: contributions ───────────────────────────────────────────────
+    contrib_rows = pl.DataFrame(
+        [{"transaction_id": 101, "contributor_entity_id": 1, "recipient_entity_id": 2}]
+    )
+    contrib_kw = dict(conflict_cols=["transaction_id"], update_cols=[])
+
+    # ── Bucket A: expenditures ────────────────────────────────────────────────
+    expend_rows = pl.DataFrame(
+        [{"transaction_id": 102, "payer_entity_id": 2, "payee_entity_id": 3}]
+    )
+    expend_kw = dict(conflict_cols=["transaction_id"], update_cols=[])
+
+    # ── Bucket A: transaction_persons ─────────────────────────────────────────
+    txn_person_rows = pl.DataFrame(
+        [{"transaction_id": 101, "person_id": 10, "role": "CONTRIBUTOR"}]
+    )
+    txn_person_kw = dict(
+        conflict_cols=["transaction_id", "person_id", "role"],
+        update_cols=[],
+    )
+
+    # ── Bucket D: campaigns (partial index dedup) ─────────────────────────────
+    campaign_rows = pl.DataFrame(
+        [
+            {
+                "normalized_name": "e2e smith for governor",
+                "primary_committee_id": "E2E-C001",
+                "election_year": 2024,
+                "state_id": state_id,
+                "name": "E2E Smith for Governor",
+                "office_sought": "GOVERNOR",
+                "district": None,
+                "candidate_person_id": None,
+            },
+            {
+                "normalized_name": "e2e jones for senate",
+                "primary_committee_id": "E2E-C002",
+                "election_year": 2024,
+                "state_id": state_id,
+                "name": "E2E Jones for Senate",
+                "office_sought": "SENATE",
+                "district": None,
+                "candidate_person_id": None,
+            },
+        ]
+    )
+    campaign_kw = dict(
+        conflict_cols=[
+            "normalized_name",
+            "primary_committee_id",
+            "election_year",
+            "state_id",
+        ],
+        update_cols=[],
+        conflict_where="primary_committee_id IS NOT NULL",
+    )
+
+    # ── Bucket A: committee_persons ───────────────────────────────────────────
+    committee_person_rows = pl.DataFrame(
+        [
+            {
+                "committee_id": "E2E-C001",
+                "person_id": 10,
+                "role": "TREASURER",
+                "entity_id": None,
+                "state_id": state_id,
+                "start_date": None,
+                "end_date": None,
+                "is_active": True,
+                "notes": None,
+                "last_modified_by": None,
+                "change_reason": None,
+            },
+        ]
+    )
+    committee_person_kw = dict(
+        conflict_cols=["committee_id", "person_id", "role"],
+        update_cols=[],
+    )
+
+    def _write_all_families() -> None:
+        """One full pass through every family write path."""
+        # Bucket B
+        common.write_frame(s, UnifiedTransaction, txn_rows, **txn_kw)
+        common.write_frame(s, UnifiedEntity, entity_rows, **entity_kw)
+
+        # Bucket C — persons
+        existing_persons = person_key_frame(engine, state_id)
+        new_persons = person_rows.join(
+            existing_persons.select(_PERSON_KEY_COLS),
+            on=_PERSON_KEY_COLS,
+            how="anti",
+            join_nulls=True,
+        )
+        if new_persons.height:
+            common.write_frame(
+                s,
+                UnifiedPerson,
+                new_persons.select(_PERSON_WRITE_COLS),
+                conflict_cols=None,
+            )
+
+        # Bucket C — addresses
+        existing_addrs = address_key_frame(engine)
+        new_addrs = common.filter_new_rows(
+            addr_rows,
+            existing_addrs,
+            key_cols=["street_1", "city", "state", "zip_code"],
+            normalize_lower=["street_1", "city", "state"],
+        )
+        if new_addrs.height:
+            common.write_frame(s, UnifiedAddress, new_addrs, conflict_cols=None)
+
+        # Bucket A
+        common.write_frame(s, UnifiedContribution, contrib_rows, **contrib_kw)
+        common.write_frame(s, UnifiedExpenditure, expend_rows, **expend_kw)
+        common.write_frame(s, UnifiedTransactionPerson, txn_person_rows, **txn_person_kw)
+        common.write_frame(s, UnifiedCommitteePerson, committee_person_rows, **committee_person_kw)
+
+        # Bucket D
+        common.write_frame(s, UnifiedCampaign, campaign_rows, **campaign_kw)
+
+    # ── First pass ────────────────────────────────────────────────────────────
+    _write_all_families()
+
+    before_snap = snapshot_unified(engine)
+    before_errors = _count(s, IngestError)
+
+    # Sanity: fixture must have produced rows in core tables.
+    assert before_snap.get("unified_transactions"), "no transactions in snapshot after first write"
+    assert before_snap.get("unified_entities"), "no entities in snapshot after first write"
+    assert before_snap.get("unified_persons"), "no persons in snapshot after first write"
+    assert before_snap.get("unified_addresses"), "no addresses in snapshot after first write"
+    assert before_snap.get("unified_campaigns"), "no campaigns in snapshot after first write"
+
+    # ── Second (identical) pass ───────────────────────────────────────────────
+    _write_all_families()
+
+    after_snap = snapshot_unified(engine)
+    after_errors = _count(s, IngestError)
+
+    # ingest_errors must not grow (write_frame never logs ingest errors; this
+    # asserts the contract does not silently degrade into error rows).
+    assert after_errors == before_errors, (
+        f"ingest_errors count changed on re-write: {before_errors} → {after_errors}"
+    )
+
+    diffs = diff_snapshots(before_snap, after_snap)
+    assert diffs == [], (
+        "Snapshot changed after identical re-ingest — first-write-wins contract violated:\n"
+        + "\n".join(diffs)
+    )

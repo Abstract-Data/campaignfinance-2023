@@ -238,8 +238,11 @@ def _build_loan(
         )
     )
     return common.write_frame(
-        ctx.session, UnifiedLoan, out,
-        conflict_cols=["transaction_id"], update_cols=[],
+        ctx.session,
+        UnifiedLoan,
+        out,
+        conflict_cols=["transaction_id"],
+        update_cols=[],
     )
 
 
@@ -300,8 +303,11 @@ def _build_debt(
         )
     )
     return common.write_frame(
-        ctx.session, UnifiedDebt, out,
-        conflict_cols=["transaction_id"], update_cols=[],
+        ctx.session,
+        UnifiedDebt,
+        out,
+        conflict_cols=["transaction_id"],
+        update_cols=[],
     )
 
 
@@ -345,8 +351,11 @@ def _build_credit(
         )
     )
     return common.write_frame(
-        ctx.session, UnifiedCredit, out,
-        conflict_cols=["transaction_id"], update_cols=[],
+        ctx.session,
+        UnifiedCredit,
+        out,
+        conflict_cols=["transaction_id"],
+        update_cols=[],
     )
 
 
@@ -413,8 +422,11 @@ def _build_travel(
         )
     )
     return common.write_frame(
-        ctx.session, UnifiedTravel, out,
-        conflict_cols=["transaction_id"], update_cols=[],
+        ctx.session,
+        UnifiedTravel,
+        out,
+        conflict_cols=["transaction_id"],
+        update_cols=[],
     )
 
 
@@ -468,8 +480,11 @@ def _build_asset(
         )
     )
     return common.write_frame(
-        ctx.session, UnifiedAsset, out,
-        conflict_cols=["transaction_id"], update_cols=[],
+        ctx.session,
+        UnifiedAsset,
+        out,
+        conflict_cols=["transaction_id"],
+        update_cols=[],
     )
 
 
@@ -521,8 +536,11 @@ def _build_pledge(
         )
     )
     return common.write_frame(
-        ctx.session, UnifiedPledge, out,
-        conflict_cols=["transaction_id"], update_cols=[],
+        ctx.session,
+        UnifiedPledge,
+        out,
+        conflict_cols=["transaction_id"],
+        update_cols=[],
     )
 
 

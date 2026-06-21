@@ -869,8 +869,11 @@ class FlatTxnsDetailWorker:
             )
         )
         return common.write_frame(
-            ctx.session, UnifiedContribution, rows,
-            conflict_cols=["transaction_id"], update_cols=[],
+            ctx.session,
+            UnifiedContribution,
+            rows,
+            conflict_cols=["transaction_id"],
+            update_cols=[],
         )
 
     # -- expenditures -------------------------------------------------------
@@ -901,8 +904,11 @@ class FlatTxnsDetailWorker:
             )
         )
         return common.write_frame(
-            ctx.session, UnifiedExpenditure, rows,
-            conflict_cols=["transaction_id"], update_cols=[],
+            ctx.session,
+            UnifiedExpenditure,
+            rows,
+            conflict_cols=["transaction_id"],
+            update_cols=[],
         )
 
     # -- transaction_persons ------------------------------------------------
@@ -940,8 +946,11 @@ class FlatTxnsDetailWorker:
             )
         )
         return common.write_frame(
-            ctx.session, UnifiedTransactionPerson, rows,
-            conflict_cols=["transaction_id", "person_id", "role"], update_cols=[],
+            ctx.session,
+            UnifiedTransactionPerson,
+            rows,
+            conflict_cols=["transaction_id", "person_id", "role"],
+            update_cols=[],
         )
 
 
