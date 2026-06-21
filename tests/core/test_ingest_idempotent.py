@@ -34,6 +34,20 @@ def dedup_session():
         yield session
 
 
+@pytest.fixture()
+def dedup_engine_session():
+    """Yields (engine, session) for tests that need both (e.g. id_maps key-frame reads)."""
+    engine = create_engine("sqlite://")
+    tables = [t for t in SQLModel.metadata.tables.values() if t.schema is None]
+    SQLModel.metadata.create_all(engine, tables=list(tables))
+    with engine.connect() as conn:
+        for ddl in UnifiedDatabaseManager._DEDUP_INDEXES:
+            conn.execute(text(ddl))
+        conn.commit()
+    with Session(engine) as session:
+        yield engine, session
+
+
 def _count(session: Session, model) -> int:
     return session.execute(select(func.count()).select_from(model)).scalar()
 
@@ -230,3 +244,146 @@ def test_entities_batch_dup_absorbed(dedup_session: Session) -> None:
     common.write_frame(s, UnifiedEntity, rows, **kw)
     n = _count(s, UnifiedEntity)
     assert n == 1, f"expected 1 entity from a same-key batch, got {n}"
+
+
+def test_persons_idempotent(dedup_engine_session: tuple) -> None:
+    """Writing the same unified_persons rows twice (with Bucket C anti-join pre-filter)
+    must not increase the row count (first-write-wins via person_key_frame + inline
+    join_nulls=True anti-join).
+
+    Simulates the pipeline: write once, then read person_key_frame from DB, filter the
+    same candidate rows through the anti-join, write the filtered (empty) result, and
+    assert the count is unchanged.
+    """
+    from app.core.ingest_vectorized import common
+    from app.core.ingest_vectorized.id_maps import person_key_frame
+    from app.core.models.tables import UnifiedPerson
+
+    engine, s = dedup_engine_session
+    state_id = 1
+
+    person_rows = pl.DataFrame(
+        {
+            "first_name": ["Alice", None],
+            "last_name": ["Smith", None],
+            "middle_name": [None, None],
+            "suffix": [None, None],
+            "organization": [None, "Acme PAC"],
+            "employer": [None, None],
+            "occupation": [None, None],
+            "job_title": [None, None],
+            "person_type": ["INDIVIDUAL", "ORGANIZATION"],
+            "dedup_addr_key": [None, None],
+            "state_id": [state_id, state_id],
+            "_pk_org": [None, "acme pac"],
+            "_pk_fn": ["alice", None],
+            "_pk_ln": ["smith", None],
+            "_pk_addr": [None, None],
+        },
+        schema={
+            "first_name": pl.Utf8,
+            "last_name": pl.Utf8,
+            "middle_name": pl.Utf8,
+            "suffix": pl.Utf8,
+            "organization": pl.Utf8,
+            "employer": pl.Utf8,
+            "occupation": pl.Utf8,
+            "job_title": pl.Utf8,
+            "person_type": pl.Utf8,
+            "dedup_addr_key": pl.Utf8,
+            "state_id": pl.Int64,
+            "_pk_org": pl.Utf8,
+            "_pk_fn": pl.Utf8,
+            "_pk_ln": pl.Utf8,
+            "_pk_addr": pl.Utf8,
+        },
+    )
+
+    _person_write_cols = [
+        "first_name",
+        "last_name",
+        "middle_name",
+        "suffix",
+        "organization",
+        "employer",
+        "occupation",
+        "job_title",
+        "person_type",
+        "dedup_addr_key",
+        "state_id",
+    ]
+
+    def _write_with_anti_join() -> None:
+        existing = person_key_frame(engine, state_id)
+        new_rows = person_rows.join(
+            existing.select("_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"),
+            on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
+            how="anti",
+            join_nulls=True,
+        )
+        out = new_rows.select(_person_write_cols)
+        common.write_frame(s, UnifiedPerson, out, conflict_cols=None)
+
+    _write_with_anti_join()
+    before = _count(s, UnifiedPerson)
+    assert before == 2
+
+    _write_with_anti_join()  # identical second write — anti-join should filter all rows
+    after = _count(s, UnifiedPerson)
+    assert after == before, f"Person row count changed on re-write: {before} → {after}"
+
+
+def test_addresses_idempotent(dedup_engine_session: tuple) -> None:
+    """Writing the same unified_addresses rows twice (with Bucket C anti-join pre-filter)
+    must not increase the row count (first-write-wins via address_key_frame +
+    filter_new_rows).
+
+    Simulates the pipeline: write once, then use address_key_frame + filter_new_rows to
+    drop already-present rows, write the filtered (empty) result, assert count unchanged.
+    """
+    from app.core.ingest_vectorized import common
+    from app.core.ingest_vectorized.id_maps import address_key_frame
+    from app.core.models.tables import UnifiedAddress
+
+    engine, s = dedup_engine_session
+
+    addr_rows = pl.DataFrame(
+        [
+            {
+                "street_1": "123 Main St",
+                "street_2": None,
+                "city": "Austin",
+                "state": "TX",
+                "zip_code": "78701",
+                "country": None,
+                "county": None,
+            },
+            {
+                "street_1": "456 Oak Ave",
+                "street_2": None,
+                "city": "Dallas",
+                "state": "TX",
+                "zip_code": "75201",
+                "country": None,
+                "county": None,
+            },
+        ]
+    )
+
+    def _write_with_filter() -> None:
+        existing = address_key_frame(engine)
+        new_rows = common.filter_new_rows(
+            addr_rows,
+            existing,
+            key_cols=["street_1", "city", "state", "zip_code"],
+            normalize_lower=["street_1", "city", "state"],
+        )
+        common.write_frame(s, UnifiedAddress, new_rows, conflict_cols=None)
+
+    _write_with_filter()
+    before = _count(s, UnifiedAddress)
+    assert before == 2
+
+    _write_with_filter()  # identical second write — filter_new_rows should return 0 rows
+    after = _count(s, UnifiedAddress)
+    assert after == before, f"Address row count changed on re-write: {before} → {after}"

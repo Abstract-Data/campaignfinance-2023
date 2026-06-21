@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: wave-1-integrator
     content: "TASK-W1-z (serial): merge W1 commits, resolve test_ingest_idempotent.py conflicts, run targeted pytest"
-    status: in_progress
+    status: completed
   - id: wave-2-bucket-c
     content: "TASK-W2 (serial): person_key_frame + address_key_frame + anti-join at 7 family sites + idempotent tests"
     status: in_progress

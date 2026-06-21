@@ -43,7 +43,7 @@ from pathlib import Path
 import polars as pl
 from sqlalchemy import select
 
-from app.core.ingest_vectorized import common
+from app.core.ingest_vectorized import common, id_maps
 from app.core.ingest_vectorized.registry import FamilyContext, register
 from app.core.models import (
     UnifiedEntity,
@@ -446,8 +446,9 @@ class CandWorker:
 
         Candidate persons carry no address columns, so ``address_id`` stays NULL.
         """
-        existing = _person_id_map(ctx.session, ctx.state_id)
-        existing_keys = existing.select(["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"]).unique()
+        existing_keys = id_maps.person_key_frame(ctx.engine, ctx.state_id).select(
+            ["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"]
+        )
 
         dedupable = pl.col("_pk_org").is_not_null() | (
             pl.col("_pk_fn").is_not_null() & pl.col("_pk_ln").is_not_null()
@@ -494,7 +495,9 @@ class CandWorker:
             pl.col("_pk_addr").alias("dedup_addr_key"),
             pl.lit(ctx.state_id).alias("state_id"),
         )
-        return common.write_frame(ctx.session, UnifiedPerson, rows, conflict_cols=None)
+        n_persons = common.write_frame(ctx.session, UnifiedPerson, rows, conflict_cols=None)
+        _logger.info("[cand._insert_new_persons] persons written=%d", n_persons)
+        return n_persons
 
     # -- entities -----------------------------------------------------------
 

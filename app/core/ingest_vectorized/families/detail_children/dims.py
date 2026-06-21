@@ -15,10 +15,13 @@ from app.core.ingest_vectorized.id_maps import (
     address_id_map as _address_id_map,
 )
 from app.core.ingest_vectorized.id_maps import (
+    address_key_frame as _address_key_frame,
+)
+from app.core.ingest_vectorized.id_maps import (
     entity_id_map as _entity_id_map,
 )
 from app.core.ingest_vectorized.id_maps import (
-    person_id_map as _person_id_map,
+    person_key_frame as _person_key_frame,
 )
 from app.core.ingest_vectorized.registry import FamilyContext
 from app.core.models import (
@@ -27,6 +30,7 @@ from app.core.models import (
     UnifiedEntity,
     UnifiedPerson,
 )
+from app.logger import Logger
 
 from .exprs import (
     _addr_key_cols,
@@ -37,6 +41,8 @@ from .exprs import (
     _spec_party_frame,
 )
 from .specs import _SPECS
+
+_logger = Logger(__name__)
 
 if TYPE_CHECKING:
     from .worker import DetailChildrenWorker
@@ -203,31 +209,27 @@ def write_dims(
     # Anti-join existing DB addresses (shared dim — another family or this state's
     # prior load may already hold the row) so plain inserts never hit the unique
     # index. The ORM does this via find-or-create.
-    existing_addr = _address_id_map(ctx.engine)
-    addr = (
+    existing_addr = _address_key_frame(ctx.engine)
+    addr_candidates = (
         persons.filter(_address_has_anchor(persons))
-        .unique(
-            subset=["_k_s1", "_k_city", "_k_state", "_k_zip"],
-            keep="first",
-            maintain_order=True,
-        )
-        .join(
-            existing_addr.select("_k_s1", "_k_city", "_k_state", "_k_zip"),
-            on=["_k_s1", "_k_city", "_k_state", "_k_zip"],
-            how="anti",
-            join_nulls=True,
+        .select(
+            pl.col("a_street_1").alias("street_1"),
+            pl.col("a_street_2").alias("street_2"),
+            pl.col("a_city").alias("city"),
+            pl.col("a_state").alias("state"),
+            pl.col("a_zip").alias("zip_code"),
+            pl.col("a_country").alias("country"),
+            pl.col("a_county").alias("county"),
         )
     )
-    addr_out = addr.select(
-        pl.col("a_street_1").alias("street_1"),
-        pl.col("a_street_2").alias("street_2"),
-        pl.col("a_city").alias("city"),
-        pl.col("a_state").alias("state"),
-        pl.col("a_zip").alias("zip_code"),
-        pl.col("a_country").alias("country"),
-        pl.col("a_county").alias("county"),
+    addr_out = common.filter_new_rows(
+        addr_candidates,
+        existing_addr,
+        key_cols=["street_1", "city", "state", "zip_code"],
+        normalize_lower=["street_1", "city", "state"],
     )
     n_addr = common.write_frame(ctx.session, UnifiedAddress, addr_out, conflict_cols=None)
+    _logger.info("[dims._write_dims] addresses written=%d", n_addr)
 
     # address_id map: 4-field key -> surrogate id (for person/entity linkage).
     addr_map = _address_id_map(ctx.engine)
@@ -241,7 +243,7 @@ def write_dims(
     # Anti-join existing persons so we only INSERT new ones (shared person dim).
     # ``persons`` keeps the full deduped set (needed for entity.person_id linkage);
     # ``persons_new`` is the subset to actually insert.
-    existing_persons = _person_id_map(ctx.engine, ctx.state_id)
+    existing_persons = _person_key_frame(ctx.engine, ctx.state_id)
     persons_new = persons.join(
         existing_persons.select("_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"),
         on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
@@ -272,6 +274,7 @@ def write_dims(
         "state_id",
     )
     n_persons = common.write_frame(ctx.session, UnifiedPerson, persons_out, conflict_cols=None)
+    _logger.info("[dims._write_dims] persons written=%d", n_persons)
 
     # Entities: person entities + committee entities (carry committee_id), deduped on
     # (entity_type, normalized_name) first-seen. The entity's representative person_id /

@@ -23,13 +23,13 @@ import polars as pl
 
 from app.core.ingest_vectorized import common
 from app.core.ingest_vectorized.id_maps import (
-    address_id_map as _address_id_map,
+    address_key_frame as _address_key_frame,
 )
 from app.core.ingest_vectorized.id_maps import (
     entity_id_map as _entity_id_map,
 )
 from app.core.ingest_vectorized.id_maps import (
-    person_id_map as _person_id_map,
+    person_key_frame as _person_key_frame,
 )
 from app.core.ingest_vectorized.registry import FamilyContext, register
 from app.core.models import (
@@ -991,25 +991,19 @@ class FlatTxnsDimsWorker:
     def _anti_join_addresses(addr_df: pl.DataFrame, ctx: FamilyContext) -> pl.DataFrame:
         if addr_df.height == 0:
             return addr_df
-        existing = _address_id_map(ctx.engine)
-        keyed = addr_df.with_columns(
-            pl.col("street_1").cast(pl.Utf8).str.to_lowercase().alias("_k_s1"),
-            pl.col("city").cast(pl.Utf8).str.to_lowercase().alias("_k_city"),
-            pl.col("state").cast(pl.Utf8).str.to_lowercase().alias("_k_state"),
-            pl.col("zip_code").alias("_k_zip"),
+        existing = _address_key_frame(ctx.engine)
+        return common.filter_new_rows(
+            addr_df,
+            existing,
+            key_cols=["street_1", "city", "state", "zip_code"],
+            normalize_lower=["street_1", "city", "state"],
         )
-        return keyed.join(
-            existing.select("_k_s1", "_k_city", "_k_state", "_k_zip"),
-            on=["_k_s1", "_k_city", "_k_state", "_k_zip"],
-            how="anti",
-            join_nulls=True,
-        ).drop("_k_s1", "_k_city", "_k_state", "_k_zip")
 
     @staticmethod
     def _anti_join_persons(persons_df: pl.DataFrame, ctx: FamilyContext) -> pl.DataFrame:
         if persons_df.height == 0:
             return persons_df
-        existing = _person_id_map(ctx.engine, ctx.state_id)
+        existing = _person_key_frame(ctx.engine, ctx.state_id)
         return persons_df.join(
             existing.select("_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"),
             on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
