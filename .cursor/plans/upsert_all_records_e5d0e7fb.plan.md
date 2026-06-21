@@ -10,16 +10,16 @@ todos:
     status: completed
   - id: wave-1-parallel-ab
     content: "TASK-W1-A/B/C/D (parallel): Bucket A/B call sites in 4 file-owned agents; shared test file append only"
-    status: in_progress
+    status: completed
   - id: wave-1-integrator
     content: "TASK-W1-z (serial): merge W1 commits, resolve test_ingest_idempotent.py conflicts, run targeted pytest"
-    status: pending
+    status: in_progress
   - id: wave-2-bucket-c
     content: "TASK-W2 (serial): person_key_frame + address_key_frame + anti-join at 7 family sites + idempotent tests"
-    status: pending
+    status: in_progress
   - id: wave-3-migration
     content: "TASK-W3 (parallel after W0): dedup_dimensions.py + Alembic revision + _DEDUP_INDEXES + PG migration test"
-    status: in_progress
+    status: completed
   - id: wave-4-bucket-d-writers
     content: "TASK-W4 (serial after W3): campaigns/committee_persons/campaign_entities ON CONFLICT + guarantor anti-join"
     status: pending
