@@ -18,6 +18,9 @@ from app.core.ingest_vectorized.id_maps import (
     entity_id_map as _entity_id_map,
 )
 from app.core.ingest_vectorized.id_maps import (
+    guarantor_key_frame as _guarantor_key_frame,
+)
+from app.core.ingest_vectorized.id_maps import (
     loan_pk_map as _loan_pk_map,
 )
 from app.core.ingest_vectorized.id_maps import (
@@ -36,6 +39,7 @@ from app.core.models import (
     UnifiedTravel,
 )
 from app.core.source_models.pledges import UnifiedPledge
+from app.logger import Logger
 
 from .exprs import (
     _cs,
@@ -47,6 +51,8 @@ from .exprs import (
     _pledge_date_expr,
 )
 from .specs import _SPECS, TypeSpec
+
+_logger = Logger(__name__)
 
 if TYPE_CHECKING:
     from .worker import DetailChildrenWorker
@@ -231,7 +237,13 @@ def _build_loan(
             "collateral",
         )
     )
-    return common.write_frame(ctx.session, UnifiedLoan, out, conflict_cols=None)
+    return common.write_frame(
+        ctx.session,
+        UnifiedLoan,
+        out,
+        conflict_cols=["transaction_id"],
+        update_cols=[],
+    )
 
 
 def _build_debt(
@@ -290,7 +302,13 @@ def _build_debt(
             "payment_date",
         )
     )
-    return common.write_frame(ctx.session, UnifiedDebt, out, conflict_cols=None)
+    return common.write_frame(
+        ctx.session,
+        UnifiedDebt,
+        out,
+        conflict_cols=["transaction_id"],
+        update_cols=[],
+    )
 
 
 def _build_credit(
@@ -332,7 +350,13 @@ def _build_credit(
             "related_transaction_id",
         )
     )
-    return common.write_frame(ctx.session, UnifiedCredit, out, conflict_cols=None)
+    return common.write_frame(
+        ctx.session,
+        UnifiedCredit,
+        out,
+        conflict_cols=["transaction_id"],
+        update_cols=[],
+    )
 
 
 def _build_travel(
@@ -397,7 +421,13 @@ def _build_travel(
             "traveler_name",
         )
     )
-    return common.write_frame(ctx.session, UnifiedTravel, out, conflict_cols=None)
+    return common.write_frame(
+        ctx.session,
+        UnifiedTravel,
+        out,
+        conflict_cols=["transaction_id"],
+        update_cols=[],
+    )
 
 
 def _build_asset(
@@ -449,7 +479,13 @@ def _build_asset(
             "is_disposed",
         )
     )
-    return common.write_frame(ctx.session, UnifiedAsset, out, conflict_cols=None)
+    return common.write_frame(
+        ctx.session,
+        UnifiedAsset,
+        out,
+        conflict_cols=["transaction_id"],
+        update_cols=[],
+    )
 
 
 def _build_pledge(
@@ -499,7 +535,13 @@ def _build_pledge(
             "metadata_json",
         )
     )
-    return common.write_frame(ctx.session, UnifiedPledge, out, conflict_cols=None)
+    return common.write_frame(
+        ctx.session,
+        UnifiedPledge,
+        out,
+        conflict_cols=["transaction_id"],
+        update_cols=[],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -588,6 +630,9 @@ def _guarantor_rows(
     return out
 
 
+_GUARANTOR_NATURAL_KEYS = ["loan_id", "debt_id", "last_name", "first_name", "organization"]
+
+
 def _build_guarantors(
     frames: dict[str, pl.DataFrame],
     ordered: list[str],
@@ -599,6 +644,10 @@ def _build_guarantors(
     want_types = frozenset(_SPECS[rt].transaction_type for rt in ordered if rt in _SPECS)
     txn_map = _txn_id_map(ctx.engine, ctx.state_id, want_types)
 
+    # Bucket C anti-join via filter_new_rows: loan_id and debt_id are mutually exclusive
+    # (one is always NULL), so join_nulls=True ensures NULL-to-NULL matches correctly.
+    existing_raw = _guarantor_key_frame(ctx.engine)
+
     for rt, parent_table, pk_map in (
         ("LOAN", "loan_id", loan_pk),
         ("DEBT", "debt_id", debt_pk),
@@ -608,8 +657,17 @@ def _build_guarantors(
         spec = _SPECS[rt]
         df = frames[rt]
         rows = _guarantor_rows(df, spec, ctx, txn_map, pk_map, parent_table)
-        if rows is not None and rows.height:
-            total += common.write_frame(ctx.session, LoanGuarantor, rows, conflict_cols=None)
+        if rows is None or not rows.height:
+            continue
+        new_rows = common.filter_new_rows(
+            rows,
+            existing_raw,
+            key_cols=_GUARANTOR_NATURAL_KEYS,
+            normalize_lower=["last_name", "first_name", "organization"],
+            join_nulls=True,
+        )
+        if new_rows.height:
+            total += common.write_frame(ctx.session, LoanGuarantor, new_rows, conflict_cols=None)
     return total
 
 

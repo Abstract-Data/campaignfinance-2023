@@ -211,7 +211,14 @@ def finalize_campaigns(session: Any, state_id: int) -> dict[str, int]:
         pl.col("_committee_id").alias("primary_committee_id"),
         pl.lit(state_id).alias("state_id"),
     )
-    n_campaigns = common.write_frame(session, UnifiedCampaign, rows, conflict_cols=None)
+    n_campaigns = common.write_frame(
+        session,
+        UnifiedCampaign,
+        rows,
+        conflict_cols=["normalized_name", "primary_committee_id", "election_year", "state_id"],
+        update_cols=[],
+        conflict_where="primary_committee_id IS NOT NULL",
+    )
 
     # Read campaign ids back (keyed on the natural dedup key) for the entity-link rows.
     cmap = _campaign_id_map(session, state_id)
@@ -230,7 +237,13 @@ def finalize_campaigns(session: Any, state_id: int) -> dict[str, int]:
         pl.lit(None, dtype=pl.Date).alias("end_date"),
         pl.lit(None, dtype=pl.Utf8).alias("notes"),
     )
-    n_entities = common.write_frame(session, UnifiedCampaignEntity, links, conflict_cols=None)
+    n_entities = common.write_frame(
+        session,
+        UnifiedCampaignEntity,
+        links,
+        conflict_cols=["campaign_id", "entity_id", "role"],
+        update_cols=[],
+    )
     return {"campaigns": n_campaigns, "campaign_entities": n_entities}
 
 

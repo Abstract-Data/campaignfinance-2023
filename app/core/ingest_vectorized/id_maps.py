@@ -111,6 +111,37 @@ def person_id_map(engine: Any, state_id: int) -> pl.DataFrame:
     return common.collapse_org_person_key(frame)
 
 
+def person_key_frame(engine: Any, state_id: int) -> pl.DataFrame:
+    """Collapsed person natural-key columns for Bucket C anti-join pre-filter.
+
+    Returns ``_pk_org, _pk_fn, _pk_ln, _pk_addr`` — the same collapsed key shape
+    produced by ``person_id_map`` (``collapse_org_person_key`` applied), but without
+    the surrogate ``person_id``.  Keys are already lower-cased; pass
+    ``normalize_lower=[]`` to ``filter_new_rows``.
+
+    For keys that are intentionally nullable (org-person rows carry NULL fn/ln/addr;
+    address-keyed persons carry NULL _pk_addr for no-address rows) pass
+    ``join_nulls=True`` to ``filter_new_rows``.
+    """
+    return person_id_map(engine, state_id).drop("person_id")
+
+
+def address_key_frame(engine: Any) -> pl.DataFrame:
+    """Address natural-key columns for Bucket C anti-join pre-filter.
+
+    Delegates to :func:`address_id_map` (single DB round-trip) and drops the
+    surrogate ``address_id``.  Returns ``street_1, city, state, zip_code`` —
+    ``street_1``/``city``/``state`` are pre-lower-cased; applying
+    ``normalize_lower=["street_1", "city", "state"]`` to ``filter_new_rows`` is
+    idempotent and all existing call sites remain unchanged.
+    """
+    return (
+        address_id_map(engine)
+        .drop("address_id")
+        .rename({"_k_s1": "street_1", "_k_city": "city", "_k_state": "state", "_k_zip": "zip_code"})
+    )
+
+
 def txn_id_map(
     engine: Any,
     state_id: int,
@@ -148,6 +179,51 @@ def committee_entity_map(engine: Any, state_id: int) -> dict[str, int]:
     )
     with engine.connect() as conn:
         return {m["committee_id"]: m["id"] for m in conn.execute(stmt).mappings().all()}
+
+
+def guarantor_key_frame(engine: Any) -> pl.DataFrame:
+    """Key columns for Bucket C anti-join pre-filter on loan_guarantors.
+
+    Returns ``loan_id, debt_id, last_name, first_name, organization`` — the
+    natural identity key for a guarantor row.  Use with
+    ``filter_new_rows(normalize_lower=["last_name", "first_name", "organization"])``.
+    """
+    tbl = reflect(engine, "loan_guarantors")
+    stmt = select(
+        tbl.c.loan_id,
+        tbl.c.debt_id,
+        tbl.c.last_name,
+        tbl.c.first_name,
+        tbl.c.organization,
+    )
+    with engine.connect() as conn:
+        rows = [dict(m) for m in conn.execute(stmt).mappings().all()]
+    if not rows:
+        return pl.DataFrame(
+            schema={
+                "loan_id": pl.Int64,
+                "debt_id": pl.Int64,
+                "last_name": pl.Utf8,
+                "first_name": pl.Utf8,
+                "organization": pl.Utf8,
+            }
+        )
+    return pl.DataFrame(
+        {
+            "loan_id": [r["loan_id"] for r in rows],
+            "debt_id": [r["debt_id"] for r in rows],
+            "last_name": [r["last_name"] for r in rows],
+            "first_name": [r["first_name"] for r in rows],
+            "organization": [r["organization"] for r in rows],
+        },
+        schema={
+            "loan_id": pl.Int64,
+            "debt_id": pl.Int64,
+            "last_name": pl.Utf8,
+            "first_name": pl.Utf8,
+            "organization": pl.Utf8,
+        },
+    )
 
 
 def loan_pk_map(engine: Any, table: str) -> dict[int, int]:

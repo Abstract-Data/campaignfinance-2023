@@ -56,7 +56,7 @@ from typing import Any
 import polars as pl
 from sqlalchemy import MetaData, Table, select
 
-from app.core.ingest_vectorized import common
+from app.core.ingest_vectorized import common, id_maps
 from app.core.ingest_vectorized.registry import FamilyContext, register
 from app.core.models import (
     UnifiedAddress,
@@ -437,30 +437,22 @@ class FilerWorker:
             | pl.col("state").is_not_null()
             | pl.col("zip_code").is_not_null()
         )
-        existing_addr = _address_id_map(ctx.engine)
-        addr_new = (
-            comm.filter(has_addr)
-            .with_columns(_addr_key_cols())
-            .unique(
-                subset=["_k_s1", "_k_city", "_k_state", "_k_zip"], keep="first", maintain_order=True
-            )
-            .join(
-                existing_addr.select("_k_s1", "_k_city", "_k_state", "_k_zip"),
-                on=["_k_s1", "_k_city", "_k_state", "_k_zip"],
-                how="anti",
-                join_nulls=True,
-            )
+        existing_addr = id_maps.address_key_frame(ctx.engine)
+        addr_candidates = comm.filter(has_addr).select("street_1", "city", "state", "zip_code")
+        addr_new = common.filter_new_rows(
+            addr_candidates,
+            existing_addr,
+            key_cols=["street_1", "city", "state", "zip_code"],
+            normalize_lower=["street_1", "city", "state"],
+            join_nulls=True,
         )
-        addr_out = addr_new.select(
-            pl.col("street_1"),
+        addr_out = addr_new.with_columns(
             pl.lit(None, dtype=pl.Utf8).alias("street_2"),
-            pl.col("city"),
-            pl.col("state"),
-            pl.col("zip_code"),
             pl.lit(None, dtype=pl.Utf8).alias("country"),
             pl.lit(None, dtype=pl.Utf8).alias("county"),
         )
-        common.write_frame(ctx.session, UnifiedAddress, addr_out, conflict_cols=None)
+        n_addr = common.write_frame(ctx.session, UnifiedAddress, addr_out, conflict_cols=None)
+        _logger.info(f"[filer._write_committees] addresses written={n_addr}")
 
         # Resolve each committee's address_id via the 4-field key (null when no anchor).
         addr_map = _address_id_map(ctx.engine)
@@ -511,14 +503,11 @@ class FilerWorker:
 
         Dedup / anti-join on the post-#48 address-inclusive key (_pk_addr is NULL for
         officers, so individuals key name-only) — the SAME key the other families use."""
-        deduped = parties.unique(
-            subset=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"], keep="first", maintain_order=True
-        )
-        existing = _person_id_map(ctx.engine, ctx.state_id)
-        new = deduped.join(
+        existing = id_maps.person_key_frame(ctx.engine, ctx.state_id)
+        new = common.filter_new_rows(
+            parties,
             existing.select("_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"),
-            on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
-            how="anti",
+            key_cols=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
             join_nulls=True,
         )
         out = new.with_columns(
@@ -545,7 +534,9 @@ class FilerWorker:
             "address_id",
             "state_id",
         )
-        return common.write_frame(ctx.session, UnifiedPerson, out, conflict_cols=None)
+        n_persons = common.write_frame(ctx.session, UnifiedPerson, out, conflict_cols=None)
+        _logger.info(f"[filer._write_officer_persons] persons written={n_persons}")
+        return n_persons
 
     def _write_officer_entities(self, parties: pl.DataFrame, ctx: FamilyContext) -> int:
         """INSERT officer entities not already present, keyed (entity_type,
@@ -594,7 +585,14 @@ class FilerWorker:
             "address_id",
             "state_id",
         )
-        return common.write_frame(ctx.session, UnifiedEntity, out, conflict_cols=None)
+        return common.write_frame(
+            ctx.session,
+            UnifiedEntity,
+            out,
+            conflict_cols=["entity_type", "normalized_name", "state_id"],
+            update_cols=[],
+            conflict_where="state_id IS NOT NULL",
+        )
 
     def _write_committee_persons(self, officers: list[_OfficerFrame], ctx: FamilyContext) -> int:
         """One committee_person per (committee, officer person, role). Resolves
@@ -660,7 +658,13 @@ class FilerWorker:
             "last_modified_by",
             "change_reason",
         )
-        return common.write_frame(ctx.session, UnifiedCommitteePerson, out, conflict_cols=None)
+        return common.write_frame(
+            ctx.session,
+            UnifiedCommitteePerson,
+            out,
+            conflict_cols=["committee_id", "person_id", "role"],
+            update_cols=[],
+        )
 
 
 register(FilerWorker())

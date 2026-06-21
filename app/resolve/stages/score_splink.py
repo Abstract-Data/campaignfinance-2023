@@ -150,9 +150,7 @@ def score_entity_type_streaming(
         con.execute(create_cand_pairs_sql)
         n_pairs = 0
         stage_buf: list[tuple[str, str, str, str, str, str]] = []
-        for a_type, a_id, b_type, b_id, uid_l, uid_r in iter_type_pairs(
-            session, run_id, type_uids
-        ):
+        for a_type, a_id, b_type, b_id, uid_l, uid_r in iter_type_pairs(session, run_id, type_uids):
             stage_buf.append((uid_l, uid_r, a_type, a_id, b_type, b_id))
             if len(stage_buf) >= PAIR_STREAM_SIZE:
                 con.append("cand_pairs", pd.DataFrame(stage_buf, columns=cand_pair_cols))

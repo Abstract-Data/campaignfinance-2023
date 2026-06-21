@@ -1,4 +1,5 @@
 """Structural guards for detail_children subpackage decomposition."""
+
 from __future__ import annotations
 
 from pathlib import Path

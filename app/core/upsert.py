@@ -26,6 +26,9 @@ from __future__ import annotations
 import itertools
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Type
 
+from sqlalchemy import text as _text
+from sqlalchemy.dialects.postgresql import insert as _pg_insert
+from sqlalchemy.dialects.sqlite import insert as _sqlite_insert
 from sqlmodel import Session, SQLModel
 
 # Columns whose presence on the model should be excluded from the SET clause
@@ -52,6 +55,7 @@ def bulk_upsert(
     *,
     conflict_cols: Sequence[str],
     update_cols: Optional[Sequence[str]] = None,
+    conflict_where: Optional[str] = None,
     chunk_size: int = 5_000,
     commit_per_chunk: bool = False,
 ) -> int:
@@ -75,6 +79,13 @@ def bulk_upsert(
         ``{"created_at", "createdAt"}``.  An explicit empty list ``[]`` means
         ``ON CONFLICT DO NOTHING`` (first-occurrence-wins) — distinct from
         ``None``, which updates everything.
+    conflict_where:
+        Optional SQL predicate string (e.g. ``"transaction_id IS NOT NULL"``)
+        that matches the WHERE clause of a partial unique index.  When set,
+        it is passed as ``index_where`` to ``on_conflict_do_nothing`` so the
+        dialect resolves the correct partial index.  Both sqlite and postgresql
+        dialects support this parameter.  Must be a code-defined constant —
+        never supply user-controlled data here.
     chunk_size:
         Number of rows per ``INSERT`` statement.  Defaults to 5 000.
     commit_per_chunk:
@@ -94,9 +105,9 @@ def bulk_upsert(
     dialect_name: str = session.get_bind().dialect.name
 
     if dialect_name == "sqlite":
-        from sqlalchemy.dialects.sqlite import insert as _insert
+        _insert = _sqlite_insert
     elif dialect_name == "postgresql":
-        from sqlalchemy.dialects.postgresql import insert as _insert
+        _insert = _pg_insert
     else:
         raise ValueError(
             f"bulk_upsert: unsupported dialect '{dialect_name}'. "
@@ -128,8 +139,15 @@ def bulk_upsert(
         # An empty SET clause is invalid SQL: when the caller asked for no update
         # columns (explicit update_cols=[]) the intent is ON CONFLICT DO NOTHING.
         if not _update_col_names:
-            upsert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=list(conflict_cols))
+            do_nothing_kwargs: Dict[str, Any] = {"index_elements": list(conflict_cols)}
+            if conflict_where:
+                do_nothing_kwargs["index_where"] = _text(conflict_where)
+            upsert_stmt = insert_stmt.on_conflict_do_nothing(**do_nothing_kwargs)
         else:
+            assert conflict_where is None, (
+                "conflict_where targets a partial index and is only meaningful on the "
+                "DO NOTHING path (update_cols=[]); pass update_cols=[] or omit conflict_where"
+            )
             # Build set_ from excluded pseudo-table so values reference the
             # incoming row, not a static literal.
             set_mapping: Dict[str, Any] = {

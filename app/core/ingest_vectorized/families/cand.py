@@ -43,7 +43,7 @@ from pathlib import Path
 import polars as pl
 from sqlalchemy import select
 
-from app.core.ingest_vectorized import common
+from app.core.ingest_vectorized import common, id_maps
 from app.core.ingest_vectorized.registry import FamilyContext, register
 from app.core.models import (
     UnifiedEntity,
@@ -446,8 +446,9 @@ class CandWorker:
 
         Candidate persons carry no address columns, so ``address_id`` stays NULL.
         """
-        existing = _person_id_map(ctx.session, ctx.state_id)
-        existing_keys = existing.select(["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"]).unique()
+        existing_keys = id_maps.person_key_frame(ctx.engine, ctx.state_id).select(
+            ["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"]
+        )
 
         dedupable = pl.col("_pk_org").is_not_null() | (
             pl.col("_pk_fn").is_not_null() & pl.col("_pk_ln").is_not_null()
@@ -465,12 +466,12 @@ class CandWorker:
                 maintain_order=True,
             )
         )
-        dedup_new = dedup_first.join(
-            existing_keys.with_columns(pl.lit(True).alias("_exists")),
-            on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
-            how="left",
+        dedup_new = common.filter_new_rows(
+            dedup_first,
+            existing_keys,
+            key_cols=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
             join_nulls=True,
-        ).filter(pl.col("_exists").is_null())
+        )
 
         # Non-dedupable: one person per matched CAND row, no existing-key reuse.
         non_dedup = cand_rows.filter(~dedupable)
@@ -494,7 +495,9 @@ class CandWorker:
             pl.col("_pk_addr").alias("dedup_addr_key"),
             pl.lit(ctx.state_id).alias("state_id"),
         )
-        return common.write_frame(ctx.session, UnifiedPerson, rows, conflict_cols=None)
+        n_persons = common.write_frame(ctx.session, UnifiedPerson, rows, conflict_cols=None)
+        _logger.info("[cand._insert_new_persons] persons written=%d", n_persons)
+        return n_persons
 
     # -- entities -----------------------------------------------------------
 
@@ -542,7 +545,14 @@ class CandWorker:
             pl.lit(None, dtype=pl.Utf8).alias("notes"),
             pl.lit(ctx.state_id).alias("state_id"),
         )
-        return common.write_frame(ctx.session, UnifiedEntity, rows, conflict_cols=None)
+        return common.write_frame(
+            ctx.session,
+            UnifiedEntity,
+            rows,
+            conflict_cols=["entity_type", "normalized_name", "state_id"],
+            update_cols=[],
+            conflict_where="state_id IS NOT NULL",
+        )
 
     # -- junction -----------------------------------------------------------
 
@@ -582,7 +592,13 @@ class CandWorker:
                 pl.lit(None, dtype=pl.Utf8).alias("notes"),
             )
         )
-        return common.write_frame(ctx.session, UnifiedTransactionPerson, rows, conflict_cols=None)
+        return common.write_frame(
+            ctx.session,
+            UnifiedTransactionPerson,
+            rows,
+            conflict_cols=["transaction_id", "person_id", "role"],
+            update_cols=[],
+        )
 
 
 register(CandWorker())
