@@ -129,25 +129,16 @@ def person_key_frame(engine: Any, state_id: int) -> pl.DataFrame:
 def address_key_frame(engine: Any) -> pl.DataFrame:
     """Address natural-key columns for Bucket C anti-join pre-filter.
 
-    Returns ``street_1, city, state, zip_code`` — the raw DB values (not
-    lower-cased).  Use with ``filter_new_rows(normalize_lower=["street_1","city","state"])``.
+    Delegates to :func:`address_id_map` (single DB round-trip) and drops the
+    surrogate ``address_id``.  Returns ``street_1, city, state, zip_code`` —
+    ``street_1``/``city``/``state`` are pre-lower-cased; applying
+    ``normalize_lower=["street_1", "city", "state"]`` to ``filter_new_rows`` is
+    idempotent and all existing call sites remain unchanged.
     """
-    tbl = reflect(engine, "unified_addresses")
-    stmt = select(tbl.c.street_1, tbl.c.city, tbl.c.state, tbl.c.zip_code)
-    with engine.connect() as conn:
-        rows = [dict(m) for m in conn.execute(stmt).mappings().all()]
-    if not rows:
-        return pl.DataFrame(
-            schema={"street_1": pl.Utf8, "city": pl.Utf8, "state": pl.Utf8, "zip_code": pl.Utf8}
-        )
-    return pl.DataFrame(
-        {
-            "street_1": [r["street_1"] for r in rows],
-            "city": [r["city"] for r in rows],
-            "state": [r["state"] for r in rows],
-            "zip_code": [r["zip_code"] for r in rows],
-        },
-        schema={"street_1": pl.Utf8, "city": pl.Utf8, "state": pl.Utf8, "zip_code": pl.Utf8},
+    return (
+        address_id_map(engine)
+        .drop("address_id")
+        .rename({"_k_s1": "street_1", "_k_city": "city", "_k_state": "state", "_k_zip": "zip_code"})
     )
 
 
