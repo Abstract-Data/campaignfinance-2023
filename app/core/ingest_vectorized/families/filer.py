@@ -659,7 +659,13 @@ class FilerWorker:
             "last_modified_by",
             "change_reason",
         )
-        return common.write_frame(ctx.session, UnifiedCommitteePerson, out, conflict_cols=None)
+        return common.write_frame(
+            ctx.session,
+            UnifiedCommitteePerson,
+            out,
+            conflict_cols=["committee_id", "person_id", "role"],
+            update_cols=[],
+        )
 
 
 register(FilerWorker())

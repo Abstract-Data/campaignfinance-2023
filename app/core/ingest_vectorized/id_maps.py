@@ -215,6 +215,51 @@ def committee_entity_map(engine: Any, state_id: int) -> dict[str, int]:
         return {m["committee_id"]: m["id"] for m in conn.execute(stmt).mappings().all()}
 
 
+def guarantor_key_frame(engine: Any) -> pl.DataFrame:
+    """Key columns for Bucket C anti-join pre-filter on loan_guarantors.
+
+    Returns ``loan_id, debt_id, last_name, first_name, organization`` — the
+    natural identity key for a guarantor row.  Use with
+    ``filter_new_rows(normalize_lower=["last_name", "first_name", "organization"])``.
+    """
+    tbl = reflect(engine, "loan_guarantors")
+    stmt = select(
+        tbl.c.loan_id,
+        tbl.c.debt_id,
+        tbl.c.last_name,
+        tbl.c.first_name,
+        tbl.c.organization,
+    )
+    with engine.connect() as conn:
+        rows = [dict(m) for m in conn.execute(stmt).mappings().all()]
+    if not rows:
+        return pl.DataFrame(
+            schema={
+                "loan_id": pl.Int64,
+                "debt_id": pl.Int64,
+                "last_name": pl.Utf8,
+                "first_name": pl.Utf8,
+                "organization": pl.Utf8,
+            }
+        )
+    return pl.DataFrame(
+        {
+            "loan_id": [r["loan_id"] for r in rows],
+            "debt_id": [r["debt_id"] for r in rows],
+            "last_name": [r["last_name"] for r in rows],
+            "first_name": [r["first_name"] for r in rows],
+            "organization": [r["organization"] for r in rows],
+        },
+        schema={
+            "loan_id": pl.Int64,
+            "debt_id": pl.Int64,
+            "last_name": pl.Utf8,
+            "first_name": pl.Utf8,
+            "organization": pl.Utf8,
+        },
+    )
+
+
 def loan_pk_map(engine: Any, table: str) -> dict[int, int]:
     """parent transaction_id (surrogate) -> detail surrogate id, for loan/debt."""
     tbl = reflect(engine, table)

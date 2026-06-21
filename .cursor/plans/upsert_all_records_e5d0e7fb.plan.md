@@ -16,13 +16,13 @@ todos:
     status: completed
   - id: wave-2-bucket-c
     content: "TASK-W2 (serial): person_key_frame + address_key_frame + anti-join at 7 family sites + idempotent tests"
-    status: in_progress
+    status: completed
   - id: wave-3-migration
     content: "TASK-W3 (parallel after W0): dedup_dimensions.py + Alembic revision + _DEDUP_INDEXES + PG migration test"
     status: completed
   - id: wave-4-bucket-d-writers
     content: "TASK-W4 (serial after W3): campaigns/committee_persons/campaign_entities ON CONFLICT + guarantor anti-join"
-    status: pending
+    status: in_progress
   - id: wave-5-e2e-dod
     content: "TASK-W5-z (serial): full pipeline idempotency test + full pytest/ruff + gitnexus_detect_changes + analyze"
     status: pending

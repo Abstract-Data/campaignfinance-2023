@@ -387,3 +387,250 @@ def test_addresses_idempotent(dedup_engine_session: tuple) -> None:
     _write_with_filter()  # identical second write — filter_new_rows should return 0 rows
     after = _count(s, UnifiedAddress)
     assert after == before, f"Address row count changed on re-write: {before} → {after}"
+
+
+def test_campaigns_idempotent(dedup_session: Session) -> None:
+    """Writing the same unified_campaigns rows twice must not increase row count
+    (Bucket D: ON CONFLICT (normalized_name, primary_committee_id, election_year, state_id)
+    WHERE primary_committee_id IS NOT NULL DO NOTHING, via uix_campaigns_identity).
+
+    Requires dedup_session which applies _DEDUP_INDEXES (includes the partial index).
+    """
+    from app.core.ingest_vectorized import common
+    from app.core.models.tables import UnifiedCampaign
+
+    s = dedup_session
+    rows = pl.DataFrame(
+        [
+            {
+                "normalized_name": "smith for governor",
+                "primary_committee_id": "C001",
+                "election_year": 2024,
+                "state_id": 1,
+                "name": "Smith for Governor",
+                "office_sought": "GOVERNOR",
+                "district": None,
+                "candidate_person_id": None,
+            },
+            {
+                "normalized_name": "jones for senate",
+                "primary_committee_id": "C002",
+                "election_year": 2024,
+                "state_id": 1,
+                "name": "Jones for Senate",
+                "office_sought": "SENATE",
+                "district": None,
+                "candidate_person_id": None,
+            },
+        ]
+    )
+    kw = dict(
+        conflict_cols=["normalized_name", "primary_committee_id", "election_year", "state_id"],
+        update_cols=[],
+        conflict_where="primary_committee_id IS NOT NULL",
+    )
+    common.write_frame(s, UnifiedCampaign, rows, **kw)
+    before = _count(s, UnifiedCampaign)
+
+    common.write_frame(s, UnifiedCampaign, rows, **kw)  # identical second write
+    after = _count(s, UnifiedCampaign)
+
+    assert after == before, f"Campaign row count changed on re-write: {before} → {after}"
+
+
+def test_campaigns_null_committee_excluded_from_dedup(dedup_session: Session) -> None:
+    """Campaigns with primary_committee_id=NULL are NOT covered by the partial unique index
+    (WHERE primary_committee_id IS NOT NULL), so two NULL-committee rows with the same
+    name+year+state both land — the index does not constrain them.
+    """
+    from app.core.ingest_vectorized import common
+    from app.core.models.tables import UnifiedCampaign
+
+    s = dedup_session
+    null_committee_row = pl.DataFrame(
+        [
+            {
+                "normalized_name": "unknown campaign",
+                "primary_committee_id": None,
+                "election_year": 2024,
+                "state_id": 1,
+                "name": "Unknown Campaign",
+                "office_sought": None,
+                "district": None,
+                "candidate_person_id": None,
+            }
+        ]
+    )
+    kw = dict(
+        conflict_cols=["normalized_name", "primary_committee_id", "election_year", "state_id"],
+        update_cols=[],
+        conflict_where="primary_committee_id IS NOT NULL",
+    )
+    common.write_frame(s, UnifiedCampaign, null_committee_row, **kw)
+    common.write_frame(s, UnifiedCampaign, null_committee_row, **kw)
+    n = _count(s, UnifiedCampaign)
+    assert n == 2, (
+        f"expected 2 NULL-committee campaign rows (partial index does not cover NULLs), got {n}"
+    )
+
+
+def test_committee_persons_idempotent(dedup_session: Session) -> None:
+    """Writing the same unified_committee_persons rows twice must not increase row count
+    (Bucket A: ON CONFLICT (committee_id, person_id, role) DO NOTHING,
+    via uix_committee_person_role).
+
+    SQLite FK constraints are off by default, so dummy integer IDs are fine.
+    """
+    from app.core.ingest_vectorized import common
+    from app.core.models.tables import UnifiedCommitteePerson
+
+    s = dedup_session
+    rows = pl.DataFrame(
+        [
+            {
+                "committee_id": "C001",
+                "person_id": 1,
+                "role": "TREASURER",
+                "entity_id": None,
+                "state_id": 1,
+                "start_date": None,
+                "end_date": None,
+                "is_active": True,
+                "notes": None,
+                "last_modified_by": None,
+                "change_reason": None,
+            },
+            {
+                "committee_id": "C001",
+                "person_id": 2,
+                "role": "CHAIR",
+                "entity_id": None,
+                "state_id": 1,
+                "start_date": None,
+                "end_date": None,
+                "is_active": True,
+                "notes": None,
+                "last_modified_by": None,
+                "change_reason": None,
+            },
+        ]
+    )
+    kw = dict(
+        conflict_cols=["committee_id", "person_id", "role"],
+        update_cols=[],
+    )
+    common.write_frame(s, UnifiedCommitteePerson, rows, **kw)
+    before = _count(s, UnifiedCommitteePerson)
+
+    common.write_frame(s, UnifiedCommitteePerson, rows, **kw)  # identical second write
+    after = _count(s, UnifiedCommitteePerson)
+
+    assert after == before, f"CommitteePerson row count changed on re-write: {before} → {after}"
+
+
+def test_guarantors_idempotent(dedup_engine_session: tuple) -> None:
+    """Writing the same loan_guarantors rows twice (with Bucket C anti-join pre-filter)
+    must not increase the row count (first-write-wins).
+
+    loan_id and debt_id are mutually exclusive (one is always NULL), so this path
+    uses an inline anti-join with join_nulls=True rather than filter_new_rows (which
+    does not expose a join_nulls parameter).
+
+    Simulates the pipeline: write once, then read guarantor_key_frame from DB, filter
+    the same candidate rows through the inline anti-join, write the filtered (empty)
+    result, and assert the count is unchanged.
+    """
+    from app.core.ingest_vectorized import common
+    from app.core.ingest_vectorized.id_maps import guarantor_key_frame
+    from app.core.models import LoanGuarantor
+
+    engine, s = dedup_engine_session
+
+    _KEY_COLS = ["_k_loan", "_k_debt", "_k_last", "_k_first", "_k_org"]
+
+    def _norm_keys(frame: pl.DataFrame) -> pl.DataFrame:
+        return frame.with_columns(
+            pl.col("loan_id").alias("_k_loan"),
+            pl.col("debt_id").alias("_k_debt"),
+            pl.col("last_name").str.to_lowercase().alias("_k_last"),
+            pl.col("first_name").str.to_lowercase().alias("_k_first"),
+            pl.col("organization").str.to_lowercase().alias("_k_org"),
+        )
+
+    guarantor_rows = pl.DataFrame(
+        [
+            {
+                "loan_id": 1,
+                "debt_id": None,
+                "entity_id": None,
+                "position": 1,
+                "person_type": "INDIVIDUAL",
+                "organization": None,
+                "last_name": "Smith",
+                "first_name": "John",
+                "suffix": None,
+                "prefix": None,
+                "city": "Austin",
+                "state_code": "TX",
+                "county": None,
+                "country": None,
+                "postal_code": "78701",
+                "region": None,
+            },
+            {
+                "loan_id": None,
+                "debt_id": 2,
+                "entity_id": None,
+                "position": 1,
+                "person_type": "INDIVIDUAL",
+                "organization": None,
+                "last_name": "Jones",
+                "first_name": "Jane",
+                "suffix": None,
+                "prefix": None,
+                "city": "Dallas",
+                "state_code": "TX",
+                "county": None,
+                "country": None,
+                "postal_code": "75201",
+                "region": None,
+            },
+        ],
+        schema={
+            "loan_id": pl.Int64,
+            "debt_id": pl.Int64,
+            "entity_id": pl.Int64,
+            "position": pl.Int64,
+            "person_type": pl.Utf8,
+            "organization": pl.Utf8,
+            "last_name": pl.Utf8,
+            "first_name": pl.Utf8,
+            "suffix": pl.Utf8,
+            "prefix": pl.Utf8,
+            "city": pl.Utf8,
+            "state_code": pl.Utf8,
+            "county": pl.Utf8,
+            "country": pl.Utf8,
+            "postal_code": pl.Utf8,
+            "region": pl.Utf8,
+        },
+    )
+
+    def _write_with_anti_join() -> None:
+        existing = guarantor_key_frame(engine)
+        existing_norm = _norm_keys(existing).select(_KEY_COLS).unique()
+        rows_normed = _norm_keys(guarantor_rows).unique(subset=_KEY_COLS, keep="first")
+        # join_nulls=True required: loan_id or debt_id is always NULL per row
+        new_rows = rows_normed.join(
+            existing_norm, on=_KEY_COLS, how="anti", join_nulls=True
+        ).drop(_KEY_COLS)
+        if new_rows.height:
+            common.write_frame(s, LoanGuarantor, new_rows, conflict_cols=None)
+
+    _write_with_anti_join()
+    before = _count(s, LoanGuarantor)
+    assert before == 2
+
+    _write_with_anti_join()  # identical second write — anti-join should filter all rows
+    after = _count(s, LoanGuarantor)
+    assert after == before, f"Guarantor row count changed on re-write: {before} → {after}"
