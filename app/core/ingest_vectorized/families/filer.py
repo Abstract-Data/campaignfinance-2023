@@ -594,7 +594,14 @@ class FilerWorker:
             "address_id",
             "state_id",
         )
-        return common.write_frame(ctx.session, UnifiedEntity, out, conflict_cols=None)
+        return common.write_frame(
+            ctx.session,
+            UnifiedEntity,
+            out,
+            conflict_cols=["entity_type", "normalized_name", "state_id"],
+            update_cols=[],
+            conflict_where="state_id IS NOT NULL",
+        )
 
     def _write_committee_persons(self, officers: list[_OfficerFrame], ctx: FamilyContext) -> int:
         """One committee_person per (committee, officer person, role). Resolves

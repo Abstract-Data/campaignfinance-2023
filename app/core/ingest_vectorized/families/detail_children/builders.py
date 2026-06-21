@@ -231,7 +231,10 @@ def _build_loan(
             "collateral",
         )
     )
-    return common.write_frame(ctx.session, UnifiedLoan, out, conflict_cols=None)
+    return common.write_frame(
+        ctx.session, UnifiedLoan, out,
+        conflict_cols=["transaction_id"], update_cols=[],
+    )
 
 
 def _build_debt(
@@ -290,7 +293,10 @@ def _build_debt(
             "payment_date",
         )
     )
-    return common.write_frame(ctx.session, UnifiedDebt, out, conflict_cols=None)
+    return common.write_frame(
+        ctx.session, UnifiedDebt, out,
+        conflict_cols=["transaction_id"], update_cols=[],
+    )
 
 
 def _build_credit(
@@ -332,7 +338,10 @@ def _build_credit(
             "related_transaction_id",
         )
     )
-    return common.write_frame(ctx.session, UnifiedCredit, out, conflict_cols=None)
+    return common.write_frame(
+        ctx.session, UnifiedCredit, out,
+        conflict_cols=["transaction_id"], update_cols=[],
+    )
 
 
 def _build_travel(
@@ -397,7 +406,10 @@ def _build_travel(
             "traveler_name",
         )
     )
-    return common.write_frame(ctx.session, UnifiedTravel, out, conflict_cols=None)
+    return common.write_frame(
+        ctx.session, UnifiedTravel, out,
+        conflict_cols=["transaction_id"], update_cols=[],
+    )
 
 
 def _build_asset(
@@ -449,7 +461,10 @@ def _build_asset(
             "is_disposed",
         )
     )
-    return common.write_frame(ctx.session, UnifiedAsset, out, conflict_cols=None)
+    return common.write_frame(
+        ctx.session, UnifiedAsset, out,
+        conflict_cols=["transaction_id"], update_cols=[],
+    )
 
 
 def _build_pledge(
@@ -499,7 +514,10 @@ def _build_pledge(
             "metadata_json",
         )
     )
-    return common.write_frame(ctx.session, UnifiedPledge, out, conflict_cols=None)
+    return common.write_frame(
+        ctx.session, UnifiedPledge, out,
+        conflict_cols=["transaction_id"], update_cols=[],
+    )
 
 
 # ---------------------------------------------------------------------------

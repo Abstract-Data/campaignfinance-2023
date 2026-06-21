@@ -868,7 +868,10 @@ class FlatTxnsDetailWorker:
                 pl.col("description"),
             )
         )
-        return common.write_frame(ctx.session, UnifiedContribution, rows, conflict_cols=None)
+        return common.write_frame(
+            ctx.session, UnifiedContribution, rows,
+            conflict_cols=["transaction_id"], update_cols=[],
+        )
 
     # -- expenditures -------------------------------------------------------
 
@@ -897,7 +900,10 @@ class FlatTxnsDetailWorker:
                 pl.col("description"),
             )
         )
-        return common.write_frame(ctx.session, UnifiedExpenditure, rows, conflict_cols=None)
+        return common.write_frame(
+            ctx.session, UnifiedExpenditure, rows,
+            conflict_cols=["transaction_id"], update_cols=[],
+        )
 
     # -- transaction_persons ------------------------------------------------
 
@@ -933,7 +939,10 @@ class FlatTxnsDetailWorker:
                 pl.lit(None, dtype=pl.Utf8).alias("notes"),
             )
         )
-        return common.write_frame(ctx.session, UnifiedTransactionPerson, rows, conflict_cols=None)
+        return common.write_frame(
+            ctx.session, UnifiedTransactionPerson, rows,
+            conflict_cols=["transaction_id", "person_id", "role"], update_cols=[],
+        )
 
 
 register(FlatTxnsDetailWorker())

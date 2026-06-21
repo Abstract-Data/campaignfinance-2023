@@ -342,7 +342,12 @@ def write_dims(
             "state_id",
         )
         n_entities = common.write_frame(
-            ctx.session, UnifiedEntity, entities_out, conflict_cols=None
+            ctx.session,
+            UnifiedEntity,
+            entities_out,
+            conflict_cols=["entity_type", "normalized_name", "state_id"],
+            update_cols=[],
+            conflict_where="state_id IS NOT NULL",
         )
     else:
         n_entities = 0

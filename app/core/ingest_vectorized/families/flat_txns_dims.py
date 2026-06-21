@@ -944,7 +944,9 @@ class FlatTxnsDimsWorker:
                     "state_id",
                 ]
             ),
-            conflict_cols=None,
+            conflict_cols=["entity_type", "normalized_name", "state_id"],
+            update_cols=[],
+            conflict_where="state_id IS NOT NULL",
         )
 
         # 4. Committees
