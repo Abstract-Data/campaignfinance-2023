@@ -117,7 +117,7 @@ def test_migrate_is_idempotent():
         assert current_revision(url) is None
         upgrade_head(url)
         rev = current_revision(url)
-        assert rev == "dc131e864993"  # latest head (Wave 5a: drop zero-scan indexes)
+        assert rev == "0003_upsert_dimension_unique_indexes"  # latest head (Wave 4: upsert dim indexes)
         upgrade_head(url)  # no-op
         assert current_revision(url) == rev
     finally:
