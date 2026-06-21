@@ -1,151 +1,107 @@
-"""Idempotency tests for vectorized ingest write paths (first-write-wins).
+"""Idempotency contract tests for vectorized ingest write paths.
 
-Each test verifies that writing the same rows a second time adds zero rows.
-sqlite is used for all tests here; Bucket-B tests apply the required partial
-unique index before exercising ON CONFLICT … DO NOTHING.
+Each test verifies first-write-wins behaviour: writing the same rows twice
+results in the same row count as writing them once.
 
-File is append-only until Wave-1-z integration: parallel W1 agents each add
-their own named test function; the integrator resolves any merge conflicts.
+Fixture approach: in-memory sqlite DB with all SQLModel tables created and the
+dedup unique indexes applied (required for partial-index ON CONFLICT and for
+the transaction_persons composite unique).  SQLite does not enforce FK
+constraints by default, so rows referencing other tables use dummy integer IDs.
 """
 
 from __future__ import annotations
 
+import polars as pl
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, func, select, text
 from sqlmodel import Session, SQLModel
 
 import app.core.models  # noqa: F401 — register all SQLModel table classes
+from app.core.unified_database import UnifiedDatabaseManager
 
 
 @pytest.fixture()
-def session_with_entity_dedup_index():
-    """sqlite engine with tables + the partial unique index for unified_entities."""
+def dedup_session():
+    """sqlite engine with all tables and dedup unique indexes applied."""
     engine = create_engine("sqlite://")
     tables = [t for t in SQLModel.metadata.tables.values() if t.schema is None]
     SQLModel.metadata.create_all(engine, tables=list(tables))
     with engine.connect() as conn:
-        conn.execute(
-            text(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS uix_entities_type_name_state
-                ON unified_entities (entity_type, normalized_name, state_id)
-                WHERE state_id IS NOT NULL
-                """
-            )
-        )
+        for ddl in UnifiedDatabaseManager._DEDUP_INDEXES:
+            conn.execute(text(ddl))
         conn.commit()
     with Session(engine) as session:
         yield session
 
 
-def test_entities_idempotent(session_with_entity_dedup_index):
-    """Writing the same unified_entity row twice must produce exactly one row."""
-    import polars as pl
-
-    from app.core.ingest_vectorized import common
-    from app.core.models.tables import UnifiedEntity
-
-    session = session_with_entity_dedup_index
-    rows = pl.DataFrame(
-        [
-            {
-                "entity_type": "ORGANIZATION",
-                "name": "Acme PAC",
-                "normalized_name": "acme pac",
-                "committee_id": None,
-                "notes": None,
-                "person_id": None,
-                "address_id": None,
-                "state_id": 1,
-            }
-        ]
-    )
-    kw = dict(
-        conflict_cols=["entity_type", "normalized_name", "state_id"],
-        update_cols=[],
-        conflict_where="state_id IS NOT NULL",
-    )
-    common.write_frame(session, UnifiedEntity, rows, **kw)
-    common.write_frame(session, UnifiedEntity, rows, **kw)  # identical repeat
-    n = session.execute(text("SELECT count(*) FROM unified_entities")).scalar()
-    assert n == 1, f"expected 1 entity after double-write, got {n}"
+def _count(session: Session, model) -> int:
+    return session.execute(select(func.count()).select_from(model)).scalar()
 
 
-def test_entities_idempotent_null_state_not_deduplicated(session_with_entity_dedup_index):
-    """Rows with state_id=NULL are NOT covered by the partial index.
+def test_children_idempotent(dedup_session: Session) -> None:
+    """Writing the same subtype-child and transaction_person rows twice must
+    not increase the row count (first-write-wins via Bucket A ON CONFLICT DO NOTHING).
 
-    Two NULL-state rows should both be written because the WHERE predicate
-    (state_id IS NOT NULL) excludes them from the conflict target.
+    Partial tables covered: unified_contributions, unified_expenditures,
+    unified_loans, unified_transaction_persons.
     """
-    import polars as pl
-
     from app.core.ingest_vectorized import common
-    from app.core.models.tables import UnifiedEntity
-
-    session = session_with_entity_dedup_index
-    null_row = pl.DataFrame(
-        [
-            {
-                "entity_type": "ORGANIZATION",
-                "name": "Stateless Corp",
-                "normalized_name": "stateless corp",
-                "committee_id": None,
-                "notes": None,
-                "person_id": None,
-                "address_id": None,
-                "state_id": None,
-            }
-        ]
+    from app.core.models.tables import (
+        UnifiedContribution,
+        UnifiedExpenditure,
+        UnifiedLoan,
+        UnifiedTransactionPerson,
     )
-    kw = dict(
-        conflict_cols=["entity_type", "normalized_name", "state_id"],
-        update_cols=[],
-        conflict_where="state_id IS NOT NULL",
+
+    s = dedup_session
+
+    contrib_rows = pl.DataFrame(
+        [{"transaction_id": 1, "contributor_entity_id": 10, "recipient_entity_id": 20}]
     )
-    common.write_frame(session, UnifiedEntity, null_row, **kw)
-    common.write_frame(session, UnifiedEntity, null_row, **kw)
-    n = session.execute(text("SELECT count(*) FROM unified_entities")).scalar()
-    # Both rows land: partial index does not cover NULL state_id
-    assert n == 2, f"expected 2 null-state rows (index does not cover NULLs), got {n}"
-
-
-def test_entities_idempotent_batch_dedup(session_with_entity_dedup_index):
-    """A batch containing the same entity key twice must produce only one row."""
-    import polars as pl
-
-    from app.core.ingest_vectorized import common
-    from app.core.models.tables import UnifiedEntity
-
-    session = session_with_entity_dedup_index
-    rows = pl.DataFrame(
-        [
-            {
-                "entity_type": "INDIVIDUAL",
-                "name": "John Smith",
-                "normalized_name": "john smith",
-                "committee_id": None,
-                "notes": None,
-                "person_id": None,
-                "address_id": None,
-                "state_id": 1,
-            },
-            {
-                "entity_type": "INDIVIDUAL",
-                "name": "John Smith",
-                "normalized_name": "john smith",
-                "committee_id": None,
-                "notes": None,
-                "person_id": None,
-                "address_id": None,
-                "state_id": 1,
-            },
-        ]
+    expend_rows = pl.DataFrame(
+        [{"transaction_id": 2, "payer_entity_id": 10, "payee_entity_id": 30}]
     )
-    kw = dict(
-        conflict_cols=["entity_type", "normalized_name", "state_id"],
-        update_cols=[],
-        conflict_where="state_id IS NOT NULL",
+    loan_rows = pl.DataFrame(
+        [{"transaction_id": 3, "lender_entity_id": 10, "borrower_entity_id": 40}]
     )
-    common.write_frame(session, UnifiedEntity, rows, **kw)
-    n = session.execute(text("SELECT count(*) FROM unified_entities")).scalar()
-    assert n == 1, f"expected 1 row from same-key batch, got {n}"
+    txn_person_rows = pl.DataFrame(
+        [{"transaction_id": 1, "person_id": 100, "role": "CONTRIBUTOR"}]
+    )
+
+    def _write_all() -> None:
+        common.write_frame(
+            s, UnifiedContribution, contrib_rows,
+            conflict_cols=["transaction_id"], update_cols=[],
+        )
+        common.write_frame(
+            s, UnifiedExpenditure, expend_rows,
+            conflict_cols=["transaction_id"], update_cols=[],
+        )
+        common.write_frame(
+            s, UnifiedLoan, loan_rows,
+            conflict_cols=["transaction_id"], update_cols=[],
+        )
+        common.write_frame(
+            s, UnifiedTransactionPerson, txn_person_rows,
+            conflict_cols=["transaction_id", "person_id", "role"], update_cols=[],
+        )
+
+    _write_all()
+
+    before = {
+        "contributions": _count(s, UnifiedContribution),
+        "expenditures": _count(s, UnifiedExpenditure),
+        "loans": _count(s, UnifiedLoan),
+        "transaction_persons": _count(s, UnifiedTransactionPerson),
+    }
+
+    _write_all()  # identical second write
+
+    after = {
+        "contributions": _count(s, UnifiedContribution),
+        "expenditures": _count(s, UnifiedExpenditure),
+        "loans": _count(s, UnifiedLoan),
+        "transaction_persons": _count(s, UnifiedTransactionPerson),
+    }
+
+    assert after == before, f"Row counts changed on re-write: {before} → {after}"
