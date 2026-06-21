@@ -466,12 +466,12 @@ class CandWorker:
                 maintain_order=True,
             )
         )
-        dedup_new = dedup_first.join(
-            existing_keys.with_columns(pl.lit(True).alias("_exists")),
-            on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
-            how="left",
+        dedup_new = common.filter_new_rows(
+            dedup_first,
+            existing_keys,
+            key_cols=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
             join_nulls=True,
-        ).filter(pl.col("_exists").is_null())
+        )
 
         # Non-dedupable: one person per matched CAND row, no existing-key reuse.
         non_dedup = cand_rows.filter(~dedupable)

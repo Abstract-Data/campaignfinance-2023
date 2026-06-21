@@ -781,6 +781,7 @@ def filter_new_rows(
     *,
     key_cols: list[str],
     normalize_lower: list[str] | None = None,
+    join_nulls: bool = False,
 ) -> pl.DataFrame:
     """First-write-wins pre-filter for tables whose unique key is functional or split across
     multiple partial indexes where ``ON CONFLICT`` inference cannot target them (Bucket C).
@@ -802,6 +803,13 @@ def filter_new_rows(
     normalize_lower:
         Subset of ``key_cols`` to lower-case before comparison (e.g. name fields).
         Columns not listed here are compared as-is.
+    join_nulls:
+        When ``True``, NULL values on both sides of a key column are treated as
+        equal in the anti-join.  Required for keys that are intentionally nullable
+        (e.g. address ``street_1``, person ``_pk_addr``, guarantor ``loan_id``/
+        ``debt_id``).  Defaults to ``False`` (standard SQL NULL semantics: NULL
+        never equals NULL, so rows with a NULL key component are always treated as
+        new).
 
     Returns
     -------
@@ -820,7 +828,7 @@ def filter_new_rows(
     # Add normalised key cols, deduplicate in-batch (keep first), then anti-join.
     f = frame.with_columns(key_exprs).unique(subset=kcols, keep="first")
     e = existing_keys.with_columns(key_exprs).select(kcols).unique()
-    result = f.join(e, on=kcols, how="anti").drop(kcols)
+    result = f.join(e, on=kcols, how="anti", join_nulls=join_nulls).drop(kcols)
 
     dropped = frame.height - result.height
     if dropped:

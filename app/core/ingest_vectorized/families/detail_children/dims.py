@@ -224,6 +224,7 @@ def write_dims(
         existing_addr,
         key_cols=["street_1", "city", "state", "zip_code"],
         normalize_lower=["street_1", "city", "state"],
+        join_nulls=True,
     )
     n_addr = common.write_frame(ctx.session, UnifiedAddress, addr_out, conflict_cols=None)
     _logger.info("[dims._write_dims] addresses written=%d", n_addr)
@@ -241,10 +242,10 @@ def write_dims(
     # ``persons`` keeps the full deduped set (needed for entity.person_id linkage);
     # ``persons_new`` is the subset to actually insert.
     existing_persons = _person_key_frame(ctx.engine, ctx.state_id)
-    persons_new = persons.join(
+    persons_new = common.filter_new_rows(
+        persons,
         existing_persons.select("_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"),
-        on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
-        how="anti",
+        key_cols=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
         join_nulls=True,
     )
 

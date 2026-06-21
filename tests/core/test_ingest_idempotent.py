@@ -7,45 +7,17 @@ Fixture approach: in-memory sqlite DB with all SQLModel tables created and the
 dedup unique indexes applied (required for partial-index ON CONFLICT and for
 the transaction_persons composite unique).  SQLite does not enforce FK
 constraints by default, so rows referencing other tables use dummy integer IDs.
+
+Shared fixtures ``dedup_session`` and ``dedup_engine_session`` live in
+``tests/core/conftest.py`` so they can be reused without crossing the 1k-LOC
+threshold here.
 """
 
 from __future__ import annotations
 
 import polars as pl
-import pytest
-from sqlalchemy import create_engine, func, select, text
-from sqlmodel import Session, SQLModel
-
-import app.core.models  # noqa: F401 — register all SQLModel table classes
-from app.core.unified_database import UnifiedDatabaseManager
-
-
-@pytest.fixture()
-def dedup_session():
-    """sqlite engine with all tables and dedup unique indexes applied."""
-    engine = create_engine("sqlite://")
-    tables = [t for t in SQLModel.metadata.tables.values() if t.schema is None]
-    SQLModel.metadata.create_all(engine, tables=list(tables))
-    with engine.connect() as conn:
-        for ddl in UnifiedDatabaseManager._DEDUP_INDEXES:
-            conn.execute(text(ddl))
-        conn.commit()
-    with Session(engine) as session:
-        yield session
-
-
-@pytest.fixture()
-def dedup_engine_session():
-    """Yields (engine, session) for tests that need both (e.g. id_maps key-frame reads)."""
-    engine = create_engine("sqlite://")
-    tables = [t for t in SQLModel.metadata.tables.values() if t.schema is None]
-    SQLModel.metadata.create_all(engine, tables=list(tables))
-    with engine.connect() as conn:
-        for ddl in UnifiedDatabaseManager._DEDUP_INDEXES:
-            conn.execute(text(ddl))
-        conn.commit()
-    with Session(engine) as session:
-        yield engine, session
+from sqlalchemy import func, select
+from sqlmodel import Session
 
 
 def _count(session: Session, model) -> int:
@@ -946,4 +918,73 @@ def test_full_pipeline_idempotent(dedup_engine_session: tuple) -> None:
     assert diffs == [], (
         "Snapshot changed after identical re-ingest — first-write-wins contract violated:\n"
         + "\n".join(diffs)
+    )
+
+
+def test_nostreet_address_idempotent(dedup_engine_session: tuple) -> None:
+    """No-street addresses (street_1 IS NULL, city/state/zip present) must not be
+    duplicated on re-ingest.
+
+    The no-street partition of the address unique index matches on NULL street_1.
+    filter_new_rows(join_nulls=True) must treat NULL == NULL so the anti-join
+    correctly identifies the address as already present.
+    """
+    from app.core.ingest_vectorized import common
+    from app.core.ingest_vectorized.id_maps import address_key_frame
+    from app.core.models.tables import UnifiedAddress
+
+    engine, s = dedup_engine_session
+
+    nostreet_rows = pl.DataFrame(
+        [
+            {
+                "street_1": None,
+                "street_2": None,
+                "city": "Austin",
+                "state": "TX",
+                "zip_code": "78701",
+                "country": None,
+                "county": None,
+            },
+            {
+                "street_1": None,
+                "street_2": None,
+                "city": "Dallas",
+                "state": "TX",
+                "zip_code": "75201",
+                "country": None,
+                "county": None,
+            },
+        ],
+        schema={
+            "street_1": pl.Utf8,
+            "street_2": pl.Utf8,
+            "city": pl.Utf8,
+            "state": pl.Utf8,
+            "zip_code": pl.Utf8,
+            "country": pl.Utf8,
+            "county": pl.Utf8,
+        },
+    )
+
+    def _write_with_filter() -> None:
+        existing = address_key_frame(engine)
+        new_rows = common.filter_new_rows(
+            nostreet_rows,
+            existing,
+            key_cols=["street_1", "city", "state", "zip_code"],
+            normalize_lower=["street_1", "city", "state"],
+            join_nulls=True,
+        )
+        common.write_frame(s, UnifiedAddress, new_rows, conflict_cols=None)
+
+    _write_with_filter()
+    before = _count(s, UnifiedAddress)
+    assert before == 2, f"Expected 2 nostreet addresses after first write, got {before}"
+
+    _write_with_filter()
+    after = _count(s, UnifiedAddress)
+    assert after == before, (
+        f"Nostreet address count changed on re-write: {before} → {after} "
+        "(filter_new_rows join_nulls=True must deduplicate NULL street_1 rows)"
     )

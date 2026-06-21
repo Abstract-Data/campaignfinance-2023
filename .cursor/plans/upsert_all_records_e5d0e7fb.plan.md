@@ -25,7 +25,7 @@ todos:
     status: completed
   - id: wave-5-e2e-dod
     content: "TASK-W5-z (serial): full pipeline idempotency test + full pytest/ruff + gitnexus_detect_changes + analyze"
-    status: in_progress
+    status: completed
 isProject: false
 ---
 

@@ -114,41 +114,16 @@ def person_id_map(engine: Any, state_id: int) -> pl.DataFrame:
 def person_key_frame(engine: Any, state_id: int) -> pl.DataFrame:
     """Collapsed person natural-key columns for Bucket C anti-join pre-filter.
 
-    Returns ``_pk_org, _pk_fn, _pk_ln, _pk_addr, state_id`` — the same collapsed
-    key shape produced by ``person_id_map`` (``collapse_org_person_key`` applied), but
-    without the surrogate ``person_id``.  Use with ``filter_new_rows`` (pass
-    ``normalize_lower=[]``; keys are already lower-cased).
+    Returns ``_pk_org, _pk_fn, _pk_ln, _pk_addr`` — the same collapsed key shape
+    produced by ``person_id_map`` (``collapse_org_person_key`` applied), but without
+    the surrogate ``person_id``.  Keys are already lower-cased; pass
+    ``normalize_lower=[]`` to ``filter_new_rows``.
 
-    Callers that need ``join_nulls=True`` (org-person rows carry NULL fn/ln/addr) should
-    use this frame with an inline anti-join rather than ``filter_new_rows``, which does
-    not yet expose a ``join_nulls`` parameter.
+    For keys that are intentionally nullable (org-person rows carry NULL fn/ln/addr;
+    address-keyed persons carry NULL _pk_addr for no-address rows) pass
+    ``join_nulls=True`` to ``filter_new_rows``.
     """
-    tbl = reflect(engine, "unified_persons")
-    stmt = select(
-        tbl.c.first_name,
-        tbl.c.last_name,
-        tbl.c.organization,
-        tbl.c.dedup_addr_key,
-    ).where(tbl.c.state_id == state_id)
-    with engine.connect() as conn:
-        rows = [dict(m) for m in conn.execute(stmt).mappings().all()]
-    frame = pl.DataFrame(
-        {
-            "_pk_org": [_lower_or_none(r["organization"]) for r in rows],
-            "_pk_fn": [_lower_or_none(r["first_name"]) for r in rows],
-            "_pk_ln": [_lower_or_none(r["last_name"]) for r in rows],
-            "_pk_addr": [r["dedup_addr_key"] for r in rows],
-            "state_id": [state_id] * len(rows),
-        },
-        schema={
-            "_pk_org": pl.Utf8,
-            "_pk_fn": pl.Utf8,
-            "_pk_ln": pl.Utf8,
-            "_pk_addr": pl.Utf8,
-            "state_id": pl.Int64,
-        },
-    )
-    return common.collapse_org_person_key(frame)
+    return person_id_map(engine, state_id).drop("person_id")
 
 
 def address_key_frame(engine: Any) -> pl.DataFrame:

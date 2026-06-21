@@ -444,6 +444,7 @@ class FilerWorker:
             existing_addr,
             key_cols=["street_1", "city", "state", "zip_code"],
             normalize_lower=["street_1", "city", "state"],
+            join_nulls=True,
         )
         addr_out = addr_new.with_columns(
             pl.lit(None, dtype=pl.Utf8).alias("street_2"),
@@ -503,12 +504,10 @@ class FilerWorker:
         Dedup / anti-join on the post-#48 address-inclusive key (_pk_addr is NULL for
         officers, so individuals key name-only) — the SAME key the other families use."""
         existing = id_maps.person_key_frame(ctx.engine, ctx.state_id)
-        new = parties.unique(
-            subset=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"], keep="first", maintain_order=True
-        ).join(
+        new = common.filter_new_rows(
+            parties,
             existing.select("_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"),
-            on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
-            how="anti",
+            key_cols=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
             join_nulls=True,
         )
         out = new.with_columns(

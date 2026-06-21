@@ -980,12 +980,13 @@ class FlatTxnsDimsWorker:
 
     # ---- anti-joins against existing DB rows (shared dims) --------------
     #
-    # Keyed identically to detail_children's id-maps so the anti-join matches each
-    # partial unique index's semantics case-insensitively:
-    #   addresses -> (lower street_1/city/state, zip); null-street rows match on NULL
-    #                via join_nulls=True (the no-street partition).
-    #   persons   -> the post-#48 (_pk_org, _pk_fn, _pk_ln, _pk_addr) key.
-    #   entities  -> (entity_type, normalized_name).
+    # All three dim types use filter_new_rows with join_nulls=True so that
+    # NULL key components (no-street addresses, org-person _pk_addr, etc.) are
+    # treated as equal on both sides — matching each partial unique index's
+    # semantics case-insensitively:
+    #   addresses -> filter_new_rows(lower street_1/city/state, zip; join_nulls=True)
+    #   persons   -> filter_new_rows(_pk_org/_pk_fn/_pk_ln/_pk_addr; join_nulls=True)
+    #   entities  -> filter_new_rows(entity_type, normalized_name)
 
     @staticmethod
     def _anti_join_addresses(addr_df: pl.DataFrame, ctx: FamilyContext) -> pl.DataFrame:
@@ -997,6 +998,7 @@ class FlatTxnsDimsWorker:
             existing,
             key_cols=["street_1", "city", "state", "zip_code"],
             normalize_lower=["street_1", "city", "state"],
+            join_nulls=True,
         )
 
     @staticmethod
@@ -1004,10 +1006,10 @@ class FlatTxnsDimsWorker:
         if persons_df.height == 0:
             return persons_df
         existing = _person_key_frame(ctx.engine, ctx.state_id)
-        return persons_df.join(
+        return common.filter_new_rows(
+            persons_df,
             existing.select("_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"),
-            on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
-            how="anti",
+            key_cols=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
             join_nulls=True,
         )
 

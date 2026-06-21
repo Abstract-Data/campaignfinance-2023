@@ -630,18 +630,7 @@ def _guarantor_rows(
     return out
 
 
-_GUARANTOR_KEY_COLS = ["_k_loan", "_k_debt", "_k_last", "_k_first", "_k_org"]
-
-
-def _normalize_guarantor_keys(frame: pl.DataFrame) -> pl.DataFrame:
-    """Add lower-cased name key columns and parent-id aliases for guarantor anti-join."""
-    return frame.with_columns(
-        pl.col("loan_id").alias("_k_loan"),
-        pl.col("debt_id").alias("_k_debt"),
-        pl.col("last_name").str.to_lowercase().alias("_k_last"),
-        pl.col("first_name").str.to_lowercase().alias("_k_first"),
-        pl.col("organization").str.to_lowercase().alias("_k_org"),
-    )
+_GUARANTOR_NATURAL_KEYS = ["loan_id", "debt_id", "last_name", "first_name", "organization"]
 
 
 def _build_guarantors(
@@ -655,10 +644,9 @@ def _build_guarantors(
     want_types = frozenset(_SPECS[rt].transaction_type for rt in ordered if rt in _SPECS)
     txn_map = _txn_id_map(ctx.engine, ctx.state_id, want_types)
 
-    # Bucket C anti-join: loan_id and debt_id are mutually exclusive (one is always NULL),
-    # so join_nulls=True is required — filter_new_rows does not yet support that parameter.
+    # Bucket C anti-join via filter_new_rows: loan_id and debt_id are mutually exclusive
+    # (one is always NULL), so join_nulls=True ensures NULL-to-NULL matches correctly.
     existing_raw = _guarantor_key_frame(ctx.engine)
-    existing_norm = _normalize_guarantor_keys(existing_raw).select(_GUARANTOR_KEY_COLS).unique()
 
     for rt, parent_table, pk_map in (
         ("LOAN", "loan_id", loan_pk),
@@ -671,21 +659,13 @@ def _build_guarantors(
         rows = _guarantor_rows(df, spec, ctx, txn_map, pk_map, parent_table)
         if rows is None or not rows.height:
             continue
-        rows_normed = _normalize_guarantor_keys(rows).unique(
-            subset=_GUARANTOR_KEY_COLS, keep="first"
-        )
-        new_rows = rows_normed.join(
-            existing_norm,
-            on=_GUARANTOR_KEY_COLS,
-            how="anti",
+        new_rows = common.filter_new_rows(
+            rows,
+            existing_raw,
+            key_cols=_GUARANTOR_NATURAL_KEYS,
+            normalize_lower=["last_name", "first_name", "organization"],
             join_nulls=True,
-        ).drop(_GUARANTOR_KEY_COLS)
-        dropped = rows.height - new_rows.height
-        if dropped:
-            _logger.info(
-                f"[vectorized.guarantors] skipped {dropped} existing/duplicate guarantor(s) "
-                f"({new_rows.height} new row(s) remain)"
-            )
+        )
         if new_rows.height:
             total += common.write_frame(ctx.session, LoanGuarantor, new_rows, conflict_cols=None)
     return total

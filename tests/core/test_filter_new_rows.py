@@ -99,3 +99,78 @@ def test_filter_new_rows_drops_key_cols_from_result():
     )
     for col in out.columns:
         assert not col.startswith("_k_"), f"key column {col!r} leaked into result"
+
+
+def test_filter_new_rows_null_key_join_nulls_false():
+    """Without join_nulls, NULL key columns never match — rows with NULL keys are
+    always treated as new regardless of what is in the existing set."""
+    from app.core.ingest_vectorized import common
+
+    # street_1 is NULL on both candidate and existing row (no-street address).
+    frame = pl.DataFrame(
+        [{"street_1": None, "city": "Austin", "state": "TX", "zip_code": "78701"}],
+        schema={"street_1": pl.Utf8, "city": pl.Utf8, "state": pl.Utf8, "zip_code": pl.Utf8},
+    )
+    existing = pl.DataFrame(
+        [{"street_1": None, "city": "Austin", "state": "TX", "zip_code": "78701"}],
+        schema={"street_1": pl.Utf8, "city": pl.Utf8, "state": pl.Utf8, "zip_code": pl.Utf8},
+    )
+    # Default join_nulls=False: NULL != NULL, so the row appears new (anti-join keeps it).
+    out = common.filter_new_rows(
+        frame,
+        existing,
+        key_cols=["street_1", "city", "state", "zip_code"],
+        normalize_lower=["street_1", "city", "state"],
+    )
+    assert out.height == 1, "Without join_nulls, NULL-key row must not be filtered out"
+
+
+def test_filter_new_rows_null_key_join_nulls_true():
+    """With join_nulls=True, NULL key columns on both sides count as equal — a row
+    whose key contains NULL is correctly recognised as already present in the DB."""
+    from app.core.ingest_vectorized import common
+
+    # No-street address: street_1 NULL, remaining key components present.
+    frame = pl.DataFrame(
+        [{"street_1": None, "city": "Austin", "state": "TX", "zip_code": "78701"}],
+        schema={"street_1": pl.Utf8, "city": pl.Utf8, "state": pl.Utf8, "zip_code": pl.Utf8},
+    )
+    existing = pl.DataFrame(
+        [{"street_1": None, "city": "Austin", "state": "TX", "zip_code": "78701"}],
+        schema={"street_1": pl.Utf8, "city": pl.Utf8, "state": pl.Utf8, "zip_code": pl.Utf8},
+    )
+    out = common.filter_new_rows(
+        frame,
+        existing,
+        key_cols=["street_1", "city", "state", "zip_code"],
+        normalize_lower=["street_1", "city", "state"],
+        join_nulls=True,
+    )
+    assert out.height == 0, "With join_nulls=True, NULL-key row present in DB must be filtered"
+
+
+def test_filter_new_rows_null_key_partial_match():
+    """With join_nulls=True, a row with a NULL component only matches an existing row
+    that also has NULL in that column — different non-NULL cities do not collide."""
+    from app.core.ingest_vectorized import common
+
+    frame = pl.DataFrame(
+        [
+            {"street_1": None, "city": "Austin", "state": "TX", "zip_code": "78701"},  # existing
+            {"street_1": None, "city": "Dallas", "state": "TX", "zip_code": "75201"},  # new
+        ],
+        schema={"street_1": pl.Utf8, "city": pl.Utf8, "state": pl.Utf8, "zip_code": pl.Utf8},
+    )
+    existing = pl.DataFrame(
+        [{"street_1": None, "city": "Austin", "state": "TX", "zip_code": "78701"}],
+        schema={"street_1": pl.Utf8, "city": pl.Utf8, "state": pl.Utf8, "zip_code": pl.Utf8},
+    )
+    out = common.filter_new_rows(
+        frame,
+        existing,
+        key_cols=["street_1", "city", "state", "zip_code"],
+        normalize_lower=["street_1", "city", "state"],
+        join_nulls=True,
+    )
+    assert out.height == 1
+    assert out["city"].to_list() == ["Dallas"]
