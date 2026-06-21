@@ -59,9 +59,7 @@ from sqlalchemy import create_engine, text
 # unified_campaign_entities  — natural key: (campaign_id, entity_id, role)
 # No FK children; just delete duplicates keeping min(id).
 # ---------------------------------------------------------------------------
-_CE_CREATE_DOOMED = text(
-    "CREATE TEMP TABLE _doomed_ce (id INTEGER PRIMARY KEY) ON COMMIT DROP"
-)
+_CE_CREATE_DOOMED = text("CREATE TEMP TABLE _doomed_ce (id INTEGER PRIMARY KEY) ON COMMIT DROP")
 _CE_POPULATE_DOOMED = text(
     """
     INSERT INTO _doomed_ce (id)
@@ -86,9 +84,7 @@ _CE_COUNT_GROUPS = text(
     ) g
     """
 )
-_CE_PURGE = text(
-    "DELETE FROM unified_campaign_entities WHERE id IN (SELECT id FROM _doomed_ce)"
-)
+_CE_PURGE = text("DELETE FROM unified_campaign_entities WHERE id IN (SELECT id FROM _doomed_ce)")
 
 # ---------------------------------------------------------------------------
 # unified_campaigns  — natural key: (normalized_name, primary_committee_id,
@@ -156,17 +152,13 @@ _CAMP_PURGE_CE_CHILDREN = text(
     WHERE campaign_id IN (SELECT doomed_id FROM _doomed_camp)
     """
 )
-_CAMP_PURGE = text(
-    "DELETE FROM unified_campaigns WHERE id IN (SELECT doomed_id FROM _doomed_camp)"
-)
+_CAMP_PURGE = text("DELETE FROM unified_campaigns WHERE id IN (SELECT doomed_id FROM _doomed_camp)")
 
 # ---------------------------------------------------------------------------
 # unified_committee_persons  — natural key: (committee_id, person_id, role)
 # FK children: unified_committee_person_versions.committee_person_id
 # ---------------------------------------------------------------------------
-_CP_CREATE_DOOMED = text(
-    "CREATE TEMP TABLE _doomed_cp (id INTEGER PRIMARY KEY) ON COMMIT DROP"
-)
+_CP_CREATE_DOOMED = text("CREATE TEMP TABLE _doomed_cp (id INTEGER PRIMARY KEY) ON COMMIT DROP")
 _CP_POPULATE_DOOMED = text(
     """
     INSERT INTO _doomed_cp (id)
@@ -197,9 +189,7 @@ _CP_PURGE_VERSIONS = text(
     WHERE committee_person_id IN (SELECT id FROM _doomed_cp)
     """
 )
-_CP_PURGE = text(
-    "DELETE FROM unified_committee_persons WHERE id IN (SELECT id FROM _doomed_cp)"
-)
+_CP_PURGE = text("DELETE FROM unified_committee_persons WHERE id IN (SELECT id FROM _doomed_cp)")
 
 # ---------------------------------------------------------------------------
 # Index creation (only run with --create-indexes --apply)
@@ -296,14 +286,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  rows to purge (keeping lowest id): {cp_doomed:,}")
         ver_res = conn.execute(_CP_PURGE_VERSIONS)
         if ver_res.rowcount:
-            print(
-                f"  purged {ver_res.rowcount:,} unified_committee_person_versions"
-            )
+            print(f"  purged {ver_res.rowcount:,} unified_committee_person_versions")
         cp_res = conn.execute(_CP_PURGE)
         if args.apply:
-            print(
-                f"  purged {cp_res.rowcount:,} duplicate unified_committee_persons rows"
-            )
+            print(f"  purged {cp_res.rowcount:,} duplicate unified_committee_persons rows")
 
         if args.create_indexes:
             conn.execute(_CREATE_INDEX_CAMPAIGNS)

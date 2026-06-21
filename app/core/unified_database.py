@@ -235,6 +235,22 @@ class UnifiedDatabaseManager:
         ON unified_entities (entity_type, normalized_name, state_id)
         WHERE state_id IS NOT NULL;
         """,
+        # Bucket-D Wave-3 indexes: campaigns, committee_persons, campaign_entities.
+        # Partial index on campaigns includes state_id because primary_committee_id values
+        # are portal-scoped (TX and OK can share the same filer-id string).
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uix_campaigns_identity
+        ON unified_campaigns (normalized_name, primary_committee_id, election_year, state_id)
+        WHERE primary_committee_id IS NOT NULL;
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uix_committee_person_role
+        ON unified_committee_persons (committee_id, person_id, role);
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uix_campaign_entity_role
+        ON unified_campaign_entities (campaign_id, entity_id, role);
+        """,
     )
 
     def bootstrap(self) -> None:
