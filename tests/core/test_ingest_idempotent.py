@@ -220,11 +220,11 @@ def test_entities_batch_dup_absorbed(dedup_session: Session) -> None:
 
 def test_persons_idempotent(dedup_engine_session: tuple) -> None:
     """Writing the same unified_persons rows twice (with Bucket C anti-join pre-filter)
-    must not increase the row count (first-write-wins via person_key_frame + inline
-    join_nulls=True anti-join).
+    must not increase the row count (first-write-wins via person_key_frame +
+    filter_new_rows(join_nulls=True)).
 
     Simulates the pipeline: write once, then read person_key_frame from DB, filter the
-    same candidate rows through the anti-join, write the filtered (empty) result, and
+    same candidate rows through filter_new_rows, write the filtered (empty) result, and
     assert the count is unchanged.
     """
     from app.core.ingest_vectorized import common
@@ -285,22 +285,26 @@ def test_persons_idempotent(dedup_engine_session: tuple) -> None:
         "state_id",
     ]
 
-    def _write_with_anti_join() -> None:
+    def _write_with_filter() -> None:
         existing = person_key_frame(engine, state_id)
-        new_rows = person_rows.join(
-            existing.select("_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"),
-            on=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
-            how="anti",
+        # Keys are already lower-cased by person_key_frame; no normalize_lower needed.
+        # join_nulls=True: org-person rows carry NULL fn/ln/addr, individual rows carry
+        # NULL _pk_org — NULLs must compare equal for correct dedup.
+        new_rows = common.filter_new_rows(
+            person_rows,
+            existing,
+            key_cols=["_pk_org", "_pk_fn", "_pk_ln", "_pk_addr"],
             join_nulls=True,
         )
-        out = new_rows.select(_person_write_cols)
-        common.write_frame(s, UnifiedPerson, out, conflict_cols=None)
+        common.write_frame(
+            s, UnifiedPerson, new_rows.select(_person_write_cols), conflict_cols=None
+        )
 
-    _write_with_anti_join()
+    _write_with_filter()
     before = _count(s, UnifiedPerson)
     assert before == 2
 
-    _write_with_anti_join()  # identical second write — anti-join should filter all rows
+    _write_with_filter()  # identical second write — filter_new_rows should return 0 rows
     after = _count(s, UnifiedPerson)
     assert after == before, f"Person row count changed on re-write: {before} → {after}"
 
@@ -502,32 +506,22 @@ def test_committee_persons_idempotent(dedup_session: Session) -> None:
 
 def test_guarantors_idempotent(dedup_engine_session: tuple) -> None:
     """Writing the same loan_guarantors rows twice (with Bucket C anti-join pre-filter)
-    must not increase the row count (first-write-wins).
+    must not increase the row count (first-write-wins via guarantor_key_frame +
+    filter_new_rows(join_nulls=True)).
 
-    loan_id and debt_id are mutually exclusive (one is always NULL), so this path
-    uses an inline anti-join with join_nulls=True rather than filter_new_rows (which
-    does not expose a join_nulls parameter).
+    loan_id and debt_id are mutually exclusive (one is always NULL per row), so
+    join_nulls=True is required: without it, NULL != NULL and every row would appear
+    new on every pass.
 
     Simulates the pipeline: write once, then read guarantor_key_frame from DB, filter
-    the same candidate rows through the inline anti-join, write the filtered (empty)
-    result, and assert the count is unchanged.
+    the same candidate rows through filter_new_rows, write the filtered (empty) result,
+    and assert the count is unchanged.
     """
     from app.core.ingest_vectorized import common
     from app.core.ingest_vectorized.id_maps import guarantor_key_frame
     from app.core.models import LoanGuarantor
 
     engine, s = dedup_engine_session
-
-    _KEY_COLS = ["_k_loan", "_k_debt", "_k_last", "_k_first", "_k_org"]
-
-    def _norm_keys(frame: pl.DataFrame) -> pl.DataFrame:
-        return frame.with_columns(
-            pl.col("loan_id").alias("_k_loan"),
-            pl.col("debt_id").alias("_k_debt"),
-            pl.col("last_name").str.to_lowercase().alias("_k_last"),
-            pl.col("first_name").str.to_lowercase().alias("_k_first"),
-            pl.col("organization").str.to_lowercase().alias("_k_org"),
-        )
 
     guarantor_rows = pl.DataFrame(
         [
@@ -588,22 +582,23 @@ def test_guarantors_idempotent(dedup_engine_session: tuple) -> None:
         },
     )
 
-    def _write_with_anti_join() -> None:
+    def _write_with_filter() -> None:
         existing = guarantor_key_frame(engine)
-        existing_norm = _norm_keys(existing).select(_KEY_COLS).unique()
-        rows_normed = _norm_keys(guarantor_rows).unique(subset=_KEY_COLS, keep="first")
-        # join_nulls=True required: loan_id or debt_id is always NULL per row
-        new_rows = rows_normed.join(existing_norm, on=_KEY_COLS, how="anti", join_nulls=True).drop(
-            _KEY_COLS
+        new_rows = common.filter_new_rows(
+            guarantor_rows,
+            existing,
+            key_cols=["loan_id", "debt_id", "last_name", "first_name", "organization"],
+            normalize_lower=["last_name", "first_name", "organization"],
+            join_nulls=True,
         )
         if new_rows.height:
             common.write_frame(s, LoanGuarantor, new_rows, conflict_cols=None)
 
-    _write_with_anti_join()
+    _write_with_filter()
     before = _count(s, LoanGuarantor)
     assert before == 2
 
-    _write_with_anti_join()  # identical second write — anti-join should filter all rows
+    _write_with_filter()  # identical second write — filter_new_rows should return 0 rows
     after = _count(s, LoanGuarantor)
     assert after == before, f"Guarantor row count changed on re-write: {before} → {after}"
 
@@ -855,10 +850,11 @@ def test_full_pipeline_idempotent(dedup_engine_session: tuple) -> None:
 
         # Bucket C — persons
         existing_persons = person_key_frame(engine, state_id)
-        new_persons = person_rows.join(
-            existing_persons.select(_PERSON_KEY_COLS),
-            on=_PERSON_KEY_COLS,
-            how="anti",
+        # Keys already lower-cased by person_key_frame; join_nulls=True for NULL fn/ln/addr.
+        new_persons = common.filter_new_rows(
+            person_rows,
+            existing_persons,
+            key_cols=_PERSON_KEY_COLS,
             join_nulls=True,
         )
         if new_persons.height:
