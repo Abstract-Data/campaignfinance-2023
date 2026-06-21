@@ -479,12 +479,18 @@ def _write_frame_postgres(
     *,
     conflict_cols: list[str] | None,
     update_cols: list[str] | None,
+    conflict_where: str | None = None,
 ) -> int:
     """Postgres COPY fast-path. Direct COPY when there is no conflict key; otherwise COPY
     into an ``ON COMMIT DROP`` staging table then ``INSERT ... SELECT ... ON CONFLICT``.
 
     SQL is composed with ``psycopg2.sql`` — only Table-metadata identifiers are injected
     (never values; row data rides STDIN), so it is injection-safe by construction.
+
+    ``conflict_where`` is a code-defined SQL predicate string (e.g.
+    ``"transaction_id IS NOT NULL"``) that matches the WHERE clause of a partial unique
+    index.  It narrows the ON CONFLICT target so Postgres resolves the correct partial
+    index — required for Bucket B writes whose unique constraint is a partial index.
     """
     from psycopg2 import sql
 
@@ -527,14 +533,24 @@ def _write_frame_postgres(
                 action = sql.SQL("DO UPDATE SET {}").format(set_clause)
             else:
                 action = sql.SQL("DO NOTHING")
+            # conflict_where narrows the ON CONFLICT target to the matching partial index.
+            # It is always a code-defined constant (never user-supplied data), so direct
+            # sql.SQL() interpolation is injection-safe here.
+            where_sql = (
+                sql.SQL(" WHERE ") + sql.SQL(conflict_where)
+                if conflict_where
+                else sql.SQL("")
+            )
             cur.execute(
                 sql.SQL(
-                    "INSERT INTO {tbl} ({cols}) SELECT {cols} FROM {stg} ON CONFLICT ({conf}) {act}"
+                    "INSERT INTO {tbl} ({cols}) SELECT {cols} FROM {stg} "
+                    "ON CONFLICT ({conf}){where} {act}"
                 ).format(
                     tbl=sql.Identifier(table_name),
                     cols=col_idents,
                     stg=sql.Identifier(stg),
                     conf=sql.SQL(", ").join(sql.Identifier(c) for c in conflict_cols),
+                    where=where_sql,
                     act=action,
                 )
             )
@@ -552,6 +568,7 @@ def _attempt_write(
     conflict_cols: list[str] | None,
     update_cols: list[str] | None,
     is_postgres: bool,
+    conflict_where: str | None = None,
 ) -> int:
     """One bulk-write attempt (COPY / bulk_upsert / core insert), committing on success.
     Raises on any DB error — the caller decides whether to isolate."""
@@ -563,11 +580,21 @@ def _attempt_write(
 
     if is_postgres and not os.environ.get("VECTORIZED_DISABLE_COPY"):
         return _write_frame_postgres(
-            session, model, rows, conflict_cols=conflict_cols, update_cols=update_cols
+            session,
+            model,
+            rows,
+            conflict_cols=conflict_cols,
+            update_cols=update_cols,
+            conflict_where=conflict_where,
         )
     if conflict_cols:
         return bulk_upsert(
-            session, model, rows, conflict_cols=conflict_cols, update_cols=update_cols
+            session,
+            model,
+            rows,
+            conflict_cols=conflict_cols,
+            update_cols=update_cols,
+            conflict_where=conflict_where,
         )
     session.execute(insert(model.__table__), rows)  # type: ignore[attr-defined]
     session.commit()
@@ -615,6 +642,7 @@ def _write_isolating(
     update_cols: list[str] | None,
     is_postgres: bool,
     error_ctx: dict[str, Any] | None,
+    conflict_where: str | None = None,
 ) -> int:
     """Recover a failed bulk write by bisection: commit good sub-batches, route the genuinely
     bad rows to ``ingest_errors``. Returns the number of rows actually written. Only row-level
@@ -627,6 +655,7 @@ def _write_isolating(
             conflict_cols=conflict_cols,
             update_cols=update_cols,
             is_postgres=is_postgres,
+            conflict_where=conflict_where,
         )
     except _ROW_LEVEL_ERRORS as exc:
         session.rollback()
@@ -650,6 +679,7 @@ def _write_isolating(
             update_cols=update_cols,
             is_postgres=is_postgres,
             error_ctx=error_ctx,
+            conflict_where=conflict_where,
         )
         right = _write_isolating(
             session,
@@ -659,6 +689,7 @@ def _write_isolating(
             update_cols=update_cols,
             is_postgres=is_postgres,
             error_ctx=error_ctx,
+            conflict_where=conflict_where,
         )
         return left + right
 
@@ -670,6 +701,7 @@ def write_frame(
     *,
     conflict_cols: list[str] | None,
     update_cols: list[str] | None = None,
+    conflict_where: str | None = None,
     error_ctx: dict[str, Any] | None = None,
 ) -> int:
     """Bulk-write a Polars frame into ``model``'s table (dialect-safe).
@@ -682,6 +714,13 @@ def write_frame(
     means ``ON CONFLICT DO NOTHING`` (first-occurrence-wins / backfill-nothing), used by
     the committee writers so a FILER-authored committee is not clobbered by an incidental
     transaction ``filerName``.
+
+    ``conflict_where`` is an optional SQL predicate string (e.g.
+    ``"transaction_id IS NOT NULL"``) that must match the WHERE clause of a partial unique
+    index when the target table uses a partial (not full) unique constraint — Bucket B
+    writes.  It is always a code-defined constant; never supply user-controlled data here.
+    Both the Postgres COPY staging path and the sqlite/bulk_upsert fallback honour it via
+    ``psycopg2.sql`` composition and ``SQLAlchemy index_where``, respectively.
 
     On PostgreSQL this uses a COPY fast-path (direct COPY, or COPY-to-staging +
     INSERT...ON CONFLICT for upserts) — orders of magnitude faster than executemany at
@@ -711,6 +750,7 @@ def write_frame(
             conflict_cols=conflict_cols,
             update_cols=update_cols,
             is_postgres=is_postgres,
+            conflict_where=conflict_where,
         )
     except _ROW_LEVEL_ERRORS as exc:
         session.rollback()
@@ -726,6 +766,7 @@ def write_frame(
             update_cols=update_cols,
             is_postgres=is_postgres,
             error_ctx=error_ctx,
+            conflict_where=conflict_where,
         )
         rejected = len(rows) - written
         if rejected:
@@ -734,3 +775,59 @@ def write_frame(
                 f"isolated {rejected} bad row(s) to ingest_errors ({written} written)"
             )
         return written
+
+
+def filter_new_rows(
+    frame: pl.DataFrame,
+    existing_keys: pl.DataFrame,
+    *,
+    key_cols: list[str],
+    normalize_lower: list[str] | None = None,
+) -> pl.DataFrame:
+    """First-write-wins pre-filter for tables whose unique key is functional or split across
+    multiple partial indexes where ``ON CONFLICT`` inference cannot target them (Bucket C).
+
+    Lower-cases the ``normalize_lower`` key columns, deduplicates in-batch duplicates
+    (keeps first occurrence), anti-joins against keys already present in the DB, and
+    returns only the genuinely new rows.  The caller writes those with ``conflict_cols=None``
+    (plain insert) because the anti-join already guarantees no conflict.
+
+    Parameters
+    ----------
+    frame:
+        Candidate rows to write.
+    existing_keys:
+        DataFrame of key columns already in the DB (typically from an id-map read).
+        Must contain all columns in ``key_cols``.
+    key_cols:
+        Column names that together form the natural unique key.
+    normalize_lower:
+        Subset of ``key_cols`` to lower-case before comparison (e.g. name fields).
+        Columns not listed here are compared as-is.
+
+    Returns
+    -------
+    pl.DataFrame
+        Rows from ``frame`` (with original casing) that are not present in
+        ``existing_keys``.  Temporary ``_k_*`` columns are dropped before returning.
+        Row count is logged so silent drops are detectable.
+    """
+    norm = set(normalize_lower or [])
+    key_exprs = [
+        (pl.col(c).str.to_lowercase() if c in norm else pl.col(c)).alias(f"_k_{c}")
+        for c in key_cols
+    ]
+    kcols = [f"_k_{c}" for c in key_cols]
+
+    # Add normalised key cols, deduplicate in-batch (keep first), then anti-join.
+    f = frame.with_columns(key_exprs).unique(subset=kcols, keep="first")
+    e = existing_keys.with_columns(key_exprs).select(kcols).unique()
+    result = f.join(e, on=kcols, how="anti").drop(kcols)
+
+    dropped = frame.height - result.height
+    if dropped:
+        _logger.info(
+            f"[vectorized.filter_new_rows] skipped {dropped} existing/duplicate row(s) "
+            f"({result.height} new row(s) remain)"
+        )
+    return result

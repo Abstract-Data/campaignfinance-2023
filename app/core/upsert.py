@@ -52,6 +52,7 @@ def bulk_upsert(
     *,
     conflict_cols: Sequence[str],
     update_cols: Optional[Sequence[str]] = None,
+    conflict_where: Optional[str] = None,
     chunk_size: int = 5_000,
     commit_per_chunk: bool = False,
 ) -> int:
@@ -75,6 +76,13 @@ def bulk_upsert(
         ``{"created_at", "createdAt"}``.  An explicit empty list ``[]`` means
         ``ON CONFLICT DO NOTHING`` (first-occurrence-wins) — distinct from
         ``None``, which updates everything.
+    conflict_where:
+        Optional SQL predicate string (e.g. ``"transaction_id IS NOT NULL"``)
+        that matches the WHERE clause of a partial unique index.  When set,
+        it is passed as ``index_where`` to ``on_conflict_do_nothing`` so the
+        dialect resolves the correct partial index.  Both sqlite and postgresql
+        dialects support this parameter.  Must be a code-defined constant —
+        never supply user-controlled data here.
     chunk_size:
         Number of rows per ``INSERT`` statement.  Defaults to 5 000.
     commit_per_chunk:
@@ -128,7 +136,12 @@ def bulk_upsert(
         # An empty SET clause is invalid SQL: when the caller asked for no update
         # columns (explicit update_cols=[]) the intent is ON CONFLICT DO NOTHING.
         if not _update_col_names:
-            upsert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=list(conflict_cols))
+            do_nothing_kwargs: Dict[str, Any] = {"index_elements": list(conflict_cols)}
+            if conflict_where:
+                from sqlalchemy import text as _text
+
+                do_nothing_kwargs["index_where"] = _text(conflict_where)
+            upsert_stmt = insert_stmt.on_conflict_do_nothing(**do_nothing_kwargs)
         else:
             # Build set_ from excluded pseudo-table so values reference the
             # incoming row, not a static literal.
